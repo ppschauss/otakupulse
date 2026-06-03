@@ -22,3 +22,6 @@ frontend/public/media/
 Thumbs.db
 .vscode/
 .idea/
+
+# TS build info
+*.tsbuildinfo
