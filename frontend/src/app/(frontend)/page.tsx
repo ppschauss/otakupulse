@@ -6,7 +6,8 @@ import { GenreOfTheDay } from '@/components/GenreOfTheDay'
 import { Faq } from '@/components/Faq'
 import { RowSkeleton, HeroSkeleton, BoxSkeleton } from '@/components/Skeletons'
 
-export const dynamic = 'force-dynamic'
+// ISR: Startseite alle 10 Min neu generieren (im Prod-Build → instant aus dem Cache).
+export const revalidate = 600
 
 const GENRE_ROWS = [
   { slug: 'action', label: 'Action' },

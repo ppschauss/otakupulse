@@ -25,11 +25,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const t = await getTag(slug)
   if (!t) return {}
-  return pageMeta({
+  const meta = pageMeta({
     title: t.seoTitle || `${t.name}-Anime — Liste & Empfehlungen | OtakuPulse`,
     description: t.seoDescription || (t.descriptionDe ? t.descriptionDe.slice(0, 160) : `Anime mit dem Tag „${t.name}" — sortiert nach Beliebtheit.`),
     path: `/tag/${slug}`,
   })
+  if (t.isAdult) meta.robots = { index: false, follow: true }
+  return meta
 }
 
 export default async function TagDetail({

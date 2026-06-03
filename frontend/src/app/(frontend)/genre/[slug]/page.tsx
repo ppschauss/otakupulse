@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const g = await getGenre(slug)
   if (!g) return {}
-  return pageMeta({
+  const meta = pageMeta({
     title: g.seoTitle || `Die besten ${g.name}-Anime — Liste & Ranking | OtakuPulse`,
     description:
       g.seoDescription ||
@@ -33,6 +33,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     path: `/genre/${slug}`,
     image: g.imageUrl,
   })
+  if (slug === 'hentai') meta.robots = { index: false, follow: true }
+  return meta
 }
 
 // Aggregiert Top-Studios & häufige Tags aus den Genre-Anime und holt genre-relevante News.
