@@ -1,0 +1,16 @@
+node_modules
+.next
+build
+dist
+
+# env / secrets — NIEMALS committen
+.env
+.env.local
+secrets.env
+
+# media (lokal gespiegelte Bilder)
+/media
+
+# misc
+*.log
+.DS_Store

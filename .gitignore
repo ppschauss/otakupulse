@@ -1,0 +1,24 @@
+# --- Dependencies & Build ---
+frontend/node_modules/
+frontend/.next/
+frontend/build/
+frontend/.turbo/
+
+# --- Secrets & lokale Config (NIEMALS committen) ---
+secrets.env
+.env
+*.env.local
+
+# --- PostgreSQL-Datenverzeichnis (Volume, root-owned) ---
+db/
+
+# --- Gespiegelte Bilder (groß: ~4 GB / 61k Dateien) ---
+# Beim Stagen via rsync/Volume übertragen oder mit `npm run mirror` neu erzeugen.
+frontend/public/media/
+
+# --- Logs / OS / Editor ---
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

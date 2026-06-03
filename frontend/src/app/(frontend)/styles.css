@@ -1,0 +1,43 @@
+@import 'tailwindcss';
+
+/* OtakuPulse-Design-Tokens (erzeugen Utilities wie bg-accent, text-accent, from-accent …) */
+@theme {
+  --color-accent: #ff4d6d;
+  --color-accent-2: #8b5cf6;
+}
+
+html {
+  color-scheme: dark;
+  scrollbar-gutter: stable;
+}
+
+/* Markierungsfarbe im Marken-Akzent */
+::selection {
+  background: rgba(255, 77, 109, 0.35);
+  color: #fff;
+}
+
+/* Dezente, dunkle Scrollbar (Desktop) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* Hilfsklasse: Scrollbar in horizontalen Reihen ausblenden */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

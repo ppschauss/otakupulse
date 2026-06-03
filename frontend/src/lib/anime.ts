@@ -1,0 +1,109 @@
+// Hilfsfunktionen rund um Anime-Daten (Anzeige & Labels).
+
+export function displayTitle(a: any): string {
+  return a?.titleGerman || a?.titleEnglish || a?.titleRomaji || 'Unbekannt'
+}
+
+// Bild-Auswahl: lokal gespiegeltes Bild bevorzugen, sonst Remote-CDN-URL.
+export const animeCover = (a: any): string | null => a?.coverImageLocal || a?.coverImageUrl || null
+export const animeBanner = (a: any): string | null =>
+  a?.bannerImageLocal || a?.bannerImageUrl || a?.coverImageLocal || a?.coverImageUrl || null
+export const localImage = (x: any): string | null => x?.imageLocal || x?.imageUrl || null
+
+// Anzeigename für Charaktere & Personen (Romaji bevorzugt, dann EN/Native).
+export function displayName(p: any): string {
+  return p?.nameRomaji || p?.nameEnglish || p?.nameNative || 'Unbekannt'
+}
+
+export const GENDER_LABELS: Record<string, string> = {
+  male: 'männlich',
+  female: 'weiblich',
+  non_binary: 'non-binär',
+  unknown: 'unbekannt',
+}
+
+export const PERSON_ROLE_LABELS: Record<string, string> = {
+  voice_actor: 'Synchronsprecher',
+  director: 'Regie',
+  writer: 'Drehbuch',
+  mangaka: 'Mangaka',
+  illustrator: 'Illustration',
+  composer: 'Musik',
+  producer: 'Produktion',
+  other: 'Sonstiges',
+}
+
+export const CHARACTER_ROLE_LABELS: Record<string, string> = {
+  MAIN: 'Hauptrolle',
+  SUPPORTING: 'Nebenrolle',
+  BACKGROUND: 'Hintergrund',
+}
+
+export const TAG_CATEGORY_LABELS: Record<string, string> = {
+  theme: 'Thema',
+  setting: 'Setting',
+  demographic: 'Zielgruppe',
+  mood: 'Stimmung',
+  element: 'Element',
+}
+
+export const ARTICLE_CATEGORY_LABELS: Record<string, string> = {
+  news: 'News',
+  review: 'Review',
+  editorial: 'Editorial',
+  guide: 'Guide',
+  ranking: 'Ranking',
+  seasonal_preview: 'Season-Vorschau',
+}
+
+export const RELATION_LABELS: Record<string, string> = {
+  SEQUEL: 'Fortsetzung',
+  PREQUEL: 'Vorgänger',
+  SIDE_STORY: 'Nebengeschichte',
+  ADAPTATION: 'Adaption',
+  ALTERNATIVE: 'Alternative',
+  SPIN_OFF: 'Spin-off',
+  PARENT: 'Hauptwerk',
+  OTHER: 'Verknüpft',
+}
+
+export const genderLabel = (g?: string | null) => (g ? GENDER_LABELS[g] ?? g : '')
+export const personRoleLabel = (r?: string | null) => (r ? PERSON_ROLE_LABELS[r] ?? r : '')
+export const characterRoleLabel = (r?: string | null) => (r ? CHARACTER_ROLE_LABELS[r] ?? r : '')
+export const articleCategoryLabel = (c?: string | null) => (c ? ARTICLE_CATEGORY_LABELS[c] ?? c : '')
+export const relationLabel = (r?: string | null) => (r ? RELATION_LABELS[r] ?? r : '')
+
+export const FORMAT_LABELS: Record<string, string> = {
+  TV: 'TV-Serie',
+  TV_SHORT: 'TV-Kurz',
+  MOVIE: 'Film',
+  SPECIAL: 'Special',
+  OVA: 'OVA',
+  ONA: 'ONA',
+  MUSIC: 'Musik',
+}
+
+export const STATUS_LABELS: Record<string, string> = {
+  FINISHED: 'Abgeschlossen',
+  RELEASING: 'Läuft aktuell',
+  NOT_YET_RELEASED: 'Angekündigt',
+  CANCELLED: 'Abgebrochen',
+  HIATUS: 'Pausiert',
+}
+
+export const SEASON_LABELS: Record<string, string> = {
+  WINTER: 'Winter',
+  SPRING: 'Frühling',
+  SUMMER: 'Sommer',
+  FALL: 'Herbst',
+}
+
+export const formatLabel = (f?: string | null) => (f ? FORMAT_LABELS[f] ?? f : '')
+export const statusLabel = (s?: string | null) => (s ? STATUS_LABELS[s] ?? s : '')
+export const seasonLabel = (s?: string | null) => (s ? SEASON_LABELS[s] ?? s : '')
+
+// Strippt AniList-HTML aus Beschreibungen für Vorschau-Texte.
+export function plainText(html?: string | null): string {
+  if (!html) return ''
+  return html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+}
