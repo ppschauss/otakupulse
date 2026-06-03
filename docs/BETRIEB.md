@@ -50,7 +50,7 @@ docker exec otakupulse-app npm run sync
 - **Episoden-Massenimport:** Der tägliche Sync deckt laufende + aktuelle-Season-Episoden ab (~1.100). Ein Voll-Backfill aller 2.080 Titel (~75 Min AniList-Last) bringt wenig, da AniList für ältere/abgeschlossene Titel oft keinen Airing-Schedule mehr hat. Bei Bedarf: `npm run import:batch -- --pages 42 --episodes`.
 - **Sub/Dub-Sprachfilter (`availableLanguages`):** AniList liefert keine verlässliche DE-Dub/Sub-Verfügbarkeit. Bräuchte manuelle Pflege oder eine andere Quelle (z. B. dt. Streaming-API). Feld + Filter daher offen.
 - **next/image (WebP/AVIF):** Aktuell `<img>` auf lokal gespiegelten, bereits passend dimensionierten Covern. next/image würde im Dev die Bildladezeiten verschlechtern (On-Demand-Optimierung von ~60k Bildern) bei moderatem Prod-Nutzen. Empfehlung: erst bei echtem Bandbreiten-Bedarf für die Karten-Komponenten aktivieren.
-- **Watchlist/Favoriten:** Braucht ein eigenes Frontend-User-System (separate Auth-Collection, Login/Registrierung, Merklisten-Relation, Account-Seiten) — ein eigenständiges Feature-Paket, kein Quick-Win.
+- **Watchlist/Favoriten:** Kommt ausschließlich in der **Android-App** — auf der Web-Seite bewusst nicht vorgesehen.
 
 ## Sicherheit
 
