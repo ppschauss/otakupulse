@@ -9,6 +9,7 @@ const NAV = [
   { href: '/genre', label: 'Genres' },
   { href: '/studio', label: 'Studios' },
   { href: '/character', label: 'Charaktere' },
+  { href: '/plattform', label: 'Streaming' },
   { href: '/kalender', label: 'Kalender' },
   { href: '/news', label: 'News' },
 ]

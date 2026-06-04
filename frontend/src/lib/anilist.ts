@@ -154,6 +154,7 @@ export const MEDIA_QUERY = /* GraphQL */ `
         nodes { episode airingAt }
       }
       streamingEpisodes { title thumbnail url site }
+      externalLinks { site url type language }
     }
   }
 `
@@ -176,6 +177,19 @@ export const SEARCH_QUERY = /* GraphQL */ `
       media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
         id
         title { romaji english }
+      }
+    }
+  }
+`
+
+// Streaming-Links + Herkunft für viele Anime auf einmal (Sprach-Backfill, 50/Request).
+export const LANGUAGES_BACKFILL_QUERY = /* GraphQL */ `
+  query ($ids: [Int]) {
+    Page(perPage: 50) {
+      media(id_in: $ids, type: ANIME) {
+        id
+        countryOfOrigin
+        externalLinks { site url type language }
       }
     }
   }

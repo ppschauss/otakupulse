@@ -1,6 +1,7 @@
 // Gemeinsame Logik für die (aufgeteilten) Sitemaps.
 import { getPayload } from 'payload'
 import config from '@payload-config'
+import { PROVIDER_SLUGS } from './streaming'
 
 export const PER = 5000
 
@@ -25,6 +26,7 @@ export const TYPES: SitemapType[] = [
 export const STATIC_PATHS = [
   '/', '/anime', '/genre', '/tag', '/studio', '/character', '/person',
   '/plattform', '/season', '/news', '/kalender', '/suche', '/top-anime',
+  ...PROVIDER_SLUGS.map((s) => `/plattform/${s}`),
 ]
 
 // Liste aller Chunk-IDs ('static', 'anime-0', 'characters-0', …) für den Index.

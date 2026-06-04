@@ -14,6 +14,7 @@
     "import:anime": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/import-anime.ts",
     "import:batch": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/import-batch.ts",
     "import:tags": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/import-tags.ts",
+    "backfill:languages": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/backfill-languages.ts",
     "sync": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/sync.ts",
     "mirror": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/mirror-images.ts",
     "translate": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/translate.ts",

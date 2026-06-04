@@ -14,3 +14,7 @@ secrets.env
 # misc
 *.log
 .DS_Store
+
+# Python (Host-Skripte)
+__pycache__/
+*.pyc

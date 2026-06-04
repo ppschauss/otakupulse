@@ -50,6 +50,32 @@ function mapRelationType(t?: string | null): string {
   return t && REL_TYPES.includes(t) ? t : 'OTHER'
 }
 
+/**
+ * Leitet die verfügbaren Sprachen aus AniLists Streaming-Links + Herkunft ab.
+ * AniList trennt Sub/Dub nicht zuverlässig — ein "German"-Streaming-Link bedeutet
+ * "auf Deutsch verfügbar" (wir mappen konservativ auf *-sub). Echter Dub wird
+ * später manuell/aus anderer Quelle gepflegt. JP-Originale bekommen immer `ja`.
+ */
+export function deriveLanguages(m: any): string[] {
+  const langs = new Set<string>()
+  if (m.countryOfOrigin === 'JP') langs.add('ja')
+  for (const link of m.externalLinks || []) {
+    if (link?.type !== 'STREAMING' || !link.language) continue
+    const l = String(link.language).toLowerCase()
+    if (l.includes('german') || l.includes('deutsch')) langs.add('de-sub')
+    else if (l.includes('english')) langs.add('en-sub')
+    else if (l.includes('japanese')) langs.add('ja')
+  }
+  return [...langs]
+}
+
+/** AniList-externalLinks → unser {platform, url}-Array (nur mit URL). */
+export function mapExternalLinks(m: any): { platform?: string; url: string }[] {
+  return (m.externalLinks || [])
+    .filter((l: any) => l?.url)
+    .map((l: any) => ({ platform: l.site ?? undefined, url: l.url }))
+}
+
 function fuzzyToISO(d?: { year?: number | null; month?: number | null; day?: number | null } | null): string | undefined {
   if (!d?.year || !d.month || !d.day) return undefined
   const mm = String(d.month).padStart(2, '0')
@@ -294,6 +320,8 @@ export async function importAnime(payload: Payload, anilistId: number, opts: Imp
     popularity: m.popularity ?? undefined,
     countryOfOrigin: m.countryOfOrigin ?? undefined,
     source: m.source ?? undefined,
+    availableLanguages: deriveLanguages(m),
+    externalLinks: mapExternalLinks(m),
     descriptionSource: m.description ?? undefined,
     coverImageUrl: m.coverImage?.extraLarge || m.coverImage?.large || undefined,
     bannerImageUrl: m.bannerImage ?? undefined,
@@ -312,6 +340,13 @@ export async function importAnime(payload: Payload, anilistId: number, opts: Imp
   let animeId: Id
   if (existing.docs.length) {
     animeId = existing.docs[0].id
+    // availableLanguages mergen statt überschreiben: aus AniList kommt nur `ja`
+    // (Sub/Dub kennt AniList nicht), echte Dub-Daten (Crunchyroll-Sync, manuell)
+    // sollen einen Re-Import/Sync überleben.
+    const prevLangs: string[] = Array.isArray((existing.docs[0] as any).availableLanguages)
+      ? (existing.docs[0] as any).availableLanguages
+      : []
+    animeData.availableLanguages = [...new Set([...prevLangs, ...(animeData.availableLanguages || [])])]
     await payload.update({ collection: 'anime', id: animeId, data: animeData })
   } else {
     animeId = (await payload.create({ collection: 'anime', data: animeData })).id

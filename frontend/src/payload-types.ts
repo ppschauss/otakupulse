@@ -205,6 +205,31 @@ export interface Anime {
    * Öffentlicher deutscher Text (eigene Formulierung, SEO).
    */
   descriptionDe?: string | null;
+  /**
+   * Normalisierte Streaming-Anbieter (aus AniList-Links + JustWatch). Quelle für „Wer streamt es".
+   */
+  streamingProviders?:
+    | (
+        | 'crunchyroll'
+        | 'netflix'
+        | 'amazon-prime-video'
+        | 'disney-plus'
+        | 'wow'
+        | 'joyn'
+        | 'rtl-plus'
+        | 'anime-on-demand'
+        | 'paramount-plus'
+        | 'apple-tv'
+        | 'magenta-tv'
+        | 'hidive'
+        | 'hulu'
+        | 'bilibili'
+        | 'iqiyi'
+        | 'wetv'
+        | 'adult-swim'
+        | 'tencent'
+      )[]
+    | null;
   coverImageUrl?: string | null;
   bannerImageUrl?: string | null;
   /**
@@ -834,6 +859,7 @@ export interface AnimeSelect<T extends boolean = true> {
   availableLanguages?: T;
   descriptionSource?: T;
   descriptionDe?: T;
+  streamingProviders?: T;
   coverImageUrl?: T;
   bannerImageUrl?: T;
   coverImageLocal?: T;

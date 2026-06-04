@@ -14,6 +14,8 @@ import {
   displayName,
   formatLabel,
   statusLabel,
+  languageLabel,
+  LANGUAGE_ORDER,
   seasonLabel,
   characterRoleLabel,
   relationLabel,
@@ -23,6 +25,7 @@ import {
   localImage,
 } from '@/lib/anime'
 import { importAnimeBySlug } from '@/lib/import'
+import { streamingProvidersOf } from '@/lib/streaming'
 
 export const dynamic = 'force-dynamic'
 
@@ -85,6 +88,10 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
     (r: any) => typeof r === 'object',
   )
   const season = anime.animeSeason && typeof anime.animeSeason === 'object' ? anime.animeSeason : null
+  const streaming = streamingProvidersOf(anime)
+  const languages: string[] = (Array.isArray(anime.availableLanguages) ? anime.availableLanguages : [])
+    .slice()
+    .sort((a: string, b: string) => LANGUAGE_ORDER.indexOf(a) - LANGUAGE_ORDER.indexOf(b))
 
   const episodes = await payload.find({
     collection: 'episodes',
@@ -154,6 +161,27 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
                 </span>
               ) : null}
             </div>
+
+            {languages.length ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-zinc-500">Sprachen:</span>
+                {languages.map((l) => {
+                  const isDub = l.endsWith('-dub')
+                  return (
+                    <span
+                      key={l}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                        isDub
+                          ? 'bg-accent/20 text-white ring-1 ring-accent/40'
+                          : 'border border-white/10 bg-white/5 text-zinc-300'
+                      }`}
+                    >
+                      {languageLabel(l)}
+                    </span>
+                  )
+                })}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -170,6 +198,35 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
               </Link>
             ))}
           </div>
+        ) : null}
+
+        {/* Wo streamen? */}
+        {streaming.length ? (
+          <section className="mt-8">
+            <h2 className="mb-3 text-lg font-bold text-white">Wo streamen?</h2>
+            <div className="flex flex-wrap gap-2">
+              {streaming.map(({ provider, url }) => (
+                <a
+                  key={provider.slug}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-zinc-900/40 px-3.5 py-2 text-sm font-medium text-zinc-100 transition hover:border-accent/40 hover:text-white"
+                  style={provider.color ? { borderColor: `${provider.color}55` } : undefined}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color || '#888' }} />
+                  {provider.name}
+                </a>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">
+              Verfügbarkeit & Sprachfassung können je nach Region variieren —{' '}
+              <Link href="/plattform" className="text-zinc-400 hover:text-accent">
+                alle Anbieter im Überblick
+              </Link>
+              .
+            </p>
+          </section>
         ) : null}
 
         {/* Beschreibung */}
