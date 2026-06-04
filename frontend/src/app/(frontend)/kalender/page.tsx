@@ -6,6 +6,9 @@ export const revalidate = 600
 export const metadata = {
   title: 'Simulcast-Kalender — OtakuPulse',
   description: 'Welche Anime-Episoden wann erscheinen — der wöchentliche Simulcast-Kalender.',
+  alternates: {
+    types: { 'application/rss+xml': [{ url: '/kalender/feed.xml', title: 'OtakuPulse — Simulcast-Kalender' }] },
+  },
 }
 
 export default async function KalenderPage() {

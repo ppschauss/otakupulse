@@ -34,6 +34,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     image: g.imageUrl,
   })
   if (slug === 'hentai') meta.robots = { index: false, follow: true }
+  meta.alternates = {
+    ...meta.alternates,
+    types: { 'application/rss+xml': [{ url: `/genre/${slug}/feed.xml`, title: `OtakuPulse — ${g.name}-Anime` }] },
+  }
   return meta
 }
 
