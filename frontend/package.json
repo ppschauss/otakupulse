@@ -8,6 +8,7 @@
     "devsafe": "rm -rf .next && cross-env NODE_OPTIONS=--no-deprecation next dev -H 0.0.0.0 -p 3000",
     "build": "cross-env NODE_OPTIONS=\"--no-deprecation --max-old-space-size=4096\" next build",
     "start": "cross-env NODE_OPTIONS=--no-deprecation next start -H 0.0.0.0 -p 3000",
+    "typecheck": "tsc --noEmit",
     "generate:types": "cross-env NODE_OPTIONS=--no-deprecation payload generate:types",
     "generate:importmap": "cross-env NODE_OPTIONS=--no-deprecation payload generate:importmap",
     "payload": "cross-env NODE_OPTIONS=--no-deprecation payload",
