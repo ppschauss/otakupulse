@@ -60,6 +60,18 @@ export function Footer() {
             </div>
           ))}
         </div>
+
+        <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} OtakuPulse — privates, nicht-kommerzielles Projekt.</p>
+          <nav className="flex gap-5">
+            <Link href="/impressum" className="transition hover:text-accent">
+              Impressum
+            </Link>
+            <Link href="/datenschutz" className="transition hover:text-accent">
+              Datenschutz
+            </Link>
+          </nav>
+        </div>
       </div>
     </footer>
   )
