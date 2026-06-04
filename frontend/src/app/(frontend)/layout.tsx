@@ -21,6 +21,9 @@ export const metadata: Metadata = {
     locale: 'de_DE',
   },
   twitter: { card: 'summary_large_image' },
+  alternates: {
+    types: { 'application/rss+xml': [{ url: '/feed.xml', title: `${SITE_NAME} — News` }] },
+  },
   ...(googleVerification ? { verification: { google: googleVerification } } : {}),
 }
 
