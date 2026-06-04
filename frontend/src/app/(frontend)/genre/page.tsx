@@ -1,35 +1,139 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
+import Link from 'next/link'
+import type { Metadata } from 'next'
 import { Chip } from '@/components/Chip'
+import { pageMeta } from '@/lib/seo'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = {
-  title: 'Anime-Genres — OtakuPulse',
-  description: 'Alle Anime-Genres im Überblick: Action, Isekai, Romance, Mecha und mehr.',
+type SP = { sort?: string }
+
+export async function generateMetadata({ searchParams }: { searchParams: Promise<SP> }): Promise<Metadata> {
+  await searchParams
+  return pageMeta({
+    title: 'Anime-Genres — alle Genres mit Anzahl & Ranking | OtakuPulse',
+    description:
+      'Alle Anime-Genres im Überblick: Action, Isekai, Romance, Mecha und mehr — mit Anzahl der Titel und den größten Genres auf einen Blick.',
+    path: '/genre',
+  })
 }
 
-export default async function GenreListPage() {
+export default async function GenreListPage({ searchParams }: { searchParams: Promise<SP> }) {
+  const sp = await searchParams
+  const sortKey = sp.sort === 'name' ? 'name' : 'count'
+
   const payload = await getPayload({ config })
-  const { docs } = await payload.find({ collection: 'genres', limit: 300, sort: 'name' })
+  const { docs } = await payload.find({ collection: 'genres', limit: 300, sort: 'name', depth: 0 })
+
+  // Anime-Anzahl pro Genre (eine Aggregation).
+  const pool = (payload.db as any).pool
+  const { rows } = await pool.query(
+    `SELECT genres_id AS id, count(*)::int AS n FROM anime_rels WHERE genres_id IS NOT NULL GROUP BY genres_id`,
+  )
+  const countById = new Map<number, number>(rows.map((r: any) => [r.id, r.n]))
+
+  const enriched = (docs as any[]).map((g) => ({ ...g, n: countById.get(g.id) ?? 0 }))
+  const top = [...enriched].sort((a, b) => b.n - a.n).slice(0, 8)
+  const list =
+    sortKey === 'name'
+      ? [...enriched].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+      : [...enriched].sort((a, b) => b.n - a.n)
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Genres</h1>
-      <p className="mt-1 text-zinc-400">{docs.length} Genres</p>
+      <p className="mt-1 text-zinc-400">{docs.length} Genres · von Action bis Slice of Life</p>
 
       {docs.length === 0 ? (
         <div className="mt-8 rounded-xl border border-white/10 bg-zinc-900/50 p-8 text-center text-zinc-400">
           Noch keine Genres.
         </div>
       ) : (
-        <div className="mt-6 flex flex-wrap gap-3">
-          {docs.map((g: any) => (
-            <Chip key={g.id} href={`/genre/${g.slug}`}>
-              {g.name}
-            </Chip>
-          ))}
-        </div>
+        <>
+          {/* Top-Genres-Highlight */}
+          {top.length > 0 && top[0].n > 0 ? (
+            <section className="mt-8">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-accent">Größte Genres</h2>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                {top.map((g) => (
+                  <Link
+                    key={g.id}
+                    href={`/genre/${g.slug}`}
+                    className="group relative overflow-hidden rounded-xl border border-white/10 bg-zinc-900/60 p-4 transition hover:border-accent/40"
+                  >
+                    {g.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={g.imageUrl}
+                        alt=""
+                        className="absolute inset-0 h-full w-full object-cover opacity-20 transition group-hover:opacity-30"
+                      />
+                    ) : (
+                      <span className="absolute inset-0 bg-gradient-to-br from-accent/20 to-accent-2/20" aria-hidden />
+                    )}
+                    <span className="relative block text-base font-bold text-white">{g.name}</span>
+                    <span className="relative mt-1 block text-xs text-zinc-300">
+                      {g.n.toLocaleString('de-DE')} Anime
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Sortierung */}
+          <div className="mt-10 flex items-center gap-2 text-sm">
+            <span className="text-zinc-500">Sortieren:</span>
+            <Link
+              href="/genre"
+              className={`rounded-lg border px-3 py-1.5 transition ${
+                sortKey === 'count' ? 'border-accent bg-accent/15 text-white' : 'border-white/10 text-zinc-400 hover:text-white'
+              }`}
+            >
+              Beliebtheit
+            </Link>
+            <Link
+              href="/genre?sort=name"
+              className={`rounded-lg border px-3 py-1.5 transition ${
+                sortKey === 'name' ? 'border-accent bg-accent/15 text-white' : 'border-white/10 text-zinc-400 hover:text-white'
+              }`}
+            >
+              A–Z
+            </Link>
+          </div>
+
+          {/* Volle Liste */}
+          <div className="mt-5 flex flex-wrap gap-3">
+            {list.map((g) => (
+              <Chip key={g.id} href={`/genre/${g.slug}`} count={g.n || undefined}>
+                {g.name}
+              </Chip>
+            ))}
+          </div>
+
+          {/* SEO-Intro */}
+          <section className="mt-12 border-t border-white/10 pt-8">
+            <div className="max-w-3xl space-y-3 text-sm leading-relaxed text-zinc-400">
+              <p>
+                Genres sind der schnellste Weg in die Anime-Datenbank: Ob actiongeladene Shōnen-Abenteuer, romantische
+                Slice-of-Life-Serien, düstere Psycho-Thriller oder fantasievolle Isekai-Welten — über die Genre-Seiten
+                findest du die passenden Titel, sortiert nach Beliebtheit, mit Top-Studios und thematischen Tags.
+              </p>
+              <p>
+                Noch spezifischer wird&apos;s über die{' '}
+                <Link href="/tag" className="text-accent hover:underline">
+                  thematischen Tags
+                </Link>{' '}
+                oder die{' '}
+                <Link href="/suche" className="text-accent hover:underline">
+                  Suche
+                </Link>
+                , in der sich Genre, Jahr, Typ und Sprachfassung frei kombinieren lassen.
+              </p>
+            </div>
+          </section>
+        </>
       )}
     </main>
   )
