@@ -73,6 +73,18 @@ export const characterRoleLabel = (r?: string | null) => (r ? CHARACTER_ROLE_LAB
 export const articleCategoryLabel = (c?: string | null) => (c ? ARTICLE_CATEGORY_LABELS[c] ?? c : '')
 export const relationLabel = (r?: string | null) => (r ? RELATION_LABELS[r] ?? r : '')
 
+// Sprach-/Dub-Verfügbarkeit (availableLanguages) → Anzeige.
+export const LANGUAGE_LABELS: Record<string, string> = {
+  ja: 'Japanisch (OmU)',
+  'de-dub': 'Deutscher Dub',
+  'de-sub': 'Deutscher Sub',
+  'en-dub': 'Englischer Dub',
+  'en-sub': 'Englischer Sub',
+}
+// Stabile Anzeigereihenfolge.
+export const LANGUAGE_ORDER = ['de-dub', 'en-dub', 'de-sub', 'en-sub', 'ja']
+export const languageLabel = (l?: string | null) => (l ? LANGUAGE_LABELS[l] ?? l : '')
+
 export const FORMAT_LABELS: Record<string, string> = {
   TV: 'TV-Serie',
   TV_SHORT: 'TV-Kurz',
