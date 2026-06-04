@@ -66,6 +66,29 @@ export default async function StudioDetail({
     ? (await payload.find({ collection: 'studios', where: { slug: { not_equals: slug } }, sort: 'name', limit: 24, depth: 0 })).docs
     : []
 
+  // Statistik-Leiste (nur Seite 1): Ø-Bewertung + bestbewerteter Titel.
+  let stats: { avg: number | null; best: any | null } | null = null
+  if (isFirst) {
+    const pool = (payload.db as any).pool
+    const [agg, best] = await Promise.all([
+      pool.query(
+        `SELECT round(avg(a.average_score))::int AS avg FROM anime a
+         JOIN anime_rels ar ON ar.parent_id = a.id
+         WHERE ar.studios_id = $1 AND a.average_score IS NOT NULL`,
+        [studio.id],
+      ),
+      pool.query(
+        `SELECT a.slug, a.title_german AS de, a.title_english AS en, a.title_romaji AS ro, a.average_score AS score
+         FROM anime a JOIN anime_rels ar ON ar.parent_id = a.id
+         WHERE ar.studios_id = $1 AND a.average_score IS NOT NULL
+         ORDER BY a.average_score DESC NULLS LAST LIMIT 1`,
+        [studio.id],
+      ),
+    ])
+    stats = { avg: agg.rows[0]?.avg ?? null, best: best.rows[0] ?? null }
+  }
+  const topGenre = extras?.topGenres?.[0]?.name ?? null
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
       <Breadcrumbs
@@ -75,13 +98,55 @@ export default async function StudioDetail({
           { name: studio.name, path: `/studio/${slug}` },
         ]}
       />
-      <p className="text-sm font-semibold uppercase tracking-widest text-accent">Studio</p>
-      <h1 className="mt-1 text-3xl font-extrabold text-white">{studio.name}</h1>
-      <p className="mt-1 text-zinc-400">{result.totalDocs} Anime</p>
+      <p className="text-sm font-semibold uppercase tracking-widest text-accent">
+        {studio.isAnimationStudio ? 'Animationsstudio' : 'Produktion & Vertrieb'}
+      </p>
+      <div className="mt-1 flex items-center gap-4">
+        {studio.logoUrl ? (
+          <span className="flex h-14 shrink-0 items-center justify-center rounded-lg bg-white/90 px-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={studio.logoUrl} alt={studio.name} className="max-h-10 max-w-[160px] object-contain" />
+          </span>
+        ) : null}
+        <h1 className="text-3xl font-extrabold text-white">{studio.name}</h1>
+      </div>
 
-      <p className="mt-4 max-w-3xl leading-relaxed text-zinc-300">{intro}</p>
+      {/* Statistik-Leiste */}
+      <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
+          <dt className="text-xs text-zinc-500">Anime</dt>
+          <dd className="text-lg font-bold text-white">{result.totalDocs}</dd>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
+          <dt className="text-xs text-zinc-500">Ø-Bewertung</dt>
+          <dd className="text-lg font-bold text-white">{stats?.avg ? `${stats.avg}%` : '–'}</dd>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
+          <dt className="text-xs text-zinc-500">Top-Genre</dt>
+          <dd className="truncate text-lg font-bold text-white">{topGenre || '–'}</dd>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
+          <dt className="text-xs text-zinc-500">Bestbewertet</dt>
+          <dd className="truncate text-sm font-semibold text-white">
+            {stats?.best ? (
+              <Link href={`/anime/${stats.best.slug}`} className="hover:text-accent">
+                {stats.best.de || stats.best.en || stats.best.ro}
+              </Link>
+            ) : (
+              '–'
+            )}
+          </dd>
+        </div>
+      </dl>
+
+      <p className="mt-5 max-w-3xl leading-relaxed text-zinc-300">{intro}</p>
       {studio.website ? (
-        <a href={studio.website} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-sm text-accent hover:underline">
+        <a
+          href={studio.website}
+          target="_blank"
+          rel="nofollow noopener noreferrer"
+          className="mt-3 inline-block text-sm text-accent hover:underline"
+        >
           Offizielle Website →
         </a>
       ) : null}
