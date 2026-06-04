@@ -7,8 +7,6 @@ import { useState } from 'react'
 const NAV = [
   { href: '/anime', label: 'Anime' },
   { href: '/genre', label: 'Genres' },
-  { href: '/studio', label: 'Studios' },
-  { href: '/character', label: 'Charaktere' },
   { href: '/plattform', label: 'Streaming' },
   { href: '/kalender', label: 'Kalender' },
   { href: '/news', label: 'News' },
