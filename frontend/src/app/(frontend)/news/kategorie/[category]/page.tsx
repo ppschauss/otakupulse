@@ -5,6 +5,7 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { Pagination } from '@/components/Pagination'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
+import { NewsListSidebar } from '@/components/NewsListSidebar'
 import { pageMeta } from '@/lib/seo'
 import { ARTICLE_CATEGORY_LABELS, articleCategoryLabel } from '@/lib/anime'
 
@@ -55,33 +56,20 @@ export default async function NewsCategoryPage({
   })
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10">
-      <Breadcrumbs
-        items={[
-          { name: 'Start', path: '/' },
-          { name: 'News', path: '/news' },
-          { name: label, path: `/news/kategorie/${category}` },
-        ]}
-      />
-      <h1 className="text-2xl font-extrabold text-white">{label}</h1>
-      <p className="mt-1 text-zinc-400">{result.totalDocs} Beiträge</p>
+    <main className="mx-auto max-w-6xl px-4 py-10">
+      <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
+        <div>
+          <Breadcrumbs
+            items={[
+              { name: 'Start', path: '/' },
+              { name: 'News', path: '/news' },
+              { name: label, path: `/news/kategorie/${category}` },
+            ]}
+          />
+          <h1 className="text-2xl font-extrabold text-white">{label}</h1>
+          <p className="mt-1 text-zinc-400">{result.totalDocs} Beiträge</p>
 
-      {/* Kategorie-Navigation */}
-      <div className="mt-4 flex flex-wrap gap-2">
-        {Object.entries(ARTICLE_CATEGORY_LABELS).map(([key, lbl]) => (
-          <Link
-            key={key}
-            href={`/news/kategorie/${key}`}
-            className={`rounded-full px-3 py-1 text-sm ring-1 ring-white/10 transition ${
-              key === category ? 'bg-accent/20 text-accent' : 'bg-white/5 text-zinc-300 hover:text-accent'
-            }`}
-          >
-            {lbl}
-          </Link>
-        ))}
-      </div>
-
-      {result.docs.length === 0 ? (
+          {result.docs.length === 0 ? (
         <div className="mt-8 rounded-xl border border-white/10 bg-zinc-900/50 p-8 text-center text-zinc-400">
           Noch keine Artikel in dieser Kategorie.
         </div>
@@ -109,7 +97,11 @@ export default async function NewsCategoryPage({
         </div>
       )}
 
-      <Pagination basePath={`/news/kategorie/${category}`} page={page} totalPages={result.totalPages} />
+          <Pagination basePath={`/news/kategorie/${category}`} page={page} totalPages={result.totalPages} />
+        </div>
+
+        <NewsListSidebar activeCategory={category} />
+      </div>
     </main>
   )
 }
