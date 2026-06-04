@@ -18,15 +18,13 @@ export const metadata = pageMeta({
 export default async function PlatformListPage() {
   const payload = await getPayload({ config })
 
-  // Live-Trefferzahl pro Anbieter (parallel, depth:0).
+  // Live-Trefferzahl pro Anbieter (parallel, reiner Count statt Doc-Fetch).
   const counts = await Promise.all(
     STREAMING_PROVIDERS.map((p) =>
       payload
-        .find({
+        .count({
           collection: 'anime',
           where: { streamingProviders: { in: [p.slug] } },
-          limit: 0,
-          depth: 0,
         })
         .then((r) => ({ provider: p, total: r.totalDocs })),
     ),
