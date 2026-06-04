@@ -1,6 +1,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
@@ -24,11 +25,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const provider = providerBySlug(slug)
   if (!provider) return {}
   return pageMeta({
-    title: `Anime auf ${provider.name} streamen — komplette Liste | OtakuPulse`,
+    title: `Anime auf ${provider.name} streamen — komplette Liste & Tipps | OtakuPulse`,
     description:
       provider.blurb ||
-      `Alle Anime, die du auf ${provider.name} streamen kannst — durchsuchbar und nach Beliebtheit sortiert.`,
+      `Alle Anime, die du auf ${provider.name} streamen kannst — durchsuchbar, nach Beliebtheit sortiert, mit Infos zu Dub und Genres.`,
     path: `/plattform/${provider.slug}`,
+    image: provider.logo,
   })
 }
 
@@ -46,6 +48,7 @@ export default async function PlatformDetail({
 
   const sortKey = sp.sort && SORTS[sp.sort] ? sp.sort : 'popularity'
   const page = Math.max(1, Number(sp.page) || 1)
+  const isFirst = page === 1
 
   const payload = await getPayload({ config })
   const result = await payload.find({
@@ -57,14 +60,51 @@ export default async function PlatformDetail({
     depth: 0,
   })
 
+  // Dynamische Inhalte nur auf Seite 1: Dub-Quote + Top-Genres dieses Anbieters.
+  let deDub = 0
+  let topGenres: { name: string; slug: string; n: number }[] = []
+  if (isFirst) {
+    const pool = (payload.db as any).pool
+    const [dub, genres] = await Promise.all([
+      pool.query(
+        `SELECT count(DISTINCT al.parent_id)::int AS n
+         FROM anime_available_languages al
+         JOIN anime_streaming_providers sp ON sp.parent_id = al.parent_id
+         WHERE sp.value = $1 AND al.value = 'de-dub'`,
+        [provider.slug],
+      ),
+      pool.query(
+        `SELECT g.name, g.slug, count(DISTINCT ar.parent_id)::int AS n
+         FROM anime_streaming_providers sp
+         JOIN anime_rels ar ON ar.parent_id = sp.parent_id AND ar.genres_id IS NOT NULL
+         JOIN genres g ON g.id = ar.genres_id
+         WHERE sp.value = $1
+         GROUP BY g.id, g.name, g.slug
+         ORDER BY n DESC LIMIT 8`,
+        [provider.slug],
+      ),
+    ])
+    deDub = dub.rows[0]?.n ?? 0
+    topGenres = genres.rows
+  }
+
+  const total = result.totalDocs
+  const totalStr = total.toLocaleString('de-DE')
+
   const faq = [
     {
       q: `Welche Anime kann ich auf ${provider.name} streamen?`,
-      a: `In unserer Datenbank sind ${result.totalDocs.toLocaleString('de-DE')} Anime gelistet, die auf ${provider.name} verfügbar sind — von aktuellen Simulcasts bis zu Klassikern. Das Angebot kann sich je nach Region unterscheiden.`,
+      a: `In unserer Datenbank sind aktuell ${totalStr} Anime gelistet, die auf ${provider.name} verfügbar sind — von laufenden Simulcasts bis zu Klassikern.${topGenres.length ? ` Besonders stark vertreten sind die Genres ${topGenres.slice(0, 4).map((g) => g.name).join(', ')}.` : ''} Das Angebot kann sich je nach Region und Lizenzlaufzeit unterscheiden.`,
     },
     {
       q: `Gibt es die Anime auf ${provider.name} mit deutschem Dub?`,
-      a: `Ob ein Titel deutschen Dub oder Sub hat, hängt vom jeweiligen Anime ab. Auf der Detailseite jedes Anime findest du die verfügbaren Streaming-Anbieter — die genaue Sprachfassung prüfst du am besten direkt bei ${provider.name}.`,
+      a: deDub > 0
+        ? `Bei mindestens ${deDub.toLocaleString('de-DE')} dieser Titel ist eine deutsche Synchronfassung bekannt. Ob ein konkreter Titel deutschen Dub oder nur Untertitel bietet, steht auf der jeweiligen Anime-Detailseite — die genaue Sprachfassung prüfst du am besten direkt bei ${provider.name}.`
+        : `Ob ein Titel deutschen Dub oder Sub hat, hängt vom jeweiligen Anime ab. Auf der Detailseite jedes Anime findest du die verfügbaren Sprachfassungen — die genaue Fassung prüfst du am besten direkt bei ${provider.name}.`,
+    },
+    {
+      q: `Ist diese Liste vollständig?`,
+      a: `Wir halten die Anbieter-Zuordnung laufend aktuell, können aber keine 100%ige Vollständigkeit garantieren: Streaming-Kataloge ändern sich ständig und unterscheiden sich je nach Land. Maßgeblich ist immer das aktuelle Angebot bei ${provider.name} selbst.`,
     },
   ]
 
@@ -88,11 +128,48 @@ export default async function PlatformDetail({
       <p className="text-sm font-semibold uppercase tracking-widest" style={{ color: provider.color || undefined }}>
         Streaming-Anbieter
       </p>
-      <h1 className="mt-1 text-3xl font-extrabold text-white">Anime auf {provider.name}</h1>
-      <p className="mt-2 max-w-2xl text-zinc-400">
-        {provider.blurb ? `${provider.blurb} ` : ''}
-        {result.totalDocs.toLocaleString('de-DE')} Titel in unserer Datenbank.
+      <div className="mt-1 flex items-center gap-4">
+        {provider.logo ? (
+          <span className="flex h-14 shrink-0 items-center justify-center rounded-lg bg-white/90 px-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={provider.logo} alt={provider.name} className="max-h-10 max-w-[160px] object-contain" />
+          </span>
+        ) : (
+          <span
+            className="h-10 w-2 rounded-full"
+            style={{ backgroundColor: provider.color || '#888' }}
+            aria-hidden
+          />
+        )}
+        <h1 className="text-3xl font-extrabold text-white">Anime auf {provider.name}</h1>
+      </div>
+
+      <p className="mt-3 max-w-3xl leading-relaxed text-zinc-300">
+        {provider.blurb ? `${provider.blurb} ` : ''}Hier findest du alle {totalStr} Titel aus unserer Datenbank, die bei{' '}
+        {provider.name} verfügbar sind — sortier- und durchsuchbar. Tipp: Über die{' '}
+        <Link href="/suche" className="text-accent hover:underline">
+          Suche
+        </Link>{' '}
+        lässt sich zusätzlich nach Genre, Jahr und Sprachfassung filtern.
       </p>
+
+      {/* Statistik-Leiste */}
+      {isFirst ? (
+        <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
+            <dt className="text-xs text-zinc-500">Titel verfügbar</dt>
+            <dd className="text-lg font-bold text-white">{totalStr}</dd>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
+            <dt className="text-xs text-zinc-500">davon mit dt. Dub</dt>
+            <dd className="text-lg font-bold text-white">{deDub > 0 ? deDub.toLocaleString('de-DE') : '–'}</dd>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
+            <dt className="text-xs text-zinc-500">Top-Genre</dt>
+            <dd className="truncate text-lg font-bold text-white">{topGenres[0]?.name ?? '–'}</dd>
+          </div>
+        </dl>
+      ) : null}
 
       {/* Sortierung */}
       <div className="mt-6 flex flex-wrap gap-2 text-sm">
@@ -125,7 +202,55 @@ export default async function PlatformDetail({
 
       <Pagination basePath={`/plattform/${provider.slug}`} page={page} totalPages={result.totalPages} query={{ sort: sortKey }} />
 
-      <Faq items={faq} />
+      {isFirst ? (
+        <>
+          {/* Top-Genres auf dem Anbieter (dynamisch) */}
+          {topGenres.length > 0 ? (
+            <section className="mt-12">
+              <h2 className="text-xl font-bold text-white">Beliebte Genres auf {provider.name}</h2>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {topGenres.map((g) => (
+                  <Link
+                    key={g.slug}
+                    href={`/genre/${g.slug}`}
+                    className="rounded-full border border-white/10 bg-zinc-900/40 px-3 py-1.5 text-sm text-zinc-300 transition hover:border-accent/40 hover:text-white"
+                  >
+                    {g.name} <span className="text-zinc-500">{g.n}</span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Über den Anbieter */}
+          {provider.about ? (
+            <section className="mt-12 border-t border-white/10 pt-8">
+              <h2 className="text-xl font-bold text-white">Über {provider.name}</h2>
+              <p className="mt-3 max-w-3xl leading-relaxed text-zinc-300">{provider.about}</p>
+              {provider.homepage ? (
+                <a
+                  href={provider.homepage}
+                  target="_blank"
+                  rel="nofollow noopener noreferrer"
+                  className="mt-3 inline-block text-sm text-accent hover:underline"
+                >
+                  Zur offiziellen Website von {provider.name} →
+                </a>
+              ) : null}
+            </section>
+          ) : null}
+
+          {/* Aktualitäts-Hinweis */}
+          <section className="mt-10 rounded-xl border border-white/10 bg-zinc-900/40 p-4 text-sm leading-relaxed text-zinc-400">
+            <strong className="text-zinc-300">Hinweis zur Aktualität:</strong> Diese Übersicht wird laufend
+            aktualisiert, kann aber keine 100%ige Vollständigkeit gewährleisten. Streaming-Kataloge ändern sich
+            ständig, Lizenzen laufen aus und das Angebot unterscheidet sich je nach Land. Ob ein Titel aktuell bei{' '}
+            {provider.name} läuft — und in welcher Sprachfassung — prüfst du am besten direkt beim Anbieter.
+          </section>
+
+          <Faq items={faq} />
+        </>
+      ) : null}
     </main>
   )
 }

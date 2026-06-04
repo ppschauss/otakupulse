@@ -49,10 +49,17 @@ export default async function PlatformListPage() {
             className="group rounded-xl border border-white/10 bg-zinc-900/40 p-4 text-center transition hover:border-accent/40 hover:bg-zinc-900/80"
             style={provider.color ? { borderColor: `${provider.color}33` } : undefined}
           >
-            <span
-              className="block h-1.5 w-8 rounded-full"
-              style={{ backgroundColor: provider.color || '#888', margin: '0 auto 0.6rem' }}
-            />
+            {provider.logo ? (
+              <span className="mx-auto mb-2 flex h-9 items-center justify-center rounded-md bg-white/90 px-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={provider.logo} alt={provider.name} className="max-h-6 max-w-[120px] object-contain" />
+              </span>
+            ) : (
+              <span
+                className="block h-1.5 w-8 rounded-full"
+                style={{ backgroundColor: provider.color || '#888', margin: '0 auto 0.6rem' }}
+              />
+            )}
             <span className="block text-sm font-medium text-zinc-100 group-hover:text-white">{provider.name}</span>
             <span className="mt-1 block text-xs text-zinc-500">{total.toLocaleString('de-DE')} Titel</span>
           </Link>
