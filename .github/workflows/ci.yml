@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  typecheck:
+  build:
+    name: Typecheck & Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -26,3 +27,6 @@ jobs:
 
       - name: TypeScript typecheck
         run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test

@@ -1,0 +1,76 @@
+import { describe, it, expect } from 'vitest'
+import {
+  displayTitle,
+  displayName,
+  genderLabel,
+  languageLabel,
+  formatLabel,
+  statusLabel,
+  seasonLabel,
+  personRoleLabel,
+  relationLabel,
+  plainText,
+} from './anime'
+
+describe('displayTitle', () => {
+  it('bevorzugt den deutschen Titel', () => {
+    expect(displayTitle({ titleGerman: 'DE', titleEnglish: 'EN', titleRomaji: 'RO' })).toBe('DE')
+  })
+  it('fällt auf Englisch, dann Romaji zurück', () => {
+    expect(displayTitle({ titleEnglish: 'EN', titleRomaji: 'RO' })).toBe('EN')
+    expect(displayTitle({ titleRomaji: 'RO' })).toBe('RO')
+  })
+  it('liefert "Unbekannt" ohne Titel und bei null/undefined', () => {
+    expect(displayTitle({})).toBe('Unbekannt')
+    expect(displayTitle(null)).toBe('Unbekannt')
+    expect(displayTitle(undefined)).toBe('Unbekannt')
+  })
+})
+
+describe('displayName', () => {
+  it('bevorzugt Romaji, dann EN, dann Native', () => {
+    expect(displayName({ nameRomaji: 'R', nameEnglish: 'E', nameNative: 'N' })).toBe('R')
+    expect(displayName({ nameEnglish: 'E', nameNative: 'N' })).toBe('E')
+    expect(displayName({ nameNative: 'N' })).toBe('N')
+  })
+  it('liefert "Unbekannt" ohne Namen', () => {
+    expect(displayName({})).toBe('Unbekannt')
+    expect(displayName(null)).toBe('Unbekannt')
+  })
+})
+
+describe('Label-Helfer', () => {
+  it('genderLabel mappt bekannte Werte und gibt Unbekanntes durch', () => {
+    expect(genderLabel('female')).toBe('weiblich')
+    expect(genderLabel('male')).toBe('männlich')
+    expect(genderLabel('xyz')).toBe('xyz')
+    expect(genderLabel(null)).toBe('')
+    expect(genderLabel(undefined)).toBe('')
+  })
+  it('languageLabel mappt Dub/Sub-Codes', () => {
+    expect(languageLabel('de-dub')).toBe('Deutscher Dub')
+    expect(languageLabel('ja')).toBe('Japanisch (OmU)')
+    expect(languageLabel('')).toBe('')
+  })
+  it('formatLabel / statusLabel / seasonLabel', () => {
+    expect(formatLabel('MOVIE')).toBe('Film')
+    expect(statusLabel('RELEASING')).toBe('Läuft aktuell')
+    expect(seasonLabel('FALL')).toBe('Herbst')
+  })
+  it('personRoleLabel / relationLabel', () => {
+    expect(personRoleLabel('voice_actor')).toBe('Synchronsprecher')
+    expect(relationLabel('SEQUEL')).toBe('Fortsetzung')
+  })
+})
+
+describe('plainText', () => {
+  it('strippt HTML-Tags und normalisiert Whitespace', () => {
+    expect(plainText('<p>Hallo <b>Welt</b></p>')).toBe('Hallo Welt')
+    expect(plainText('Zeile1\n\n  Zeile2')).toBe('Zeile1 Zeile2')
+  })
+  it('liefert leeren String bei null/undefined', () => {
+    expect(plainText(null)).toBe('')
+    expect(plainText(undefined)).toBe('')
+    expect(plainText('')).toBe('')
+  })
+})
