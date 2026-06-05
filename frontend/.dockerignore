@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+secrets.env
+.env
+.env.local
+*.md
+.DS_Store
+coverage
+.vitest
+__pycache__
+*.pyc

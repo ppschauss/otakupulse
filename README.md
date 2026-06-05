@@ -84,9 +84,40 @@ Brauchen TLS-Impersonation (Cloudflare) bzw. eine **DE-IP**. Wöchentlich genüg
 
 ## Produktion
 
-`next dev` ist langsam. Für den Launch auf `npm run build` + `npm run start` umstellen
-(Container-Command anpassen). ISR ist auf Startseite/Kalender aktiv. Siehe
-[`docs/BETRIEB.md`](docs/BETRIEB.md).
+`next dev` ist langsam (Compile-on-demand: Startseite ~6 s). Produktiv liefert
+`next build` + `next start` Seiten in **Millisekunden**. ISR ist auf Startseite/
+Kalender aktiv. Siehe [`docs/BETRIEB.md`](docs/BETRIEB.md).
+
+### Variante A — Docker Compose (empfohlen, reproduzierbar)
+
+Voller Stack (App + PostgreSQL) als Code, `NODE_ENV=production`, Build beim Start:
+
+```bash
+# 1. Secrets anlegen (einmalig)
+cp frontend/secrets.env.example frontend/secrets.env   # Werte eintragen
+
+# 2. Unraid-verwaltete Container stoppen (sonst Port-/DB-Konflikt!)
+docker stop otakupulse-app otakupulse-db
+#    in Unraid zusätzlich Autostart der beiden deaktivieren
+
+# 3. Stack starten (baut beim ersten Start ~1–2 Min)
+docker compose up -d --build
+docker compose logs -f app          # Build-/Start-Fortschritt
+```
+
+- Datenverzeichnis bleibt `/mnt/cache/appdata/otakupulse/db` (gleiche DB).
+- Port wie gehabt: `3001` → intern `3000`.
+- `NEXT_PUBLIC_*` (Analytics, Site-URL) müssen in `secrets.env` stehen — sie werden
+  beim Start-Build in den Client-Bundle eingebacken.
+- **Hinweis Payload-Schema:** in Produktion kein Auto-Push mehr. Neue Felder/Globals
+  vorher einmal im Dev-Modus pushen (oder Migration anlegen).
+
+### Variante B — Unraid-Template beibehalten
+
+Nur zwei Felder im Template von `otakupulse-app` ändern:
+
+- Variable `NODE_ENV`: `development` → **`production`**
+- Command: `… npm run dev` → `… npm run build && npm run start`
 
 ## Sicherheit
 

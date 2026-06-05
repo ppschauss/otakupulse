@@ -1,0 +1,43 @@
+# Reproduzierbarer Production-Stack für OtakuPulse (App + PostgreSQL).
+# Ablösung des Unraid-Template-Setups: stoppt vorher die Unraid-verwalteten
+# Container `otakupulse-app`/`otakupulse-db` (siehe README), dann:
+#   docker compose up -d --build
+#
+# Secrets werden aus frontend/secrets.env gelesen (NIE committen).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: otakupulse-db
+    restart: unless-stopped
+    env_file: ./frontend/secrets.env
+    volumes:
+      - /mnt/cache/appdata/otakupulse/db:/var/lib/postgresql/data
+    networks:
+      - otakupulse-net
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ./frontend
+    container_name: otakupulse-app
+    restart: unless-stopped
+    # Secrets + optionale NEXT_PUBLIC_*-Variablen (werden beim Start-Build in den
+    # Client-Bundle eingebacken). Siehe secrets.env.example.
+    env_file: ./frontend/secrets.env
+    environment:
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '3001:3000'
+    networks:
+      - otakupulse-net
+
+networks:
+  otakupulse-net:
+    name: otakupulse-net
