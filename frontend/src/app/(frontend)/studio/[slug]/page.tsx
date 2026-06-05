@@ -2,6 +2,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
@@ -111,8 +112,14 @@ export default async function StudioDetail({
       <div className="mt-1 flex items-center gap-4">
         {studio.logoUrl ? (
           <span className="flex h-14 shrink-0 items-center justify-center rounded-lg bg-white/90 px-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={studio.logoUrl} alt={studio.name} className="max-h-10 max-w-[160px] object-contain" />
+            <Image
+              src={studio.logoUrl}
+              alt={studio.name}
+              width={160}
+              height={40}
+              priority
+              className="max-h-10 max-w-[160px] object-contain"
+            />
           </span>
         ) : null}
         <h1 className="text-3xl font-extrabold text-white">{studio.name}</h1>

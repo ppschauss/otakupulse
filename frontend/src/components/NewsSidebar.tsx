@@ -1,6 +1,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import Image from 'next/image'
 
 function fmtDate(d?: string | null) {
   if (!d) return ''
@@ -42,8 +43,7 @@ export async function NewsSidebar() {
             <li key={a.id}>
               <Link href={`/news/${a.slug}`} className="group flex gap-3">
                 {a.coverImageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={a.coverImageUrl} alt="" className="h-12 w-12 shrink-0 rounded object-cover" loading="lazy" />
+                  <Image src={a.coverImageUrl} alt="" width={48} height={48} className="h-12 w-12 shrink-0 rounded object-cover" />
                 ) : (
                   <div className="h-12 w-12 shrink-0 rounded bg-gradient-to-br from-accent/20 to-accent-2/20" />
                 )}

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { displayTitle, formatLabel, animeCover } from '@/lib/anime'
 
 // Nummerierte Ranking-Liste (für Top-Anime-Seiten).
@@ -12,8 +13,7 @@ export function RankedList({ items, startRank = 1 }: { items: any[]; startRank?:
               {startRank + i}
             </span>
             {animeCover(a) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={animeCover(a)!} alt="" className="h-16 w-12 shrink-0 rounded object-cover" loading="lazy" />
+              <Image src={animeCover(a)!} alt="" width={48} height={64} className="h-16 w-12 shrink-0 rounded object-cover" />
             ) : (
               <div className="h-16 w-12 shrink-0 rounded bg-zinc-800" />
             )}

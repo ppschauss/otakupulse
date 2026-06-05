@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 
 export type HeroSlide = { imageUrl?: string | null; title: string; href: string }
 
@@ -35,8 +36,14 @@ export function HeroSlider({
           aria-hidden={idx !== i}
         >
           {s.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={s.imageUrl} alt="" className="h-full w-full object-cover" />
+            <Image
+              src={s.imageUrl}
+              alt=""
+              fill
+              priority={idx === 0}
+              sizes="100vw"
+              className="object-cover"
+            />
           ) : (
             <div className="h-full w-full bg-gradient-to-br from-accent/30 to-accent-2/30" />
           )}

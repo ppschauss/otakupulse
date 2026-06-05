@@ -1,6 +1,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import Image from 'next/image'
 import { displayTitle, animeCover } from '@/lib/anime'
 
 const WEEKDAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag']
@@ -31,8 +32,7 @@ function EpisodeRow({ ep }: { ep: any }) {
       className="flex items-center gap-3 rounded-lg border border-white/10 bg-zinc-900/40 p-2.5 transition hover:border-accent/40"
     >
       {animeCover(anime) ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={animeCover(anime)!} alt="" className="h-14 w-10 shrink-0 rounded object-cover" loading="lazy" />
+        <Image src={animeCover(anime)!} alt="" width={40} height={56} className="h-14 w-10 shrink-0 rounded object-cover" />
       ) : (
         <div className="h-14 w-10 shrink-0 rounded bg-zinc-800" />
       )}

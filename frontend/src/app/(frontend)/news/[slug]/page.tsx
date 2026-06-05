@@ -2,6 +2,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { RichText } from '@/components/RichText'
 import { AnimeCard } from '@/components/AnimeCard'
@@ -85,8 +86,16 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
       ) : null}
 
       {article.coverImageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={article.coverImageUrl} alt={article.title} className="mt-6 w-full rounded-xl ring-1 ring-white/10" />
+        <div className="relative mt-6 aspect-video w-full overflow-hidden rounded-xl ring-1 ring-white/10">
+          <Image
+            src={article.coverImageUrl}
+            alt={article.title}
+            fill
+            priority
+            sizes="(max-width: 768px) 100vw, 768px"
+            className="object-cover"
+          />
+        </div>
       ) : null}
 
       <article className="mt-8">
@@ -115,8 +124,14 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
                 className="group flex gap-3 rounded-xl border border-white/10 bg-zinc-900/40 p-3 transition hover:border-accent/40"
               >
                 {a.coverImageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={a.coverImageUrl} alt="" className="h-16 w-24 shrink-0 rounded object-cover" loading="lazy" />
+                  <Image
+                    src={a.coverImageUrl}
+                    alt=""
+                    width={96}
+                    height={64}
+                    sizes="96px"
+                    className="h-16 w-24 shrink-0 rounded object-cover"
+                  />
                 ) : (
                   <div className="h-16 w-24 shrink-0 rounded bg-gradient-to-br from-accent/20 to-accent-2/20" />
                 )}

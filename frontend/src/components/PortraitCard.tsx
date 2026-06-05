@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 // Hochkant-Karte für Charaktere & Personen (Portrait + Name + Untertitel).
 export function PortraitCard({
@@ -16,12 +17,12 @@ export function PortraitCard({
     <Link href={href} className="group block">
       <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-zinc-900 ring-1 ring-white/10">
         {imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={imageUrl}
             alt={title}
-            loading="lazy"
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+            fill
+            sizes="(max-width: 640px) 40vw, (max-width: 1024px) 22vw, 16vw"
+            className="object-cover transition duration-300 group-hover:scale-105"
           />
         ) : (
           <div className="grid h-full w-full place-items-center text-xs text-zinc-600">kein Bild</div>

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { displayTitle, formatLabel, statusLabel, animeCover } from '@/lib/anime'
 
 export function AnimeCard({ anime }: { anime: any }) {
@@ -10,12 +11,12 @@ export function AnimeCard({ anime }: { anime: any }) {
     <Link href={`/anime/${anime.slug}`} className="group block">
       <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-zinc-900 ring-1 ring-white/10 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-xl group-hover:shadow-accent/20 group-hover:ring-accent/60">
         {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={cover}
             alt={title}
-            loading="lazy"
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-110"
+            fill
+            sizes="(max-width: 640px) 33vw, (max-width: 1024px) 22vw, 15vw"
+            className="object-cover transition duration-500 group-hover:scale-110"
           />
         ) : (
           <div className="grid h-full w-full place-items-center text-xs text-zinc-600">kein Bild</div>

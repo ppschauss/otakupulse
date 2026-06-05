@@ -1,6 +1,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
@@ -71,8 +72,7 @@ export default async function StudioListPage({ searchParams }: { searchParams: P
   const LogoZone = ({ logo, name }: { logo: string | null; name: string }) => (
     <span className="flex h-14 w-full items-center justify-center rounded-lg bg-white/90 px-3">
       {logo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={logo} alt={name} className="max-h-9 max-w-full object-contain" loading="lazy" />
+        <Image src={logo} alt={name} width={120} height={36} className="max-h-9 w-auto max-w-full object-contain" />
       ) : (
         <span className="text-sm font-semibold text-zinc-800">{name}</span>
       )}
@@ -110,14 +110,24 @@ export default async function StudioListPage({ searchParams }: { searchParams: P
                   className="group relative h-28 overflow-hidden rounded-xl border border-white/10 bg-zinc-900/60"
                 >
                   {cover ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30 transition group-hover:opacity-40" loading="lazy" />
+                    <Image
+                      src={cover}
+                      alt=""
+                      fill
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                      className="object-cover opacity-30 transition group-hover:opacity-40"
+                    />
                   ) : null}
                   <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-transparent" />
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-3 text-center">
                     {s.logo ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={s.logo} alt={s.name} className="max-h-8 max-w-[70%] object-contain drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)] [filter:brightness(0)_invert(1)]" loading="lazy" />
+                      <Image
+                        src={s.logo}
+                        alt={s.name}
+                        width={100}
+                        height={32}
+                        className="max-h-8 w-auto max-w-[70%] object-contain drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)] [filter:brightness(0)_invert(1)]"
+                      />
                     ) : (
                       <span className="text-sm font-bold text-white drop-shadow">{s.name}</span>
                     )}

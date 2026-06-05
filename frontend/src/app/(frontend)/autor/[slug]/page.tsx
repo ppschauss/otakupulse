@@ -2,6 +2,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { articleCategoryLabel } from '@/lib/anime'
 
@@ -47,8 +48,13 @@ export default async function AuthorDetail({ params }: { params: Promise<{ slug:
     <main className="mx-auto max-w-3xl px-4 py-10">
       <div className="flex items-center gap-4">
         {author.avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={author.avatarUrl} alt={author.name} className="h-20 w-20 rounded-full object-cover ring-1 ring-white/10" />
+          <Image
+            src={author.avatarUrl}
+            alt={author.name}
+            width={80}
+            height={80}
+            className="h-20 w-20 rounded-full object-cover ring-1 ring-white/10"
+          />
         ) : null}
         <div>
           <p className="text-sm font-semibold uppercase tracking-widest text-accent">Autor</p>

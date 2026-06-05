@@ -2,6 +2,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { pageMeta } from '@/lib/seo'
@@ -69,8 +70,15 @@ export default async function ComparePage({ params }: { params: Promise<{ slug: 
     <div className="text-center">
       <Link href={`/anime/${anime.slug}`} className="group inline-block">
         {anime.coverImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={anime.coverImageUrl} alt={title} className="mx-auto w-28 rounded-lg ring-1 ring-white/10 transition group-hover:ring-accent/60 sm:w-36" />
+          <span className="relative mx-auto block aspect-[2/3] w-28 overflow-hidden rounded-lg ring-1 ring-white/10 transition group-hover:ring-accent/60 sm:w-36">
+            <Image
+              src={anime.coverImageUrl}
+              alt={title}
+              fill
+              sizes="(max-width: 640px) 112px, 144px"
+              className="object-cover"
+            />
+          </span>
         ) : null}
         <p className="mt-2 line-clamp-2 font-bold text-white group-hover:text-accent">{title}</p>
       </Link>

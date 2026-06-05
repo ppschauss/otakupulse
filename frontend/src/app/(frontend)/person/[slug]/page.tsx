@@ -2,6 +2,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { MediaRow } from '@/components/MediaRow'
 import { PortraitCard } from '@/components/PortraitCard'
@@ -94,10 +95,16 @@ export default async function PersonDetail({ params }: { params: Promise<{ slug:
         ]}
       />
       <div className="flex flex-col gap-6 sm:flex-row">
-        <div className="w-40 shrink-0">
+        <div className="relative aspect-[3/4] w-40 shrink-0">
           {localImage(person) ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={localImage(person)!} alt={name} className="w-full rounded-xl ring-1 ring-white/10" />
+            <Image
+              src={localImage(person)!}
+              alt={name}
+              fill
+              priority
+              sizes="160px"
+              className="rounded-xl object-cover ring-1 ring-white/10"
+            />
           ) : null}
         </div>
         <div className="flex-1">

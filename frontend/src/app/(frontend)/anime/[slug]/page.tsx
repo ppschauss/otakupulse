@@ -2,6 +2,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { PortraitCard } from '@/components/PortraitCard'
@@ -121,8 +122,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
       {/* Banner */}
       <div className="relative h-48 w-full overflow-hidden sm:h-72">
         {animeBanner(anime) ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={animeBanner(anime)!} alt="" className="h-full w-full object-cover" />
+          <Image src={animeBanner(anime)!} alt="" fill priority sizes="100vw" className="object-cover" />
         ) : (
           <div className="h-full w-full bg-gradient-to-br from-accent/30 to-accent-2/30" />
         )}
@@ -132,10 +132,15 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
       <div className="mx-auto max-w-5xl px-4">
         <div className="-mt-20 flex flex-col gap-6 sm:flex-row sm:items-end">
           {/* Cover */}
-          <div className="w-36 shrink-0 sm:w-48">
+          <div className="relative aspect-[2/3] w-36 shrink-0 sm:w-48">
             {animeCover(anime) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={animeCover(anime)!} alt={title} className="w-full rounded-xl shadow-xl ring-1 ring-white/10" />
+              <Image
+                src={animeCover(anime)!}
+                alt={title}
+                fill
+                sizes="(max-width: 768px) 144px, 192px"
+                className="rounded-xl object-cover shadow-xl ring-1 ring-white/10"
+              />
             ) : null}
           </div>
 

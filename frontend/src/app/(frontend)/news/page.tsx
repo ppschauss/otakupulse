@@ -1,6 +1,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { Pagination } from '@/components/Pagination'
 import { NewsListSidebar } from '@/components/NewsListSidebar'
@@ -106,8 +107,15 @@ export default async function NewsListPage({
                   className="group overflow-hidden rounded-xl border border-white/10 bg-zinc-900/40 transition hover:border-accent/40"
                 >
                   {a.coverImageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={a.coverImageUrl} alt={a.title} className="h-44 w-full object-cover" loading="lazy" />
+                    <div className="relative h-44 w-full">
+                      <Image
+                        src={a.coverImageUrl}
+                        alt={a.title}
+                        fill
+                        sizes="(max-width: 640px) 100vw, 50vw"
+                        className="object-cover"
+                      />
+                    </div>
                   ) : (
                     <div className="h-44 w-full bg-gradient-to-br from-accent/20 to-accent-2/20" />
                   )}

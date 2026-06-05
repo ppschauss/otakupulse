@@ -1,6 +1,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { JsonLd } from '@/components/JsonLd'
 import { breadcrumbLd } from '@/lib/seo'
@@ -57,8 +58,7 @@ export default async function PlatformListPage() {
           >
             {provider.logo ? (
               <span className="mx-auto mb-2 flex h-9 items-center justify-center rounded-md bg-white/90 px-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={provider.logo} alt={provider.name} className="max-h-6 max-w-[120px] object-contain" />
+                <Image src={provider.logo} alt={provider.name} width={120} height={24} className="max-h-6 w-auto max-w-[120px] object-contain" />
               </span>
             ) : (
               <span

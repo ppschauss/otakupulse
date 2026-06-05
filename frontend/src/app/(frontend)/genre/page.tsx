@@ -1,6 +1,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 import { Chip } from '@/components/Chip'
 import { pageMetaFor } from '@/lib/pageContent'
@@ -71,11 +72,12 @@ export default async function GenreListPage({ searchParams }: { searchParams: Pr
                     className="group relative overflow-hidden rounded-xl border border-white/10 bg-zinc-900/60 p-4 transition hover:border-accent/40"
                   >
                     {g.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={g.imageUrl}
                         alt=""
-                        className="absolute inset-0 h-full w-full object-cover opacity-20 transition group-hover:opacity-30"
+                        fill
+                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
+                        className="object-cover opacity-20 transition group-hover:opacity-30"
                       />
                     ) : (
                       <span className="absolute inset-0 bg-gradient-to-br from-accent/20 to-accent-2/20" aria-hidden />
