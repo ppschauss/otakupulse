@@ -12,6 +12,8 @@ import { SeoFooter } from '@/components/SeoFooter'
 import { pageMeta } from '@/lib/seo'
 import { hubExtras } from '@/lib/hub'
 import { TAG_CATEGORY_LABELS } from '@/lib/anime'
+import { tagVars } from '@/lib/entityVars'
+import { applyVarsMeta } from '@/lib/vars'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
@@ -27,8 +29,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const t = await getTag(slug)
   if (!t) return {}
   const meta = pageMeta({
-    title: t.seoTitle || `${t.name}-Anime — Liste & Empfehlungen | OtakuPulse`,
-    description: t.seoDescription || (t.descriptionDe ? t.descriptionDe.slice(0, 160) : `Anime mit dem Tag „${t.name}" — sortiert nach Beliebtheit.`),
+    title: applyVarsMeta(t.seoTitle, tagVars(t)) || `${t.name}-Anime — Liste & Empfehlungen | OtakuPulse`,
+    description:
+      applyVarsMeta(t.seoDescription, tagVars(t)) ||
+      (t.descriptionDe ? t.descriptionDe.slice(0, 160) : `Anime mit dem Tag „${t.name}" — sortiert nach Beliebtheit.`),
     path: `/tag/${slug}`,
     noindex: t.noindex || undefined,
     canonical: t.canonicalUrl || undefined,
@@ -173,7 +177,7 @@ export default async function TagDetail({
         </>
       ) : null}
 
-      <SeoFooter data={tag.footerText} vars={{ name: tag.name }} maxW="max-w-6xl" />
+      <SeoFooter data={tag.footerText} vars={{ ...tagVars(tag), count: result.totalDocs }} maxW="max-w-6xl" />
     </main>
   )
 }

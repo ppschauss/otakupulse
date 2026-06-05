@@ -6,7 +6,7 @@ export type Vars = Record<string, string | number | null | undefined>
 
 // Liste der verfügbaren Variablen (für Admin-Beschreibungen).
 export const VARS_HELP =
-  'Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.'
+  'Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.'
 
 // Immer verfügbare Basis-Variablen. (year als String, damit es nicht mit
 // Tausendertrennzeichen formatiert wird.)
@@ -23,6 +23,15 @@ export function applyVars(input: string | null | undefined, vars: Vars): string 
     if (v === null || v === undefined) return m
     return typeof v === 'number' ? v.toLocaleString('de-DE') : String(v)
   })
+}
+
+// Für Meta-Tags: ersetzt Variablen und entfernt unaufgelöste {{platzhalter}},
+// damit keine rohen Klammern in Title/Description leaken.
+export function applyVarsMeta(input: string | null | undefined, vars: Vars): string {
+  return applyVars(input, vars)
+    .replace(/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 }
 
 // Tiefes Ersetzen in Payload-Lexical-Daten (nur Text-Knoten), unveränderlich.

@@ -12,13 +12,15 @@ import { SeoFooter } from '@/components/SeoFooter'
 import { pageMeta } from '@/lib/seo'
 import { genreBlurb } from '@/lib/genre-info'
 import { articleCategoryLabel } from '@/lib/anime'
+import { genreVars } from '@/lib/entityVars'
+import { applyVarsMeta } from '@/lib/vars'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
 
 async function getGenre(slug: string) {
   const payload = await getPayload({ config })
-  const { docs } = await payload.find({ collection: 'genres', where: { slug: { equals: slug } }, limit: 1, depth: 0 })
+  const { docs } = await payload.find({ collection: 'genres', where: { slug: { equals: slug } }, limit: 1, depth: 1 })
   return docs[0] as any
 }
 
@@ -26,10 +28,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const g = await getGenre(slug)
   if (!g) return {}
+  const vars = genreVars(g)
   const meta = pageMeta({
-    title: g.seoTitle || `Die besten ${g.name}-Anime — Liste & Ranking | OtakuPulse`,
+    title: applyVarsMeta(g.seoTitle, vars) || `Die besten ${g.name}-Anime — Liste & Ranking | OtakuPulse`,
     description:
-      g.seoDescription ||
+      applyVarsMeta(g.seoDescription, vars) ||
       (g.descriptionDe ? g.descriptionDe.slice(0, 160) : `Alle ${g.name}-Anime im Überblick: beliebteste Titel, Top-Studios, Tags und News. Sortiert und durchsuchbar.`),
     path: `/genre/${slug}`,
     image: g.imageUrl,
@@ -323,7 +326,7 @@ export default async function GenreDetail({
         </>
       ) : null}
 
-      <SeoFooter data={genre.footerText} vars={{ name: genre.name }} maxW="max-w-6xl" />
+      <SeoFooter data={genre.footerText} vars={{ ...genreVars(genre), count: result.totalDocs }} maxW="max-w-6xl" />
     </main>
   )
 }

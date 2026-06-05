@@ -5,7 +5,7 @@ import type { Metadata } from 'next'
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { pageMeta } from './seo'
-import { applyVars, type Vars } from './vars'
+import { applyVarsMeta, type Vars } from './vars'
 
 export type PageEntry = {
   key: string
@@ -42,12 +42,9 @@ export async function pageMetaFor(
   vars: Vars = {},
 ): Promise<Metadata> {
   const e = await getPageContent(key)
-  // In Meta-Tags dürfen keine rohen {{platzhalter}} leaken → unaufgelöste entfernen.
-  const clean = (s: string) =>
-    applyVars(s, vars).replace(/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g, '').replace(/\s{2,}/g, ' ').trim()
   return pageMeta({
-    title: e?.metaTitle ? clean(e.metaTitle) : fallback.title,
-    description: e?.metaDescription ? clean(e.metaDescription) : fallback.description,
+    title: e?.metaTitle ? applyVarsMeta(e.metaTitle, vars) : fallback.title,
+    description: e?.metaDescription ? applyVarsMeta(e.metaDescription, vars) : fallback.description,
     path: fallback.path,
     image: fallback.image,
     noindex: e?.noindex || undefined,

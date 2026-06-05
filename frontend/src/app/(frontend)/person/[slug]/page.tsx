@@ -12,6 +12,8 @@ import { JsonLd } from '@/components/JsonLd'
 import { ChipSection, NewsSection } from '@/components/HubSections'
 import { SeoFooter } from '@/components/SeoFooter'
 import { personLd, pageMeta } from '@/lib/seo'
+import { personVars } from '@/lib/entityVars'
+import { applyVarsMeta } from '@/lib/vars'
 import { hubExtras } from '@/lib/hub'
 import { displayName, displayTitle, genderLabel, personRoleLabel, localImage, plainText } from '@/lib/anime'
 
@@ -29,8 +31,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!p) return {}
   const name = displayName(p)
   return pageMeta({
-    title: p.seoTitle || `${name} — Profil, Rollen & Filmografie | OtakuPulse`,
-    description: p.seoDescription || plainText(p.bioDe || p.bioSource).slice(0, 160) || `${name}: Biografie, Rollen und Anime-Credits.`,
+    title: applyVarsMeta(p.seoTitle, personVars(p)) || `${name} — Profil, Rollen & Filmografie | OtakuPulse`,
+    description:
+      applyVarsMeta(p.seoDescription, personVars(p)) ||
+      plainText(p.bioDe || p.bioSource).slice(0, 160) ||
+      `${name}: Biografie, Rollen und Anime-Credits.`,
     path: `/person/${slug}`,
     image: localImage(p),
     noindex: p.noindex || undefined,
@@ -223,7 +228,7 @@ export default async function PersonDetail({ params }: { params: Promise<{ slug:
         </div>
       </section>
 
-      <SeoFooter data={person.footerText} vars={{ name }} maxW="max-w-5xl" />
+      <SeoFooter data={person.footerText} vars={personVars(person)} maxW="max-w-5xl" />
     </main>
   )
 }

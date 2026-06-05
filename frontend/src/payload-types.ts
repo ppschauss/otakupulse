@@ -306,7 +306,7 @@ export interface Anime {
    */
   isEditoriallyLocked?: boolean | null;
   /**
-   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   * Optionaler Textblock am Seitenende. Variablen — überall: {{siteName}}, {{year}}, {{url}}, {{name}}/{{title}}, {{slug}}. Anime zusätzlich: {{titleRomaji}}, {{titleEnglish}}, {{titleGerman}}, {{season}}, {{seasonYear}}, {{format}}, {{status}}, {{episodes}}, {{score}}, {{studio}}, {{studios}}, {{genres}}, {{platforms}}. Genre: {{parentSlug}}, {{parentName}}, {{count}}. Tag: {{category}}, {{count}}. Studio: {{count}}. Charakter: {{gender}}. Person: {{roles}}.
    */
   footerText?: {
     root: {
@@ -359,7 +359,7 @@ export interface Studio {
    */
   isEditoriallyLocked?: boolean | null;
   /**
-   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   * Optionaler Textblock am Seitenende. Variablen — überall: {{siteName}}, {{year}}, {{url}}, {{name}}/{{title}}, {{slug}}. Anime zusätzlich: {{titleRomaji}}, {{titleEnglish}}, {{titleGerman}}, {{season}}, {{seasonYear}}, {{format}}, {{status}}, {{episodes}}, {{score}}, {{studio}}, {{studios}}, {{genres}}, {{platforms}}. Genre: {{parentSlug}}, {{parentName}}, {{count}}. Tag: {{category}}, {{count}}. Studio: {{count}}. Charakter: {{gender}}. Person: {{roles}}.
    */
   footerText?: {
     root: {
@@ -405,7 +405,7 @@ export interface Genre {
     totalDocs?: number;
   };
   /**
-   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   * Optionaler Textblock am Seitenende. Variablen — überall: {{siteName}}, {{year}}, {{url}}, {{name}}/{{title}}, {{slug}}. Anime zusätzlich: {{titleRomaji}}, {{titleEnglish}}, {{titleGerman}}, {{season}}, {{seasonYear}}, {{format}}, {{status}}, {{episodes}}, {{score}}, {{studio}}, {{studios}}, {{genres}}, {{platforms}}. Genre: {{parentSlug}}, {{parentName}}, {{count}}. Tag: {{category}}, {{count}}. Studio: {{count}}. Charakter: {{gender}}. Person: {{roles}}.
    */
   footerText?: {
     root: {
@@ -448,7 +448,7 @@ export interface Tag {
     totalDocs?: number;
   };
   /**
-   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   * Optionaler Textblock am Seitenende. Variablen — überall: {{siteName}}, {{year}}, {{url}}, {{name}}/{{title}}, {{slug}}. Anime zusätzlich: {{titleRomaji}}, {{titleEnglish}}, {{titleGerman}}, {{season}}, {{seasonYear}}, {{format}}, {{status}}, {{episodes}}, {{score}}, {{studio}}, {{studios}}, {{genres}}, {{platforms}}. Genre: {{parentSlug}}, {{parentName}}, {{count}}. Tag: {{category}}, {{count}}. Studio: {{count}}. Charakter: {{gender}}. Person: {{roles}}.
    */
   footerText?: {
     root: {
@@ -532,7 +532,7 @@ export interface Character {
    */
   isEditoriallyLocked?: boolean | null;
   /**
-   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   * Optionaler Textblock am Seitenende. Variablen — überall: {{siteName}}, {{year}}, {{url}}, {{name}}/{{title}}, {{slug}}. Anime zusätzlich: {{titleRomaji}}, {{titleEnglish}}, {{titleGerman}}, {{season}}, {{seasonYear}}, {{format}}, {{status}}, {{episodes}}, {{score}}, {{studio}}, {{studios}}, {{genres}}, {{platforms}}. Genre: {{parentSlug}}, {{parentName}}, {{count}}. Tag: {{category}}, {{count}}. Studio: {{count}}. Charakter: {{gender}}. Person: {{roles}}.
    */
   footerText?: {
     root: {
@@ -614,7 +614,7 @@ export interface Person {
    */
   isEditoriallyLocked?: boolean | null;
   /**
-   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   * Optionaler Textblock am Seitenende. Variablen — überall: {{siteName}}, {{year}}, {{url}}, {{name}}/{{title}}, {{slug}}. Anime zusätzlich: {{titleRomaji}}, {{titleEnglish}}, {{titleGerman}}, {{season}}, {{seasonYear}}, {{format}}, {{status}}, {{episodes}}, {{score}}, {{studio}}, {{studios}}, {{genres}}, {{platforms}}. Genre: {{parentSlug}}, {{parentName}}, {{count}}. Tag: {{category}}, {{count}}. Studio: {{count}}. Charakter: {{gender}}. Person: {{roles}}.
    */
   footerText?: {
     root: {
@@ -1436,7 +1436,7 @@ export interface Navigation {
   createdAt?: string | null;
 }
 /**
- * Footer-Texte und Meta-Tags der Übersichtsseiten. Leere Felder nutzen die Standardwerte. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+ * Footer-Texte und Meta-Tags der Übersichtsseiten. Leere Felder nutzen die Standardwerte. Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "page-content".
@@ -1477,7 +1477,7 @@ export interface PageContent {
          */
         noindex?: boolean | null;
         /**
-         * Wird unten auf der Seite angezeigt. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+         * Wird unten auf der Seite angezeigt. Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
          */
         footerText?: {
           root: {

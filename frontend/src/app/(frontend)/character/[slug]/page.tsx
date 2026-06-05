@@ -11,6 +11,8 @@ import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { ChipSection, NewsSection } from '@/components/HubSections'
 import { SeoFooter } from '@/components/SeoFooter'
 import { pageMeta } from '@/lib/seo'
+import { characterVars } from '@/lib/entityVars'
+import { applyVarsMeta } from '@/lib/vars'
 import { hubExtras } from '@/lib/hub'
 import { displayName, displayTitle, genderLabel, localImage, plainText } from '@/lib/anime'
 
@@ -28,9 +30,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!c) return {}
   const name = displayName(c)
   return pageMeta({
-    title: c.seoTitle || `${name} — Charakter, Synchronsprecher & Auftritte | OtakuPulse`,
+    title: applyVarsMeta(c.seoTitle, characterVars(c)) || `${name} — Charakter, Synchronsprecher & Auftritte | OtakuPulse`,
     description:
-      c.seoDescription || plainText(c.descriptionDe || c.descriptionSource).slice(0, 160) || `${name}: Profil, Synchronsprecher und Anime-Auftritte.`,
+      applyVarsMeta(c.seoDescription, characterVars(c)) ||
+      plainText(c.descriptionDe || c.descriptionSource).slice(0, 160) ||
+      `${name}: Profil, Synchronsprecher und Anime-Auftritte.`,
     path: `/character/${slug}`,
     image: localImage(c),
     noindex: c.noindex || undefined,
@@ -234,7 +238,7 @@ export default async function CharacterDetail({ params }: { params: Promise<{ sl
         </div>
       </section>
 
-      <SeoFooter data={character.footerText} vars={{ name }} maxW="max-w-5xl" />
+      <SeoFooter data={character.footerText} vars={characterVars(character)} maxW="max-w-5xl" />
     </main>
   )
 }

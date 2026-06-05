@@ -27,6 +27,8 @@ import {
 } from '@/lib/anime'
 import { importAnimeBySlug } from '@/lib/import'
 import { streamingProvidersOf } from '@/lib/streaming'
+import { animeVars } from '@/lib/entityVars'
+import { applyVarsMeta } from '@/lib/vars'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,9 +52,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!anime) return {}
   const title = displayTitle(anime)
   const desc = plainText(anime.descriptionDe || anime.descriptionSource).slice(0, 160)
+  const vars = animeVars(anime)
   return pageMeta({
-    title: anime.seoTitle || `${title} — Anime · OtakuPulse`,
-    description: anime.seoDescription || desc || `Alle Infos zu ${title}: Charaktere, Studio, Episoden und mehr.`,
+    title: applyVarsMeta(anime.seoTitle, vars) || `${title} — Anime · OtakuPulse`,
+    description:
+      applyVarsMeta(anime.seoDescription, vars) || desc || `Alle Infos zu ${title}: Charaktere, Studio, Episoden und mehr.`,
     path: `/anime/${anime.slug}`,
     image: anime.coverImageUrl,
     noindex: anime.noindex || undefined,
@@ -405,7 +409,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
         ) : null}
       </div>
 
-      <SeoFooter data={anime.footerText} vars={{ name: title }} maxW="max-w-6xl" />
+      <SeoFooter data={anime.footerText} vars={animeVars(anime)} maxW="max-w-6xl" />
     </main>
   )
 }

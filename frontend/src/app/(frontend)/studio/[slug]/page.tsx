@@ -11,6 +11,8 @@ import { ChipSection, NewsSection } from '@/components/HubSections'
 import { SeoFooter } from '@/components/SeoFooter'
 import { pageMeta } from '@/lib/seo'
 import { hubExtras } from '@/lib/hub'
+import { studioVars } from '@/lib/entityVars'
+import { applyVarsMeta } from '@/lib/vars'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
@@ -26,8 +28,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const s = await getStudio(slug)
   if (!s) return {}
   return pageMeta({
-    title: s.seoTitle || `${s.name} — Anime des Studios & Produktionen | OtakuPulse`,
-    description: s.seoDescription || (s.descriptionDe ? s.descriptionDe.slice(0, 160) : `Alle Anime-Produktionen von ${s.name} im Überblick.`),
+    title: applyVarsMeta(s.seoTitle, studioVars(s)) || `${s.name} — Anime des Studios & Produktionen | OtakuPulse`,
+    description:
+      applyVarsMeta(s.seoDescription, studioVars(s)) ||
+      (s.descriptionDe ? s.descriptionDe.slice(0, 160) : `Alle Anime-Produktionen von ${s.name} im Überblick.`),
     path: `/studio/${slug}`,
     image: s.logoUrl,
     noindex: s.noindex || undefined,
@@ -229,7 +233,7 @@ export default async function StudioDetail({
         </>
       ) : null}
 
-      <SeoFooter data={studio.footerText} vars={{ name: studio.name }} maxW="max-w-6xl" />
+      <SeoFooter data={studio.footerText} vars={{ ...studioVars(studio), count: result.totalDocs }} maxW="max-w-6xl" />
     </main>
   )
 }
