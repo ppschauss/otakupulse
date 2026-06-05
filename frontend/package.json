@@ -21,7 +21,8 @@
     "sync": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/sync.ts",
     "mirror": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/mirror-images.ts",
     "translate": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/translate.ts",
-    "news": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/generate-news.ts"
+    "news": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/generate-news.ts",
+    "seed:navigation": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/seed-navigation.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

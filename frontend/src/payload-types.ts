@@ -130,8 +130,12 @@ export interface Config {
     defaultIDType: number;
   };
   fallbackLocale: null;
-  globals: {};
-  globalsSelect: {};
+  globals: {
+    navigation: Navigation;
+  };
+  globalsSelect: {
+    navigation: NavigationSelect<false> | NavigationSelect<true>;
+  };
   locale: null;
   widgets: {
     collections: CollectionsWidget;
@@ -1258,6 +1262,98 @@ export interface PayloadMigrationsSelect<T extends boolean = true> {
   batch?: T;
   updatedAt?: T;
   createdAt?: T;
+}
+/**
+ * Steuert Haupt- und Footer-Menü der Website. Einträge per Drag-and-drop sortierbar. Lässt du eine Liste leer, wird automatisch das Standard-Menü angezeigt.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "navigation".
+ */
+export interface Navigation {
+  id: number;
+  /**
+   * Links in der oberen Navigationsleiste.
+   */
+  header?:
+    | {
+        label: string;
+        /**
+         * Interner Pfad (z. B. /anime) oder externe URL (https://…).
+         */
+        url: string;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * Jede Spalte hat einen Titel und eine Linkliste.
+   */
+  footerColumns?:
+    | {
+        title: string;
+        links?:
+          | {
+              label: string;
+              /**
+               * Interner Pfad (z. B. /anime) oder externe URL (https://…).
+               */
+              url: string;
+              id?: string | null;
+            }[]
+          | null;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * z. B. Impressum, Datenschutz.
+   */
+  legal?:
+    | {
+        label: string;
+        /**
+         * Interner Pfad (z. B. /anime) oder externe URL (https://…).
+         */
+        url: string;
+        id?: string | null;
+      }[]
+    | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "navigation_select".
+ */
+export interface NavigationSelect<T extends boolean = true> {
+  header?:
+    | T
+    | {
+        label?: T;
+        url?: T;
+        id?: T;
+      };
+  footerColumns?:
+    | T
+    | {
+        title?: T;
+        links?:
+          | T
+          | {
+              label?: T;
+              url?: T;
+              id?: T;
+            };
+        id?: T;
+      };
+  legal?:
+    | T
+    | {
+        label?: T;
+        url?: T;
+        id?: T;
+      };
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

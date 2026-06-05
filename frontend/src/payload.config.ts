@@ -17,6 +17,7 @@ import { Tags } from './collections/Tags'
 import { Platforms } from './collections/Platforms'
 import { AnimeSeasons } from './collections/AnimeSeasons'
 import { Articles } from './collections/Articles'
+import { Navigation } from './globals/Navigation'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -48,6 +49,7 @@ export default buildConfig({
     Authors,
     Users,
   ],
+  globals: [Navigation],
   editor: lexicalEditor(),
   // Admin-Panel versteckt unter /legal/admin (Route-Ordner: (payload)/legal/admin)
   routes: { admin: '/legal/admin' },

@@ -3,16 +3,10 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-
-const NAV = [
-  { href: '/anime', label: 'Anime' },
-  { href: '/genre', label: 'Genres' },
-  { href: '/plattform', label: 'Streaming' },
-  { href: '/kalender', label: 'Kalender' },
-  { href: '/news', label: 'News' },
-]
+import type { NavLink } from '@/lib/navigation'
 
 function isActive(pathname: string, href: string) {
+  if (href.startsWith('http')) return false
   return href === '/' ? pathname === '/' : pathname.startsWith(href)
 }
 
@@ -30,7 +24,7 @@ function SearchForm({ onSubmit, autoWidth }: { onSubmit?: () => void; autoWidth?
   )
 }
 
-export function Header() {
+export function Header({ nav }: { nav: NavLink[] }) {
   const pathname = usePathname() || '/'
   const [open, setOpen] = useState(false)
   const close = () => setOpen(false)
@@ -46,12 +40,14 @@ export function Header() {
 
         {/* Desktop-Navigation */}
         <nav className="hidden items-center gap-0.5 text-sm md:flex">
-          {NAV.map((n) => {
+          {nav.map((n, i) => {
             const active = isActive(pathname, n.href)
+            const ext = n.href.startsWith('http')
             return (
               <Link
-                key={n.href}
+                key={`${n.href}-${i}`}
                 href={n.href}
+                {...(ext ? { target: '_blank', rel: 'noopener' } : {})}
                 className={`rounded-md px-3 py-1.5 font-medium transition ${
                   active ? 'bg-white/10 text-white' : 'text-zinc-300 hover:bg-white/5 hover:text-white'
                 }`}
@@ -92,13 +88,15 @@ export function Header() {
           <div className="mb-2">
             <SearchForm onSubmit={close} />
           </div>
-          {NAV.map((n) => {
+          {nav.map((n, i) => {
             const active = isActive(pathname, n.href)
+            const ext = n.href.startsWith('http')
             return (
               <Link
-                key={n.href}
+                key={`${n.href}-${i}`}
                 href={n.href}
                 onClick={close}
+                {...(ext ? { target: '_blank', rel: 'noopener' } : {})}
                 className={`block rounded-lg px-3 py-2.5 text-base font-medium transition ${
                   active
                     ? 'bg-gradient-to-r from-accent/20 to-accent-2/20 text-white ring-1 ring-white/10'
