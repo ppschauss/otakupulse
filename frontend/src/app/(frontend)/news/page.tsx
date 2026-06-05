@@ -6,6 +6,8 @@ import { Pagination } from '@/components/Pagination'
 import { NewsListSidebar } from '@/components/NewsListSidebar'
 import { ARTICLE_CATEGORY_LABELS, articleCategoryLabel } from '@/lib/anime'
 import { pageMeta } from '@/lib/seo'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 12
@@ -27,10 +29,19 @@ export async function generateMetadata({
   const sp = await searchParams
   const cat = sp.category && ARTICLE_CATEGORY_LABELS[sp.category] ? sp.category : ''
   const q = (sp.q || '').trim()
+  // Basisseite (ohne Kategorie): im Admin gepflegte Meta-Werte mergen.
+  if (!cat) {
+    const meta = await pageMetaFor('news', {
+      title: 'Anime-News & Artikel — OtakuPulse',
+      description: 'Aktuelle Anime-News, Reviews, Guides und Season-Vorschauen — durchsuchbar und nach Kategorie filterbar.',
+      path: '/news',
+    })
+    // Reine Suchansicht nicht indexieren (Duplicate Content).
+    if (q) meta.robots = { index: false, follow: true }
+    return meta
+  }
   const meta = pageMeta({
-    title: cat
-      ? `${articleCategoryLabel(cat)} — Anime-News | OtakuPulse`
-      : 'Anime-News & Artikel — OtakuPulse',
+    title: `${articleCategoryLabel(cat)} — Anime-News | OtakuPulse`,
     description: 'Aktuelle Anime-News, Reviews, Guides und Season-Vorschauen — durchsuchbar und nach Kategorie filterbar.',
     path: '/news',
   })
@@ -67,6 +78,7 @@ export default async function NewsListPage({
   const heading = category ? articleCategoryLabel(category) : q ? `Suche: „${q}"` : 'News & Artikel'
 
   return (
+    <>
     <main className="mx-auto max-w-6xl px-4 py-10">
       <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
         {/* Hauptspalte */}
@@ -121,5 +133,7 @@ export default async function NewsListPage({
         <NewsListSidebar activeCategory={category} query={q} />
       </div>
     </main>
+    <PageSeoFooter pageKey="news" maxW="max-w-6xl" />
+    </>
   )
 }

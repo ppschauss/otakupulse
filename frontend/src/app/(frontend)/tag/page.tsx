@@ -2,7 +2,8 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import type { Metadata } from 'next'
 import { TagBrowser, type TagSection } from '@/components/TagBrowser'
-import { pageMeta } from '@/lib/seo'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 import { TAG_CATEGORY_LABELS } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
@@ -10,12 +11,20 @@ export const dynamic = 'force-dynamic'
 // Reihenfolge der Kategorie-Sektionen
 const ORDER = ['theme', 'setting', 'element', 'demographic', 'mood', '_none']
 
-export const metadata: Metadata = pageMeta({
-  title: 'Anime-Tags nach Thema — durchsuchbar mit Anzahl | OtakuPulse',
-  description:
-    'Alle thematischen Anime-Tags, gruppiert nach Kategorie (Thema, Setting, Element, Zielgruppe, Stimmung) — mit Live-Suche, Anzahl der Titel und den beliebtesten Tags.',
-  path: '/tag',
-})
+export async function generateMetadata(): Promise<Metadata> {
+  const payload = await getPayload({ config })
+  const count = await payload.count({ collection: 'tags' })
+  return pageMetaFor(
+    'tag',
+    {
+      title: 'Anime-Tags nach Thema — durchsuchbar mit Anzahl | OtakuPulse',
+      description:
+        'Alle thematischen Anime-Tags, gruppiert nach Kategorie (Thema, Setting, Element, Zielgruppe, Stimmung) — mit Live-Suche, Anzahl der Titel und den beliebtesten Tags.',
+      path: '/tag',
+    },
+    { count: count.totalDocs },
+  )
+}
 
 export default async function TagListPage() {
   const payload = await getPayload({ config })
@@ -55,6 +64,7 @@ export default async function TagListPage() {
     .map(({ name, slug, n }) => ({ name, slug, n }))
 
   return (
+    <>
     <main className="mx-auto max-w-5xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Tags</h1>
       <p className="mt-1 text-zinc-400">{docs.length.toLocaleString('de-DE')} Tags · nach Thema gruppiert</p>
@@ -67,5 +77,7 @@ export default async function TagListPage() {
         <TagBrowser sections={sections} popular={popular} />
       )}
     </main>
+    <PageSeoFooter pageKey="tag" vars={{ count: docs.length }} maxW="max-w-5xl" />
+    </>
   )
 }

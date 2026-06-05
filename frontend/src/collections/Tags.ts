@@ -1,5 +1,6 @@
 import type { CollectionConfig } from 'payload'
 import { seoFields } from '../fields/seo'
+import { footerTextField } from '../fields/footerText'
 
 export const Tags: CollectionConfig = {
   slug: 'tags',
@@ -19,6 +20,7 @@ export const Tags: CollectionConfig = {
     { name: 'relatedTags', type: 'relationship', relationTo: 'tags', hasMany: true },
     // Reverse: alle Anime mit diesem Tag (Anime speichert tags als Array {tag, rank})
     { name: 'anime', type: 'join', collection: 'anime', on: 'tags.tag' },
+    footerTextField,
     seoFields,
   ],
 }

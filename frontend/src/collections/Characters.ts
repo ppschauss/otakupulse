@@ -1,6 +1,7 @@
 import type { CollectionConfig } from 'payload'
 import { externalIdFields, syncMetaFields } from '../fields/sync'
 import { seoFields } from '../fields/seo'
+import { footerTextField } from '../fields/footerText'
 
 export const Characters: CollectionConfig = {
   slug: 'characters',
@@ -53,6 +54,7 @@ export const Characters: CollectionConfig = {
     // Reverse: in welchen Anime taucht der Charakter auf (Anime speichert characters[].character)
     { name: 'appearances', type: 'join', collection: 'anime', on: 'characters.character' },
     ...syncMetaFields,
+    footerTextField,
     seoFields,
   ],
 }

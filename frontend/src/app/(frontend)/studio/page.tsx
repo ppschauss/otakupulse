@@ -2,12 +2,13 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { pageMeta } from '@/lib/seo'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 
 export const dynamic = 'force-dynamic'
 
-export function generateMetadata(): Metadata {
-  return pageMeta({
+export async function generateMetadata(): Promise<Metadata> {
+  return await pageMetaFor('studio', {
     title: 'Anime-Studios & Produktionsfirmen — OtakuPulse',
     description:
       'Alle Animationsstudios und Produktionsfirmen im Überblick — MAPPA, ufotable, Madhouse, Bones und mehr, nach Output sortiert.',
@@ -79,6 +80,7 @@ export default async function StudioListPage({ searchParams }: { searchParams: P
   )
 
   return (
+    <>
     <main className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Studios & Produktion</h1>
       <p className="mt-1 text-zinc-400">
@@ -150,5 +152,7 @@ export default async function StudioListPage({ searchParams }: { searchParams: P
         )}
       </section>
     </main>
+    <PageSeoFooter pageKey="studio" vars={{ count: rows.length }} maxW="max-w-6xl" />
+    </>
   )
 }

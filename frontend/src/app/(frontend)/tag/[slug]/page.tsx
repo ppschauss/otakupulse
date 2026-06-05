@@ -8,6 +8,7 @@ import { Pagination } from '@/components/Pagination'
 import { Faq } from '@/components/Faq'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { ChipSection, NewsSection } from '@/components/HubSections'
+import { SeoFooter } from '@/components/SeoFooter'
 import { pageMeta } from '@/lib/seo'
 import { hubExtras } from '@/lib/hub'
 import { TAG_CATEGORY_LABELS } from '@/lib/anime'
@@ -29,6 +30,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: t.seoTitle || `${t.name}-Anime — Liste & Empfehlungen | OtakuPulse`,
     description: t.seoDescription || (t.descriptionDe ? t.descriptionDe.slice(0, 160) : `Anime mit dem Tag „${t.name}" — sortiert nach Beliebtheit.`),
     path: `/tag/${slug}`,
+    noindex: t.noindex || undefined,
+    canonical: t.canonicalUrl || undefined,
   })
   if (t.isAdult) meta.robots = { index: false, follow: true }
   return meta
@@ -169,6 +172,8 @@ export default async function TagDetail({
           </section>
         </>
       ) : null}
+
+      <SeoFooter data={tag.footerText} vars={{ name: tag.name }} maxW="max-w-6xl" />
     </main>
   )
 }

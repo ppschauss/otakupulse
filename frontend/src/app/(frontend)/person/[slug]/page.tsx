@@ -10,6 +10,7 @@ import { Faq } from '@/components/Faq'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { JsonLd } from '@/components/JsonLd'
 import { ChipSection, NewsSection } from '@/components/HubSections'
+import { SeoFooter } from '@/components/SeoFooter'
 import { personLd, pageMeta } from '@/lib/seo'
 import { hubExtras } from '@/lib/hub'
 import { displayName, displayTitle, genderLabel, personRoleLabel, localImage, plainText } from '@/lib/anime'
@@ -32,6 +33,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     description: p.seoDescription || plainText(p.bioDe || p.bioSource).slice(0, 160) || `${name}: Biografie, Rollen und Anime-Credits.`,
     path: `/person/${slug}`,
     image: localImage(p),
+    noindex: p.noindex || undefined,
+    canonical: p.canonicalUrl || undefined,
   })
 }
 
@@ -219,6 +222,8 @@ export default async function PersonDetail({ params }: { params: Promise<{ slug:
           </p>
         </div>
       </section>
+
+      <SeoFooter data={person.footerText} vars={{ name }} maxW="max-w-5xl" />
     </main>
   )
 }

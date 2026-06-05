@@ -1,11 +1,23 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 
 export const dynamic = 'force-dynamic'
 
 const PER_PAGE = 36
+
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetaFor('anime', {
+    title: 'Alle Anime — Datenbank, Suche & Filter | OtakuPulse',
+    description:
+      'Durchstöbere die komplette Anime-Datenbank: filtern nach Genre, Jahr, Typ und Sprachfassung — mit Cover, Bewertung und Streaming-Infos.',
+    path: '/anime',
+  })
+}
 
 export default async function AnimeListPage({
   searchParams,
@@ -24,6 +36,7 @@ export default async function AnimeListPage({
   })
 
   return (
+    <>
     <main className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Anime-Datenbank</h1>
       <p className="mt-1 text-zinc-400">{result.totalDocs} Titel</p>
@@ -59,5 +72,7 @@ export default async function AnimeListPage({
         </nav>
       ) : null}
     </main>
+    <PageSeoFooter pageKey="anime" maxW="max-w-6xl" />
+    </>
   )
 }

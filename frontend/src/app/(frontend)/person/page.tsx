@@ -4,7 +4,8 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { PortraitCard } from '@/components/PortraitCard'
 import { Pagination } from '@/components/Pagination'
-import { pageMeta } from '@/lib/seo'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 import { displayName, personRoleLabel, localImage } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +33,7 @@ type SP = { page?: string; q?: string; role?: string; sort?: string }
 export async function generateMetadata({ searchParams }: { searchParams: Promise<SP> }): Promise<Metadata> {
   const sp = await searchParams
   const filtered = !!(sp.q || sp.role)
-  const meta = pageMeta({
+  const meta = await pageMetaFor('person', {
     title: 'Personen — Synchronsprecher, Regie & Staff | OtakuPulse',
     description:
       'Durchsuche Synchronsprecher, Regisseure, Mangaka und Komponisten der Anime-Branche — nach Beliebtheit, A–Z oder Rolle gefiltert.',
@@ -85,6 +86,7 @@ export default async function PersonListPage({ searchParams }: { searchParams: P
   const cardSubtitle = (p: any) => (Array.isArray(p.roles) && p.roles.length ? personRoleLabel(p.roles[0]) : null)
 
   return (
+    <>
     <main className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Personen</h1>
       <p className="mt-1 text-zinc-400">
@@ -187,5 +189,7 @@ export default async function PersonListPage({ searchParams }: { searchParams: P
 
       <Pagination basePath="/person" page={page} totalPages={result.totalPages} query={queryForPagination} />
     </main>
+    <PageSeoFooter pageKey="person" vars={{ count: result.totalDocs }} maxW="max-w-6xl" />
+    </>
   )
 }

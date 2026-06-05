@@ -9,6 +9,7 @@ import { PortraitCard } from '@/components/PortraitCard'
 import { Faq } from '@/components/Faq'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { ChipSection, NewsSection } from '@/components/HubSections'
+import { SeoFooter } from '@/components/SeoFooter'
 import { pageMeta } from '@/lib/seo'
 import { hubExtras } from '@/lib/hub'
 import { displayName, displayTitle, genderLabel, localImage, plainText } from '@/lib/anime'
@@ -32,6 +33,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       c.seoDescription || plainText(c.descriptionDe || c.descriptionSource).slice(0, 160) || `${name}: Profil, Synchronsprecher und Anime-Auftritte.`,
     path: `/character/${slug}`,
     image: localImage(c),
+    noindex: c.noindex || undefined,
+    canonical: c.canonicalUrl || undefined,
   })
 }
 
@@ -230,6 +233,8 @@ export default async function CharacterDetail({ params }: { params: Promise<{ sl
           </p>
         </div>
       </section>
+
+      <SeoFooter data={character.footerText} vars={{ name }} maxW="max-w-5xl" />
     </main>
   )
 }

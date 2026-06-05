@@ -1,10 +1,22 @@
 import { Suspense } from 'react'
+import type { Metadata } from 'next'
 import { HeroBlockAsync } from '@/components/HeroBlockAsync'
 import { AnimeRowAsync } from '@/components/AnimeRowAsync'
 import { NewsSidebar } from '@/components/NewsSidebar'
 import { GenreOfTheDay } from '@/components/GenreOfTheDay'
 import { Faq } from '@/components/Faq'
 import { RowSkeleton, HeroSkeleton, BoxSkeleton } from '@/components/Skeletons'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
+
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetaFor('home', {
+    title: 'OtakuPulse — Anime-Datenbank & News',
+    description:
+      'Die deutschsprachige Anime-Datenbank: Anime, Charaktere, Synchronsprecher, Studios, Genres, Seasons, Kalender und News.',
+    path: '/',
+  })
+}
 
 // ISR: Startseite alle 10 Min neu generieren (im Prod-Build → instant aus dem Cache).
 export const revalidate = 600
@@ -37,6 +49,7 @@ const FAQ_ITEMS = [
 
 export default function HomePage() {
   return (
+    <>
     <main className="mx-auto max-w-7xl px-4 py-6">
       <Suspense fallback={<HeroSkeleton />}>
         <HeroBlockAsync />
@@ -91,5 +104,7 @@ export default function HomePage() {
 
       <Faq items={FAQ_ITEMS} />
     </main>
+    <PageSeoFooter pageKey="home" maxW="max-w-7xl" />
+    </>
   )
 }

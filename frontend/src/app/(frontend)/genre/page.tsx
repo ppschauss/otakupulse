@@ -3,7 +3,8 @@ import config from '@payload-config'
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { Chip } from '@/components/Chip'
-import { pageMeta } from '@/lib/seo'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,12 +12,18 @@ type SP = { sort?: string }
 
 export async function generateMetadata({ searchParams }: { searchParams: Promise<SP> }): Promise<Metadata> {
   await searchParams
-  return pageMeta({
-    title: 'Anime-Genres — alle Genres mit Anzahl & Ranking | OtakuPulse',
-    description:
-      'Alle Anime-Genres im Überblick: Action, Isekai, Romance, Mecha und mehr — mit Anzahl der Titel und den größten Genres auf einen Blick.',
-    path: '/genre',
-  })
+  const payload = await getPayload({ config })
+  const count = await payload.count({ collection: 'genres' })
+  return pageMetaFor(
+    'genre',
+    {
+      title: 'Anime-Genres — alle Genres mit Anzahl & Ranking | OtakuPulse',
+      description:
+        'Alle Anime-Genres im Überblick: Action, Isekai, Romance, Mecha und mehr — mit Anzahl der Titel und den größten Genres auf einen Blick.',
+      path: '/genre',
+    },
+    { count: count.totalDocs },
+  )
 }
 
 export default async function GenreListPage({ searchParams }: { searchParams: Promise<SP> }) {
@@ -41,6 +48,7 @@ export default async function GenreListPage({ searchParams }: { searchParams: Pr
       : [...enriched].sort((a, b) => b.n - a.n)
 
   return (
+    <>
     <main className="mx-auto max-w-5xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Genres</h1>
       <p className="mt-1 text-zinc-400">{docs.length} Genres · von Action bis Slice of Life</p>
@@ -136,5 +144,7 @@ export default async function GenreListPage({ searchParams }: { searchParams: Pr
         </>
       )}
     </main>
+    <PageSeoFooter pageKey="genre" vars={{ count: docs.length }} maxW="max-w-5xl" />
+    </>
   )
 }

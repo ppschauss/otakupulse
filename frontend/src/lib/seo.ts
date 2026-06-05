@@ -9,18 +9,23 @@ export function pageMeta({
   description,
   path,
   image,
+  noindex,
+  canonical: canonicalOverride,
 }: {
   title: string
   description?: string
   path: string
   image?: string | null
+  noindex?: boolean | null
+  canonical?: string | null
 }): Metadata {
-  const canonical = url(path)
+  const canonical = canonicalOverride || url(path)
   const images = image ? [{ url: image }] : undefined
   return {
     title,
     description,
     alternates: { canonical },
+    ...(noindex ? { robots: { index: false, follow: false } } : {}),
     openGraph: {
       title,
       description,

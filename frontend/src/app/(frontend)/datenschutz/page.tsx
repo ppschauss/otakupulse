@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { pageMeta } from '@/lib/seo'
 import { SITE_NAME } from '@/lib/site'
+import { ConsentSettingsLink } from '@/components/ConsentSettingsLink'
 
 export const dynamic = 'force-static'
 
@@ -59,22 +60,30 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-lg font-bold text-white">3. Cookies</h2>
+          <h2 className="text-lg font-bold text-white">3. Cookies &amp; Einwilligung</h2>
           <p className="mt-2">
-            {SITE_NAME} setzt für den Betrieb keine Tracking-Cookies und keine Cookies zu Marketingzwecken. Technisch
-            notwendige Cookies können bei der Nutzung des geschützten Verwaltungsbereichs (Login) gesetzt werden;
-            für die öffentliche Nutzung der Website ist keine Einwilligung erforderlich.
+            Technisch notwendige Cookies/Speicherzugriffe sind für den Betrieb der Website erforderlich und werden ohne
+            gesonderte Einwilligung verwendet (Rechtsgrundlage § 25 Abs. 2 TDDDG, Art. 6 Abs. 1 lit. f DSGVO). Deine
+            Cookie-Auswahl selbst speichern wir lokal in deinem Browser (localStorage), nicht in einem Cookie.
+          </p>
+          <p className="mt-2">
+            Optionale Dienste – insbesondere die Reichweitenmessung (Kategorie „Statistik") sowie etwaige
+            Drittanbieter-Inhalte (Kategorie „Marketing") – werden ausschließlich nach deiner ausdrücklichen
+            Einwilligung geladen (Opt-in, Art. 6 Abs. 1 lit. a DSGVO, § 25 Abs. 1 TDDDG). Ohne Einwilligung werden
+            diese Dienste nicht aktiviert. Du kannst deine Auswahl jederzeit ändern oder widerrufen:{' '}
+            <ConsentSettingsLink className="font-medium text-accent underline-offset-2 hover:underline" />.
           </p>
         </section>
 
         <section>
-          <h2 className="text-lg font-bold text-white">4. Reichweitenmessung (cookieless)</h2>
+          <h2 className="text-lg font-bold text-white">4. Reichweitenmessung (Kategorie „Statistik")</h2>
           <p className="mt-2">
-            Soweit aktiviert, nutzen wir eine datenschutzfreundliche, cookielose Reichweitenmessung (Plausible bzw.
-            Umami). Dabei werden keine Cookies gesetzt und keine personenbezogenen Profile gebildet; IP-Adressen werden
-            nicht dauerhaft gespeichert. Erhoben werden lediglich aggregierte Statistiken (z.&nbsp;B. Seitenaufrufe,
-            Referrer, ungefähre Herkunftsregion). Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO (berechtigtes
-            Interesse an der statistischen Auswertung zur Verbesserung des Angebots).
+            Soweit aktiviert und von dir eingewilligt, nutzen wir eine datenschutzfreundliche, cookielose
+            Reichweitenmessung (Plausible bzw. Umami). Dabei werden keine personenbezogenen Profile gebildet;
+            IP-Adressen werden nicht dauerhaft gespeichert. Erhoben werden lediglich aggregierte Statistiken
+            (z.&nbsp;B. Seitenaufrufe, Referrer, ungefähre Herkunftsregion). Das Skript wird erst nach deiner
+            Einwilligung in die Kategorie „Statistik" geladen (Art. 6 Abs. 1 lit. a DSGVO); ohne Einwilligung findet
+            keine Messung statt.
           </p>
         </section>
 

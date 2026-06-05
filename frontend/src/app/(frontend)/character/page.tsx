@@ -4,7 +4,8 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { PortraitCard } from '@/components/PortraitCard'
 import { Pagination } from '@/components/Pagination'
-import { pageMeta } from '@/lib/seo'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 import { displayName, localImage } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
@@ -28,7 +29,7 @@ type SP = { page?: string; q?: string; gender?: string; sort?: string }
 export async function generateMetadata({ searchParams }: { searchParams: Promise<SP> }): Promise<Metadata> {
   const sp = await searchParams
   const filtered = !!(sp.q || sp.gender)
-  const meta = pageMeta({
+  const meta = await pageMetaFor('character', {
     title: 'Anime-Charaktere — Datenbank, Suche & Synchronsprecher | OtakuPulse',
     description:
       'Durchstöbere und durchsuche tausende Anime-Charaktere — nach Beliebtheit, A–Z oder Geschlecht gefiltert, jeweils mit Synchronsprechern und Auftritten.',
@@ -78,6 +79,7 @@ export default async function CharacterListPage({ searchParams }: { searchParams
   const queryForPagination = { q: q || undefined, gender: gender || undefined, sort: sortKey !== 'favorites' ? sortKey : undefined }
 
   return (
+    <>
     <main className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Charaktere</h1>
       <p className="mt-1 text-zinc-400">
@@ -180,5 +182,7 @@ export default async function CharacterListPage({ searchParams }: { searchParams
 
       <Pagination basePath="/character" page={page} totalPages={result.totalPages} query={queryForPagination} />
     </main>
+    <PageSeoFooter pageKey="character" vars={{ count: result.totalDocs }} maxW="max-w-6xl" />
+    </>
   )
 }

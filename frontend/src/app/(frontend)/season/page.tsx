@@ -1,13 +1,19 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { seasonLabel } from '@/lib/anime'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = {
-  title: 'Anime-Seasons — OtakuPulse',
-  description: 'Alle Anime-Seasons im Archiv — von den aktuellen Simulcasts bis zu vergangenen Jahren.',
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetaFor('season', {
+    title: 'Anime-Seasons — OtakuPulse',
+    description: 'Alle Anime-Seasons im Archiv — von den aktuellen Simulcasts bis zu vergangenen Jahren.',
+    path: '/season',
+  })
 }
 
 export default async function SeasonListPage() {
@@ -25,6 +31,7 @@ export default async function SeasonListPage() {
   const order: Record<string, number> = { WINTER: 0, SPRING: 1, SUMMER: 2, FALL: 3 }
 
   return (
+    <>
     <main className="mx-auto max-w-5xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Seasons</h1>
       <p className="mt-1 text-zinc-400">{docs.length} Seasons</p>
@@ -57,5 +64,7 @@ export default async function SeasonListPage() {
         </div>
       )}
     </main>
+    <PageSeoFooter pageKey="season" vars={{ count: docs.length }} maxW="max-w-5xl" />
+    </>
   )
 }

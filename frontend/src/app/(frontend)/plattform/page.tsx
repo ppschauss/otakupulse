@@ -1,19 +1,24 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { JsonLd } from '@/components/JsonLd'
-import { breadcrumbLd, pageMeta } from '@/lib/seo'
+import { breadcrumbLd } from '@/lib/seo'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 import { STREAMING_PROVIDERS } from '@/lib/streaming'
 
 // ISR: Anbieter-Übersicht ändert sich selten (Zahlen alle 10 Min frisch).
 export const revalidate = 600
 
-export const metadata = pageMeta({
-  title: 'Wer streamt es? — Anime-Streaming-Anbieter | OtakuPulse',
-  description:
-    'Wo du Anime legal streamen kannst: Crunchyroll, Netflix, Amazon Prime Video, Disney+ und mehr — mit kompletter Titel-Übersicht pro Anbieter.',
-  path: '/plattform',
-})
+export async function generateMetadata(): Promise<Metadata> {
+  return pageMetaFor('plattform', {
+    title: 'Wer streamt es? — Anime-Streaming-Anbieter | OtakuPulse',
+    description:
+      'Wo du Anime legal streamen kannst: Crunchyroll, Netflix, Amazon Prime Video, Disney+ und mehr — mit kompletter Titel-Übersicht pro Anbieter.',
+    path: '/plattform',
+  })
+}
 
 export default async function PlatformListPage() {
   const payload = await getPayload({ config })
@@ -33,6 +38,7 @@ export default async function PlatformListPage() {
   const visible = counts.filter((c) => c.total > 0).sort((a, b) => b.total - a.total)
 
   return (
+    <>
     <main className="mx-auto max-w-5xl px-4 py-10">
       <JsonLd data={breadcrumbLd([{ name: 'Start', path: '/' }, { name: 'Streaming-Anbieter', path: '/plattform' }])} />
       <h1 className="text-2xl font-extrabold text-white">Wer streamt es?</h1>
@@ -66,5 +72,7 @@ export default async function PlatformListPage() {
         ))}
       </div>
     </main>
+    <PageSeoFooter pageKey="plattform" vars={{ count: visible.length }} maxW="max-w-5xl" />
+    </>
   )
 }

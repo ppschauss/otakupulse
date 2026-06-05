@@ -1,6 +1,7 @@
 import type { CollectionConfig } from 'payload'
 import { externalIdFields, syncMetaFields } from '../fields/sync'
 import { seoFields } from '../fields/seo'
+import { footerTextField } from '../fields/footerText'
 
 export const Anime: CollectionConfig = {
   slug: 'anime',
@@ -175,6 +176,7 @@ export const Anime: CollectionConfig = {
     { name: 'episodeList', type: 'join', collection: 'episodes', on: 'anime' },
 
     ...syncMetaFields,
+    footerTextField,
     seoFields,
   ],
 }

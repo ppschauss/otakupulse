@@ -5,7 +5,7 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { JsonLd } from '@/components/JsonLd'
 import { Analytics } from '@/components/Analytics'
-import { CookieNotice } from '@/components/CookieNotice'
+import { CookieConsent } from '@/components/CookieConsent'
 import { organizationLd } from '@/lib/seo'
 import { getNavigation } from '@/lib/navigation'
 import { SITE_URL, SITE_NAME, SITE_DESCRIPTION } from '@/lib/site'
@@ -39,7 +39,7 @@ export default async function FrontendLayout({ children }: { children: React.Rea
         <Footer columns={nav.footerColumns} legal={nav.legal} />
         <JsonLd data={organizationLd()} />
         <Analytics />
-        <CookieNotice />
+        <CookieConsent />
       </body>
     </html>
   )

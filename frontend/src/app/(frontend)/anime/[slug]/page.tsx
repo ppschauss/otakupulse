@@ -8,6 +8,7 @@ import { PortraitCard } from '@/components/PortraitCard'
 import { ScrollRow } from '@/components/ScrollRow'
 import { MediaRow } from '@/components/MediaRow'
 import { JsonLd } from '@/components/JsonLd'
+import { SeoFooter } from '@/components/SeoFooter'
 import { animeLd, breadcrumbLd, pageMeta } from '@/lib/seo'
 import {
   displayTitle,
@@ -54,6 +55,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     description: anime.seoDescription || desc || `Alle Infos zu ${title}: Charaktere, Studio, Episoden und mehr.`,
     path: `/anime/${anime.slug}`,
     image: anime.coverImageUrl,
+    noindex: anime.noindex || undefined,
+    canonical: anime.canonicalUrl || undefined,
   })
 }
 
@@ -401,6 +404,8 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
           </div>
         ) : null}
       </div>
+
+      <SeoFooter data={anime.footerText} vars={{ name: title }} maxW="max-w-6xl" />
     </main>
   )
 }

@@ -8,6 +8,7 @@ import { Pagination } from '@/components/Pagination'
 import { Faq } from '@/components/Faq'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { ChipSection, NewsSection } from '@/components/HubSections'
+import { SeoFooter } from '@/components/SeoFooter'
 import { pageMeta } from '@/lib/seo'
 import { hubExtras } from '@/lib/hub'
 
@@ -29,6 +30,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     description: s.seoDescription || (s.descriptionDe ? s.descriptionDe.slice(0, 160) : `Alle Anime-Produktionen von ${s.name} im Überblick.`),
     path: `/studio/${slug}`,
     image: s.logoUrl,
+    noindex: s.noindex || undefined,
+    canonical: s.canonicalUrl || undefined,
   })
 }
 
@@ -225,6 +228,8 @@ export default async function StudioDetail({
           </section>
         </>
       ) : null}
+
+      <SeoFooter data={studio.footerText} vars={{ name: studio.name }} maxW="max-w-6xl" />
     </main>
   )
 }

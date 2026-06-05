@@ -1,6 +1,7 @@
 import type { CollectionConfig } from 'payload'
 import { externalIdFields, syncMetaFields } from '../fields/sync'
 import { seoFields } from '../fields/seo'
+import { footerTextField } from '../fields/footerText'
 
 export const Studios: CollectionConfig = {
   slug: 'studios',
@@ -20,6 +21,7 @@ export const Studios: CollectionConfig = {
     // Reverse: alle Anime dieses Studios
     { name: 'animeProduced', type: 'join', collection: 'anime', on: 'studios' },
     ...syncMetaFields,
+    footerTextField,
     seoFields,
   ],
 }

@@ -132,9 +132,11 @@ export interface Config {
   fallbackLocale: null;
   globals: {
     navigation: Navigation;
+    'page-content': PageContent;
   };
   globalsSelect: {
     navigation: NavigationSelect<false> | NavigationSelect<true>;
+    'page-content': PageContentSelect<false> | PageContentSelect<true>;
   };
   locale: null;
   widgets: {
@@ -303,6 +305,24 @@ export interface Anime {
    * Schützt manuelle Änderungen vor Überschreiben durch den Sync.
    */
   isEditoriallyLocked?: boolean | null;
+  /**
+   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   */
+  footerText?: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  } | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
   seoKeywords?: string[] | null;
@@ -338,6 +358,24 @@ export interface Studio {
    * Schützt manuelle Änderungen vor Überschreiben durch den Sync.
    */
   isEditoriallyLocked?: boolean | null;
+  /**
+   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   */
+  footerText?: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  } | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
   seoKeywords?: string[] | null;
@@ -366,6 +404,24 @@ export interface Genre {
     hasNextPage?: boolean;
     totalDocs?: number;
   };
+  /**
+   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   */
+  footerText?: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  } | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
   seoKeywords?: string[] | null;
@@ -391,6 +447,24 @@ export interface Tag {
     hasNextPage?: boolean;
     totalDocs?: number;
   };
+  /**
+   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   */
+  footerText?: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  } | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
   seoKeywords?: string[] | null;
@@ -457,6 +531,24 @@ export interface Character {
    * Schützt manuelle Änderungen vor Überschreiben durch den Sync.
    */
   isEditoriallyLocked?: boolean | null;
+  /**
+   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   */
+  footerText?: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  } | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
   seoKeywords?: string[] | null;
@@ -521,6 +613,24 @@ export interface Person {
    * Schützt manuelle Änderungen vor Überschreiben durch den Sync.
    */
   isEditoriallyLocked?: boolean | null;
+  /**
+   * Optionaler Textblock am Seitenende. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+   */
+  footerText?: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  } | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
   seoKeywords?: string[] | null;
@@ -912,6 +1022,7 @@ export interface AnimeSelect<T extends boolean = true> {
   dataSource?: T;
   lastSyncedAt?: T;
   isEditoriallyLocked?: T;
+  footerText?: T;
   seoTitle?: T;
   seoDescription?: T;
   seoKeywords?: T;
@@ -990,6 +1101,7 @@ export interface CharactersSelect<T extends boolean = true> {
   dataSource?: T;
   lastSyncedAt?: T;
   isEditoriallyLocked?: T;
+  footerText?: T;
   seoTitle?: T;
   seoDescription?: T;
   seoKeywords?: T;
@@ -1034,6 +1146,7 @@ export interface PersonsSelect<T extends boolean = true> {
   dataSource?: T;
   lastSyncedAt?: T;
   isEditoriallyLocked?: T;
+  footerText?: T;
   seoTitle?: T;
   seoDescription?: T;
   seoKeywords?: T;
@@ -1061,6 +1174,7 @@ export interface StudiosSelect<T extends boolean = true> {
   dataSource?: T;
   lastSyncedAt?: T;
   isEditoriallyLocked?: T;
+  footerText?: T;
   seoTitle?: T;
   seoDescription?: T;
   seoKeywords?: T;
@@ -1081,6 +1195,7 @@ export interface GenresSelect<T extends boolean = true> {
   parentGenre?: T;
   relatedGenres?: T;
   anime?: T;
+  footerText?: T;
   seoTitle?: T;
   seoDescription?: T;
   seoKeywords?: T;
@@ -1101,6 +1216,7 @@ export interface TagsSelect<T extends boolean = true> {
   isAdult?: T;
   relatedTags?: T;
   anime?: T;
+  footerText?: T;
   seoTitle?: T;
   seoDescription?: T;
   seoKeywords?: T;
@@ -1320,6 +1436,71 @@ export interface Navigation {
   createdAt?: string | null;
 }
 /**
+ * Footer-Texte und Meta-Tags der Übersichtsseiten. Leere Felder nutzen die Standardwerte. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "page-content".
+ */
+export interface PageContent {
+  id: number;
+  /**
+   * Pro Übersichtsseite ein Eintrag.
+   */
+  pages?:
+    | {
+        /**
+         * Welche Seite dieser Eintrag steuert.
+         */
+        key:
+          | 'home'
+          | 'anime'
+          | 'genre'
+          | 'tag'
+          | 'character'
+          | 'person'
+          | 'studio'
+          | 'plattform'
+          | 'kalender'
+          | 'news'
+          | 'season'
+          | 'top-anime';
+        /**
+         * Überschreibt den <title>.
+         */
+        metaTitle?: string | null;
+        /**
+         * Meta-Description.
+         */
+        metaDescription?: string | null;
+        /**
+         * Aus dem Index nehmen.
+         */
+        noindex?: boolean | null;
+        /**
+         * Wird unten auf der Seite angezeigt. Verfügbare Variablen: {{siteName}}, {{year}}, {{siteUrl}}, {{url}}, {{name}}, {{count}}, {{animeTotal}}.
+         */
+        footerText?: {
+          root: {
+            type: string;
+            children: {
+              type: any;
+              version: number;
+              [k: string]: unknown;
+            }[];
+            direction: ('ltr' | 'rtl') | null;
+            format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+            indent: number;
+            version: number;
+          };
+          [k: string]: unknown;
+        } | null;
+        id?: string | null;
+      }[]
+    | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "navigation_select".
  */
@@ -1349,6 +1530,25 @@ export interface NavigationSelect<T extends boolean = true> {
     | {
         label?: T;
         url?: T;
+        id?: T;
+      };
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "page-content_select".
+ */
+export interface PageContentSelect<T extends boolean = true> {
+  pages?:
+    | T
+    | {
+        key?: T;
+        metaTitle?: T;
+        metaDescription?: T;
+        noindex?: T;
+        footerText?: T;
         id?: T;
       };
   updatedAt?: T;

@@ -8,6 +8,7 @@ import { Pagination } from '@/components/Pagination'
 import { Faq } from '@/components/Faq'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { Chip } from '@/components/Chip'
+import { SeoFooter } from '@/components/SeoFooter'
 import { pageMeta } from '@/lib/seo'
 import { genreBlurb } from '@/lib/genre-info'
 import { articleCategoryLabel } from '@/lib/anime'
@@ -32,6 +33,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       (g.descriptionDe ? g.descriptionDe.slice(0, 160) : `Alle ${g.name}-Anime im Überblick: beliebteste Titel, Top-Studios, Tags und News. Sortiert und durchsuchbar.`),
     path: `/genre/${slug}`,
     image: g.imageUrl,
+    noindex: g.noindex || undefined,
+    canonical: g.canonicalUrl || undefined,
   })
   if (slug === 'hentai') meta.robots = { index: false, follow: true }
   meta.alternates = {
@@ -319,6 +322,8 @@ export default async function GenreDetail({
           </section>
         </>
       ) : null}
+
+      <SeoFooter data={genre.footerText} vars={{ name: genre.name }} maxW="max-w-6xl" />
     </main>
   )
 }

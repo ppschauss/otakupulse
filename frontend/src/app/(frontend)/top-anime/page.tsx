@@ -1,14 +1,16 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { RankedList } from '@/components/RankedList'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
-import { pageMeta } from '@/lib/seo'
+import { pageMetaFor } from '@/lib/pageContent'
+import { PageSeoFooter } from '@/components/SeoFooter'
 
 export const dynamic = 'force-dynamic'
 
-export function generateMetadata() {
-  return pageMeta({
+export async function generateMetadata(): Promise<Metadata> {
+  return await pageMetaFor('top-anime', {
     title: 'Die besten Anime aller Zeiten — Top-Ranking | OtakuPulse',
     description: 'Das OtakuPulse-Ranking der bestbewerteten Anime — nach Community-Score sortiert.',
     path: '/top-anime',
@@ -29,6 +31,7 @@ export default async function TopAnimePage() {
   })
 
   return (
+    <>
     <main className="mx-auto max-w-4xl px-4 py-10">
       <Breadcrumbs items={[{ name: 'Start', path: '/' }, { name: 'Top-Anime', path: '/top-anime' }]} />
       <h1 className="text-3xl font-extrabold text-white">Die besten Anime</h1>
@@ -65,5 +68,7 @@ export default async function TopAnimePage() {
         </div>
       </section>
     </main>
+    <PageSeoFooter pageKey="top-anime" vars={{ count: docs.length }} maxW="max-w-4xl" />
+    </>
   )
 }

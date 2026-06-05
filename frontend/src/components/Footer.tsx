@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { FooterColumn, NavLink } from '@/lib/navigation'
+import { ConsentSettingsLink } from '@/components/ConsentSettingsLink'
 
 const ext = (href: string) => href.startsWith('http')
 
@@ -51,6 +52,7 @@ export function Footer({ columns, legal }: { columns: FooterColumn[]; legal: Nav
                 {l.label}
               </Link>
             ))}
+            <ConsentSettingsLink className="transition hover:text-accent" />
           </nav>
         </div>
       </div>

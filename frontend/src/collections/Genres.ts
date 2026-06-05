@@ -1,5 +1,6 @@
 import type { CollectionConfig } from 'payload'
 import { seoFields } from '../fields/seo'
+import { footerTextField } from '../fields/footerText'
 
 export const Genres: CollectionConfig = {
   slug: 'genres',
@@ -15,6 +16,7 @@ export const Genres: CollectionConfig = {
     { name: 'relatedGenres', type: 'relationship', relationTo: 'genres', hasMany: true },
     // Reverse: alle Anime in diesem Genre
     { name: 'anime', type: 'join', collection: 'anime', on: 'genres' },
+    footerTextField,
     seoFields,
   ],
 }

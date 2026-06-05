@@ -1,6 +1,7 @@
 import type { CollectionConfig } from 'payload'
 import { externalIdFields, syncMetaFields } from '../fields/sync'
 import { seoFields } from '../fields/seo'
+import { footerTextField } from '../fields/footerText'
 
 export const Persons: CollectionConfig = {
   slug: 'persons',
@@ -59,6 +60,7 @@ export const Persons: CollectionConfig = {
     // Reverse: Sprechrollen (Characters speichert voiceActors[].person)
     { name: 'voiceCredits', type: 'join', collection: 'characters', on: 'voiceActors.person' },
     ...syncMetaFields,
+    footerTextField,
     seoFields,
   ],
 }
