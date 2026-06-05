@@ -112,6 +112,20 @@ docker compose logs -f app          # Build-/Start-Fortschritt
 - **Hinweis Payload-Schema:** in Produktion kein Auto-Push mehr. Neue Felder/Globals
   vorher einmal im Dev-Modus pushen (oder Migration anlegen).
 
+### Enrichment-Worker (Bilder + Übersetzungen, automatisch)
+
+Der `enrich`-Service (in `docker-compose.yml`) läuft dauerhaft und veredelt **jeden
+neuen Anime** automatisch — egal ob aus Batch- oder On-Demand-Import:
+
+- **Bild-Spiegelung** (`mirror --anime`): lädt Cover/Banner ins lokale `public/media`
+  (Volume) → unabhängig vom AniList-CDN. Inkrementell (überspringt vorhandene).
+- **Übersetzung** (`translate`): erzeugt deutsche Beschreibungen via Claude Haiku.
+  Läuft nur, wenn `ANTHROPIC_API_KEY` in `secrets.env` gesetzt ist. Inkrementell.
+
+Beide laufen parallel, alle ~3 Min. Bis zur Übersetzung zeigt die Seite automatisch
+den englischen AniList-Text (`descriptionDe || descriptionSource`); Bilder laden
+zwischenzeitlich vom AniList-CDN (via `next/image` optimiert).
+
 ### Variante B — Unraid-Template beibehalten
 
 Nur zwei Felder im Template von `otakupulse-app` ändern:

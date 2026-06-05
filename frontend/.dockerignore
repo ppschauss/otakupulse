@@ -1,5 +1,7 @@
 node_modules
 .next
+# Mediathek wird zur Laufzeit als Volume gemountet (nicht ins Image backen)
+public/media
 .git
 .gitignore
 npm-debug.log*

@@ -35,8 +35,42 @@ services:
         condition: service_healthy
     ports:
       - '3001:3000'
+    volumes:
+      # Mediathek als Volume (nicht ins Image gebacken) → gespiegelte Bilder
+      # werden sofort ausgeliefert, Image bleibt schlank.
+      - /mnt/cache/appdata/otakupulse/frontend/public/media:/app/public/media
     networks:
       - otakupulse-net
+
+  # Enrichment-Worker: spiegelt fortlaufend neue Anime-Cover/Banner lokal und
+  # erzeugt deutsche Beschreibungen (Claude Haiku) — inkrementell, alle 3 Min.
+  # Greift für JEDEN neuen Anime (Batch- wie On-Demand-Import).
+  # Übersetzung läuft nur, wenn ANTHROPIC_API_KEY in secrets.env gesetzt ist.
+  enrich:
+    build:
+      context: ./frontend
+    container_name: otakupulse-enrich
+    restart: unless-stopped
+    env_file: ./frontend/secrets.env
+    environment:
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - /mnt/cache/appdata/otakupulse/frontend/public/media:/app/public/media
+    networks:
+      - otakupulse-net
+    command:
+      - sh
+      - -lc
+      - >
+        while true; do
+        npx tsx src/scripts/mirror-images.ts --anime &
+        if [ -n "$$ANTHROPIC_API_KEY" ]; then npx tsx src/scripts/translate.ts --anime --studios & fi;
+        wait;
+        sleep 180;
+        done
 
 networks:
   otakupulse-net:
