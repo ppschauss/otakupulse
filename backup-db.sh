@@ -30,15 +30,17 @@ for p in otakupulse umami; do
   ls -1t "$DEST"/$p-*.sql.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f
 done
 
-# Offsite (Google Drive via rclone), nur wenn Remote "gdrive" existiert.
-if command -v rclone >/dev/null 2>&1 && rclone listremotes 2>/dev/null | grep -q '^gdrive:'; then
-  if rclone copy "$DEST" gdrive:OtakuPulse-Backups --include "*.sql.gz" --transfers 2 2>>"$LOG"; then
+# Offsite (Google Drive via rclone), nur wenn Remote "gdrive" konfiguriert ist.
+RCLONE=/mnt/cache/appdata/otakupulse/bin/rclone
+export RCLONE_CONFIG=/mnt/cache/appdata/otakupulse/rclone.conf
+if [ -x "$RCLONE" ] && "$RCLONE" listremotes 2>/dev/null | grep -q '^gdrive:'; then
+  if "$RCLONE" copy "$DEST" gdrive:OtakuPulse-Backups --include "*.sql.gz" --transfers 2 2>>"$LOG"; then
     log "Offsite: nach gdrive:OtakuPulse-Backups kopiert"
   else
     log "Offsite-Upload FEHLGESCHLAGEN"
   fi
 else
-  log "Offsite übersprungen (rclone/Remote 'gdrive' nicht konfiguriert)"
+  log "Offsite übersprungen (rclone-Remote 'gdrive' noch nicht konfiguriert)"
 fi
 
 log "=== fertig ==="
