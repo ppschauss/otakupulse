@@ -26,3 +26,7 @@ Thumbs.db
 
 # TS build info
 *.tsbuildinfo
+
+# rclone (enthält Offsite-Credentials) + Binary
+rclone.conf
+bin/
