@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { displayTitle, formatLabel, statusLabel, animeCover } from '@/lib/anime'
+import { AdultGuard } from './AdultGuard'
 
 export function AnimeCard({ anime }: { anime: any }) {
   const title = displayTitle(anime)
@@ -21,6 +22,9 @@ export function AnimeCard({ anime }: { anime: any }) {
         ) : (
           <div className="grid h-full w-full place-items-center text-xs text-zinc-600">kein Bild</div>
         )}
+
+        {/* Jugendschutz: Hentai-Cover blurren + FSK-18-Siegel */}
+        <AdultGuard anime={anime} size="md" rounded="rounded-xl" />
 
         {/* Score-Badge */}
         {score && score > 0 ? (

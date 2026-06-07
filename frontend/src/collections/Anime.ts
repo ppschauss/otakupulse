@@ -80,7 +80,7 @@ export const Anime: CollectionConfig = {
     },
 
     // --- Texte ---
-    { name: 'descriptionSource', type: 'textarea', admin: { description: 'Originaltext der API-Quelle. Intern.' } },
+    { name: 'descriptionSource', type: 'textarea', access: { read: ({ req }: any) => !!req?.user }, admin: { description: 'Originaltext der API-Quelle. Intern.' } },
     { name: 'descriptionDe', type: 'textarea', admin: { description: 'Öffentlicher deutscher Text (eigene Formulierung, SEO).' } },
 
     {
@@ -121,6 +121,18 @@ export const Anime: CollectionConfig = {
     // --- Relationen ---
     { name: 'studios', type: 'relationship', relationTo: 'studios', hasMany: true },
     { name: 'genres', type: 'relationship', relationTo: 'genres', hasMany: true },
+    {
+      name: 'isHentai',
+      type: 'checkbox',
+      defaultValue: false,
+      index: true,
+      label: 'Erwachsenen-Inhalt (Hentai)',
+      admin: {
+        description:
+          'Genre „Hentai". Cover/Banner werden bei aktivem Jugendschutz geblurrt (FSK-18-Siegel) und der Titel ' +
+          'wird NICHT automatisch in News/RSS-Feeds eingespeist. Wird beim AniList-Import automatisch gesetzt.',
+      },
+    },
     {
       name: 'tags',
       type: 'array',

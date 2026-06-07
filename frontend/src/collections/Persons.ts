@@ -22,7 +22,7 @@ export const Persons: CollectionConfig = {
     { name: 'aliases', type: 'text', hasMany: true },
     { name: 'imageUrl', type: 'text' },
     { name: 'imageLocal', type: 'text' },
-    { name: 'bioSource', type: 'textarea', admin: { description: 'Originaltext (API).' } },
+    { name: 'bioSource', type: 'textarea', access: { read: ({ req }: any) => !!req?.user }, admin: { description: 'Originaltext (API).' } },
     { name: 'bioDe', type: 'textarea', admin: { description: 'Öffentlicher DE-Text.' } },
     {
       type: 'row',

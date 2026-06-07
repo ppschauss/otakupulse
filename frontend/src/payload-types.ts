@@ -77,6 +77,8 @@ export interface Config {
     platforms: Platform;
     'anime-seasons': AnimeSeason;
     articles: Article;
+    feeds: Feed;
+    'contact-messages': ContactMessage;
     authors: Author;
     users: User;
     'payload-kv': PayloadKv;
@@ -119,6 +121,8 @@ export interface Config {
     platforms: PlatformsSelect<false> | PlatformsSelect<true>;
     'anime-seasons': AnimeSeasonsSelect<false> | AnimeSeasonsSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
+    feeds: FeedsSelect<false> | FeedsSelect<true>;
+    'contact-messages': ContactMessagesSelect<false> | ContactMessagesSelect<true>;
     authors: AuthorsSelect<false> | AuthorsSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
@@ -133,10 +137,12 @@ export interface Config {
   globals: {
     navigation: Navigation;
     'page-content': PageContent;
+    settings: Setting;
   };
   globalsSelect: {
     navigation: NavigationSelect<false> | NavigationSelect<true>;
     'page-content': PageContentSelect<false> | PageContentSelect<true>;
+    settings: SettingsSelect<false> | SettingsSelect<true>;
   };
   locale: null;
   widgets: {
@@ -246,6 +252,10 @@ export interface Anime {
   trailerUrl?: string | null;
   studios?: (number | Studio)[] | null;
   genres?: (number | Genre)[] | null;
+  /**
+   * Genre „Hentai". Cover/Banner werden bei aktivem Jugendschutz geblurrt (FSK-18-Siegel) und der Titel wird NICHT automatisch in News/RSS-Feeds eingespeist. Wird beim AniList-Import automatisch gesetzt.
+   */
+  isHentai?: boolean | null;
   tags?:
     | {
         tag: number | Tag;
@@ -776,6 +786,14 @@ export interface Article {
   tags?: (number | Tag)[] | null;
   isFeatured?: boolean | null;
   isPinned?: boolean | null;
+  /**
+   * Beim Speichern in den Telegram-Channel posten (nur bei veröffentlichten Artikeln). Wird danach automatisch zurückgesetzt.
+   */
+  pushToTelegram?: boolean | null;
+  /**
+   * Zeitpunkt des Telegram-Versands (leer = noch nicht gepostet).
+   */
+  telegramPostedAt?: string | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
   seoKeywords?: string[] | null;
@@ -803,6 +821,82 @@ export interface Author {
       }[]
     | null;
   role?: ('admin' | 'editor' | 'contributor' | 'guest') | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Eigene RSS-Feeds: Artikel per Suche hinzufügen. Abruf unter /feed/<slug>.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "feeds".
+ */
+export interface Feed {
+  id: number;
+  /**
+   * Anzeigename des Feeds (z.B. „News – Action").
+   */
+  name: string;
+  /**
+   * URL-Teil → /feed/<slug>. Wird aus dem Namen erzeugt, wenn leer.
+   */
+  slug: string;
+  /**
+   * Feed-Beschreibung (RSS <description>).
+   */
+  description?: string | null;
+  /**
+   * Beiträge per Suche hinzufügen. Reihenfolge hier = Reihenfolge im Feed.
+   */
+  articles?: (number | Article)[] | null;
+  /**
+   * Anime direkt in den Feed legen (verlinkt auf /anime/<slug>, Text = dt. Beschreibung). Kein Artikel nötig.
+   */
+  anime?: (number | Anime)[] | null;
+  /**
+   * Beliebige Seite/URL als Feed-Eintrag (z.B. eine Genre- oder Themenseite).
+   */
+  customItems?:
+    | {
+        title: string;
+        /**
+         * Voll- oder Pfad-URL (z.B. /genre/action oder https://…).
+         */
+        url: string;
+        description?: string | null;
+        /**
+         * Optionales Datum (sonst „jetzt").
+         */
+        date?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * Maximale Anzahl Einträge im Feed (Default 50).
+   */
+  maxItems?: number | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Eingegangene Kontakt-/Feedback-Anfragen über das /kontakt-Formular.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "contact-messages".
+ */
+export interface ContactMessage {
+  id: number;
+  name?: string | null;
+  email: string;
+  category?: ('feedback' | 'bug' | 'correction' | 'partnership' | 'legal' | 'other') | null;
+  /**
+   * Betreff (optional).
+   */
+  subject?: string | null;
+  message: string;
+  /**
+   * Als erledigt markieren.
+   */
+  handled?: boolean | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -898,6 +992,14 @@ export interface PayloadLockedDocument {
         value: number | Article;
       } | null)
     | ({
+        relationTo: 'feeds';
+        value: number | Feed;
+      } | null)
+    | ({
+        relationTo: 'contact-messages';
+        value: number | ContactMessage;
+      } | null)
+    | ({
         relationTo: 'authors';
         value: number | Author;
       } | null)
@@ -981,6 +1083,7 @@ export interface AnimeSelect<T extends boolean = true> {
   trailerUrl?: T;
   studios?: T;
   genres?: T;
+  isHentai?: T;
   tags?:
     | T
     | {
@@ -1286,6 +1389,8 @@ export interface ArticlesSelect<T extends boolean = true> {
   tags?: T;
   isFeatured?: T;
   isPinned?: T;
+  pushToTelegram?: T;
+  telegramPostedAt?: T;
   seoTitle?: T;
   seoDescription?: T;
   seoKeywords?: T;
@@ -1294,6 +1399,43 @@ export interface ArticlesSelect<T extends boolean = true> {
   updatedAt?: T;
   createdAt?: T;
   _status?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "feeds_select".
+ */
+export interface FeedsSelect<T extends boolean = true> {
+  name?: T;
+  slug?: T;
+  description?: T;
+  articles?: T;
+  anime?: T;
+  customItems?:
+    | T
+    | {
+        title?: T;
+        url?: T;
+        description?: T;
+        date?: T;
+        id?: T;
+      };
+  maxItems?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "contact-messages_select".
+ */
+export interface ContactMessagesSelect<T extends boolean = true> {
+  name?: T;
+  email?: T;
+  category?: T;
+  subject?: T;
+  message?: T;
+  handled?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1501,6 +1643,21 @@ export interface PageContent {
   createdAt?: string | null;
 }
 /**
+ * Globale Schalter für die Website.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "settings".
+ */
+export interface Setting {
+  id: number;
+  /**
+   * Wenn aktiv, werden alle Cover/Banner von Titeln der Genre „Hentai" verschwommen dargestellt und mit einem FSK-18-Siegel überlagert. Deaktivieren zeigt die Bilder normal an. (Unabhängig davon werden Hentai-Titel nie automatisch in News/RSS-Feeds eingespeist — das geht nur manuell.)
+   */
+  blurAdultCovers?: boolean | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "navigation_select".
  */
@@ -1551,6 +1708,16 @@ export interface PageContentSelect<T extends boolean = true> {
         footerText?: T;
         id?: T;
       };
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "settings_select".
+ */
+export interface SettingsSelect<T extends boolean = true> {
+  blurAdultCovers?: T;
   updatedAt?: T;
   createdAt?: T;
   globalType?: T;

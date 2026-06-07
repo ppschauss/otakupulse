@@ -14,7 +14,9 @@ Für Dub siehe `crunchyroll-dub.py`.
 WICHTIG: Läuft auf dem HOST. `pip install curl_cffi` + `docker`. Grau-Zone
 (inoffizielle GraphQL-API), konservativ rate-limitiert, idempotent.
 
-Aufruf:  python3 src/scripts/justwatch-streaming.py
+Aufruf:  python3 src/scripts/justwatch-streaming.py                 (voll, alle Anime)
+         python3 src/scripts/justwatch-streaming.py --recent 3      (nur Titel der letzten 3 Tage — täglich)
+         python3 src/scripts/justwatch-streaming.py --only-missing  (nur Titel ohne Anbieter)
 """
 import json
 import subprocess
@@ -87,10 +89,14 @@ def norm(s):
     return re.sub(r"[^a-z0-9]", "", s.lower()) if s else ""
 
 
-def load_anime():
+def load_anime(recent_days=None):
+    # Optional nur kürzlich hinzugefügte Titel (für den täglichen Lauf nach dem Sync).
+    where = ""
+    if recent_days:
+        where = f" WHERE a.created_at > now() - interval '{int(recent_days)} days'"
     rows = json.loads(psql(
         "SELECT COALESCE(json_agg(json_build_object('id',a.id,'en',a.title_english,"
-        "'ro',a.title_romaji,'na',a.title_native)),'[]') FROM anime a;"
+        f"'ro',a.title_romaji,'na',a.title_native)),'[]') FROM anime a{where};"
     ).strip() or "[]")
     anime = {r["id"]: {"id": r["id"], "titles": [r.get("en") or "", r.get("ro") or "", r.get("na") or ""], "have": set()}
              for r in rows}
@@ -157,10 +163,33 @@ def providers_for(session, a):
     return slugs
 
 
+def _arg(name, default=None):
+    if name in sys.argv:
+        i = sys.argv.index(name)
+        return sys.argv[i + 1] if i + 1 < len(sys.argv) else default
+    return default
+
+
 def main():
+    recent = _arg("--recent")
     print("→ Lade Anime + vorhandene Anbieter …")
-    anime = load_anime()
+    anime = load_anime(recent_days=recent)
+    if recent:
+        print(f"  --recent {recent}: {len(anime)} Titel der letzten {recent} Tage.")
     print(f"  {len(anime)} Anime.")
+    if not anime:
+        print("  Nichts zu tun.")
+        return
+
+    # --only-missing: nur Anime OHNE bisherige Anbieter abfragen (für den
+    # täglichen Lauf nach dem Sync — billig, deckt neu importierte Titel ab).
+    if "--only-missing" in sys.argv:
+        before = len(anime)
+        anime = [a for a in anime if not a["have"]]
+        print(f"  --only-missing: {len(anime)} ohne Anbieter (von {before}).")
+        if not anime:
+            print("  Nichts zu tun.")
+            return
 
     results, added, errors, done = {}, 0, 0, 0
 

@@ -327,6 +327,7 @@ export async function importAnime(payload: Payload, anilistId: number, opts: Imp
     bannerImageUrl: m.bannerImage ?? undefined,
     trailerUrl,
     genres: genreIds,
+    isHentai: (m.genres || []).some((g: string) => String(g).toLowerCase() === 'hentai'),
     studios: studioIds,
     tags: tagEntries,
     characters: characterEntries,
@@ -399,31 +400,56 @@ export async function importAnime(payload: Payload, anilistId: number, opts: Imp
 // Slug mehrfach gleichzeitig von AniList holen.
 const inFlight = new Map<string, Promise<string | null>>()
 
+// Missbrauchs-Schutz für den anonymen On-Demand-Import (Bot ruft massenhaft
+// Zufalls-Slugs auf → AniList-Flut, DB-Pollution, IP-Bann):
+//  - Negativ-Cache: kürzlich erfolglose Slugs nicht erneut bei AniList anfragen.
+//  - Globales Budget: max. IMPORT_MAX Importe pro IMPORT_WINDOW.
+const notFound = new Map<string, number>()
+const NOT_FOUND_TTL = 60 * 60 * 1000 // 1 h
+const recentImports: number[] = []
+const IMPORT_WINDOW = 10 * 60 * 1000 // 10 min
+const IMPORT_MAX = 30
+
+function importBudgetExhausted(): boolean {
+  const now = Date.now()
+  while (recentImports.length && now - recentImports[0] > IMPORT_WINDOW) recentImports.shift()
+  return recentImports.length >= IMPORT_MAX
+}
+
 /**
  * On-Demand-Fallback: ist ein Slug noch nicht in der DB, wird der passende Anime
- * über die AniList-Suche gefunden und importiert. Gibt den tatsächlichen Slug des
- * importierten Anime zurück (kann bei Fuzzy-Match vom angefragten abweichen) oder
- * `null`, wenn nichts gefunden wurde.
+ * über die AniList-Suche gefunden und importiert — ABER nur bei EXAKTEM Slug-Treffer
+ * (kein Fuzzy-Import → keine unkontrollierte Datenanlage). Gibt den Slug des
+ * importierten Anime zurück oder `null` (Route zeigt dann 404).
  */
 export function importAnimeBySlug(payload: Payload, slug: string): Promise<string | null> {
   const cached = inFlight.get(slug)
   if (cached) return cached
 
+  // Negativ-Cache: bekannt erfolglose Slugs ohne erneuten AniList-Call abweisen.
+  const miss = notFound.get(slug)
+  if (miss && Date.now() - miss < NOT_FOUND_TTL) return Promise.resolve(null)
+
   const task = (async (): Promise<string | null> => {
     const search = slug.replace(/-/g, ' ').trim()
-    if (!search) return null
+    if (search.length < 2) return null
+    // Flut-Schutz: in diesem Zeitfenster keine weiteren On-Demand-Importe.
+    if (importBudgetExhausted()) return null
 
     const data = await anilistRequest<{ Page: { media: any[] } }>(SEARCH_QUERY, { search })
     const candidates = data.Page?.media || []
-    if (!candidates.length) return null
 
-    // 1) exakter Slug-Treffer unter den Kandidaten
+    // NUR exakter Slug-Treffer wird importiert.
     for (const c of candidates) {
       const cslug = slugify(c.title?.romaji || c.title?.english || String(c.id))
-      if (cslug === slug) return (await importAnime(payload, c.id)).slug
+      if (cslug === slug) {
+        recentImports.push(Date.now())
+        return (await importAnime(payload, c.id)).slug
+      }
     }
-    // 2) sonst den besten Suchtreffer importieren (Route redirectet auf dessen Slug)
-    return (await importAnime(payload, candidates[0].id)).slug
+    // Nichts Passendes → für eine Weile als „nicht gefunden" merken.
+    notFound.set(slug, Date.now())
+    return null
   })()
 
   inFlight.set(slug, task)

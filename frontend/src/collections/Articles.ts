@@ -7,11 +7,33 @@ export const Articles: CollectionConfig = {
   admin: {
     useAsTitle: 'title',
     group: 'Redaktion',
-    defaultColumns: ['title', 'category', 'publishDate', '_status'],
+    defaultColumns: ['title', 'category', 'publishDate', 'telegramPostedAt', '_status'],
   },
-  access: { read: () => true },
+  access: {
+    // Anonyme sehen NUR veröffentlichte Artikel; eingeloggte Redaktion auch Entwürfe.
+    read: ({ req: { user } }) => (user ? true : { _status: { equals: 'published' } }),
+  },
   // Redaktioneller Workflow: Draft → Published
   versions: { drafts: true },
+  hooks: {
+    afterChange: [
+      // Checkbox „Jetzt auf Telegram posten" → bei veröffentlichtem Artikel sofort senden.
+      async ({ doc, req, context }) => {
+        if ((context as any)?.skipTelegram) return doc
+        if (!doc?.pushToTelegram || doc._status !== 'published') return doc
+        const { sendArticleToTelegram } = await import('../lib/telegram')
+        const r = await sendArticleToTelegram(doc)
+        await req.payload.update({
+          collection: 'articles',
+          id: doc.id,
+          data: { pushToTelegram: false, ...(r.ok ? { telegramPostedAt: new Date().toISOString() } : {}) } as any,
+          context: { skipTelegram: true },
+        })
+        if (!r.ok) req.payload.logger.error(`Telegram-Push „${doc.title}" fehlgeschlagen: ${r.error}`)
+        return doc
+      },
+    ],
+  },
   fields: [
     { name: 'title', type: 'text', required: true },
     { name: 'slug', type: 'text', required: true, unique: true, index: true },
@@ -35,6 +57,27 @@ export const Articles: CollectionConfig = {
         { name: 'isFeatured', type: 'checkbox', defaultValue: false },
         { name: 'isPinned', type: 'checkbox', defaultValue: false },
       ],
+    },
+    // --- Telegram ---
+    {
+      name: 'pushToTelegram',
+      type: 'checkbox',
+      defaultValue: false,
+      access: { read: ({ req }: any) => !!req?.user },
+      admin: {
+        position: 'sidebar',
+        description: 'Beim Speichern in den Telegram-Channel posten (nur bei veröffentlichten Artikeln). Wird danach automatisch zurückgesetzt.',
+      },
+    },
+    {
+      name: 'telegramPostedAt',
+      type: 'date',
+      access: { read: ({ req }: any) => !!req?.user },
+      admin: {
+        position: 'sidebar',
+        readOnly: true,
+        description: 'Zeitpunkt des Telegram-Versands (leer = noch nicht gepostet).',
+      },
     },
     seoFields,
   ],

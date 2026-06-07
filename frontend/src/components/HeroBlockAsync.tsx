@@ -2,6 +2,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { HeroSlider, type HeroSlide } from './HeroSlider'
 import { displayTitle, animeBanner } from '@/lib/anime'
+import { getBlurAdult } from '@/lib/settings'
 
 // Async-Serverkomponente: lädt Hero-Quelle (Featured → sonst beliebteste) und rendert den Slider.
 export async function HeroBlockAsync() {
@@ -18,10 +19,12 @@ export async function HeroBlockAsync() {
     pool = await payload.find({ collection: 'anime', sort: '-popularity', limit: 6, depth: 0 })
   }
 
+  const blurAdult = await getBlurAdult()
   const slides: HeroSlide[] = pool.docs.map((a: any) => ({
     imageUrl: animeBanner(a),
     title: displayTitle(a),
     href: `/anime/${a.slug}`,
+    blur: blurAdult && !!a.isHentai,
   }))
 
   return (

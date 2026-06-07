@@ -21,14 +21,22 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-export default async function KalenderPage() {
+export default async function KalenderPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ genre?: string }>
+}) {
+  const { genre } = await searchParams
   return (
     <>
-    <main className="mx-auto max-w-6xl px-4 py-10">
+    <main className="mx-auto max-w-7xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Simulcast-Kalender</h1>
-      <CalendarWeek weekStart={startOfWeek(new Date())} isCurrent />
+      <p className="mt-1 text-sm text-zinc-400">
+        Welche Anime-Episoden wann erscheinen — Woche für Woche, filterbar nach Genre.
+      </p>
+      <CalendarWeek weekStart={startOfWeek(new Date())} isCurrent genreSlug={genre} basePath="/kalender" />
     </main>
-    <PageSeoFooter pageKey="kalender" maxW="max-w-6xl" />
+    <PageSeoFooter pageKey="kalender" maxW="max-w-7xl" />
     </>
   )
 }

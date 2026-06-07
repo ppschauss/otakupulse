@@ -23,6 +23,8 @@
     "mirror": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/mirror-images.ts",
     "translate": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/translate.ts",
     "news": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/generate-news.ts",
+    "news:anime": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/generate-anime-news.ts",
+    "telegram:notify": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/telegram-notify.ts",
     "seed:navigation": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/seed-navigation.ts"
   },
   "dependencies": {

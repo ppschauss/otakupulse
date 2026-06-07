@@ -4,8 +4,11 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
 import { Chip } from '@/components/Chip'
+import { Faq } from '@/components/Faq'
+import { JsonLd } from '@/components/JsonLd'
 import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
+import { url } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
 
@@ -143,6 +146,41 @@ export default async function GenreListPage({ searchParams }: { searchParams: Pr
               </p>
             </div>
           </section>
+
+          <Faq
+            title="Häufige Fragen zu Anime-Genres"
+            items={[
+              {
+                q: 'Welche Anime-Genres gibt es?',
+                a: `OtakuPulse listet ${docs.length} Genres – von Action, Adventure, Comedy und Drama über Fantasy, Romance, Sci-Fi und Slice of Life bis zu Mecha, Mystery, Horror und Sports. Jedes Genre hat eine eigene Seite mit Bestenliste und Beschreibung.`,
+              },
+              {
+                q: 'Was ist der Unterschied zwischen Genre und Tag?',
+                a: 'Genres sind grobe Kategorien (z. B. Action, Fantasy). Tags beschreiben feinere Themen und Settings (z. B. Isekai, Time Travel, Schule). Über die Tag-Übersicht lässt sich noch gezielter filtern.',
+              },
+              {
+                q: 'Welches ist das größte Anime-Genre?',
+                a:
+                  top[0] && top[0].n > 0
+                    ? `Das größte Genre ist aktuell ${top[0].name} mit ${top[0].n.toLocaleString('de-DE')} Titeln in der Datenbank.`
+                    : 'Die größten Genres siehst du oben im Bereich „Größte Genres", sortiert nach Titelanzahl.',
+              },
+            ]}
+          />
+
+          <JsonLd
+            data={{
+              '@context': 'https://schema.org',
+              '@type': 'ItemList',
+              name: 'Anime-Genres',
+              itemListElement: list.slice(0, 20).map((g, i) => ({
+                '@type': 'ListItem',
+                position: i + 1,
+                url: url(`/genre/${g.slug}`),
+                name: g.name,
+              })),
+            }}
+          />
         </>
       )}
     </main>

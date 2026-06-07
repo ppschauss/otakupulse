@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import { AdultGate } from './AdultGate'
 
-export type HeroSlide = { imageUrl?: string | null; title: string; href: string }
+export type HeroSlide = { imageUrl?: string | null; title: string; href: string; blur?: boolean }
 
 export function HeroSlider({
   slides,
@@ -47,6 +48,7 @@ export function HeroSlider({
           ) : (
             <div className="h-full w-full bg-gradient-to-br from-accent/30 to-accent-2/30" />
           )}
+          {s.blur ? <AdultGate size="md" rounded="" /> : null}
         </div>
       ))}
       <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-zinc-950/30" />

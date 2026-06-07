@@ -9,6 +9,26 @@ const securityHeaders = [
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
 ]
 
+// CSP nur für öffentliche Routen (Admin ausgenommen, s.u.). 'unsafe-inline' ist für
+// Next.js nötig; externe Skripte sind gesperrt. Falls externe Analytics (Plausible/
+// Umami) genutzt werden, deren Host bei script-src ergänzen.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https:",
+  "media-src 'self' https:",
+  "frame-ancestors 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+  'upgrade-insecure-requests',
+].join('; ')
+
+const cspHeader = { key: 'Content-Security-Policy', value: contentSecurityPolicy }
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Erlaubt dem Dev-Server, /_next/-Ressourcen an diese Origins auszuliefern
@@ -27,7 +47,21 @@ const nextConfig = {
     ],
   },
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }]
+    return [
+      // Öffentliche Routen: Security-Header inkl. CSP. /legal/admin ist ausgenommen,
+      // damit das Payload-Admin-Panel (Inline-/Worker-Skripte) nicht bricht.
+      { source: '/((?!legal/admin).*)', headers: [...securityHeaders, cspHeader] },
+      { source: '/legal/admin/:path*', headers: securityHeaders },
+    ]
+  },
+  // First-Party-Proxy für selbst-gehostetes Umami (Container „umami" im selben
+  // Docker-Netz). Tracking läuft so über die eigene Domain (/stats/*) → kein
+  // Dritt-Host, CSP bleibt 'self', adblock-resistent. /api bleibt für Payload frei.
+  async rewrites() {
+    return [
+      { source: '/stats/script.js', destination: 'http://umami:3000/script.js' },
+      { source: '/stats/api/send', destination: 'http://umami:3000/api/send' },
+    ]
   },
 }
 

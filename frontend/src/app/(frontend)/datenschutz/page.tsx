@@ -38,8 +38,8 @@ export default function DatenschutzPage() {
             Heldenbergerstr. 14, 61184 Karben, Deutschland
             <br />
             E-Mail:{' '}
-            <a href="mailto:info@patrickschauss.de" className="text-accent hover:underline">
-              info@patrickschauss.de
+            <a href="mailto:info@otakupulse.de" className="text-accent hover:underline">
+              info@otakupulse.de
             </a>
           </p>
         </section>

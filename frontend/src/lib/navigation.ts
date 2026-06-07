@@ -47,10 +47,12 @@ export const DEFAULT_NAV: SiteNav = {
         { label: 'Tags', href: '/tag' },
         { label: 'Plattformen', href: '/plattform' },
         { label: 'News', href: '/news' },
+        { label: 'RSS-Feeds', href: '/feeds' },
       ],
     },
   ],
   legal: [
+    { label: 'Kontakt', href: '/kontakt' },
     { label: 'Impressum', href: '/impressum' },
     { label: 'Datenschutz', href: '/datenschutz' },
   ],

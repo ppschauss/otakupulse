@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
 import { MediaRow } from '@/components/MediaRow'
+import { DescriptionText } from '@/components/DescriptionText'
 import { PortraitCard } from '@/components/PortraitCard'
 import { ScrollRow } from '@/components/ScrollRow'
 import { Faq } from '@/components/Faq'
@@ -155,10 +156,7 @@ export default async function PersonDetail({ params }: { params: Promise<{ slug:
       {person.bioDe || person.bioSource ? (
         <section className="mt-8 max-w-3xl">
           <h2 className="mb-2 text-lg font-bold text-white">Biografie</h2>
-          <div
-            className="leading-relaxed text-zinc-300 [&_a]:text-accent"
-            dangerouslySetInnerHTML={{ __html: String(person.bioDe || person.bioSource) }}
-          />
+          <DescriptionText raw={person.bioDe || person.bioSource} className="leading-relaxed text-zinc-300" />
         </section>
       ) : null}
 

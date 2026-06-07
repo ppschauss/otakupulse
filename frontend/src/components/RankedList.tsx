@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { displayTitle, formatLabel, animeCover } from '@/lib/anime'
+import { AdultGuard } from './AdultGuard'
 
 // Nummerierte Ranking-Liste (für Top-Anime-Seiten).
 export function RankedList({ items, startRank = 1 }: { items: any[]; startRank?: number }) {
@@ -12,11 +13,14 @@ export function RankedList({ items, startRank = 1 }: { items: any[]; startRank?:
             <span className="w-8 shrink-0 text-center text-lg font-extrabold text-zinc-600 group-hover:text-accent">
               {startRank + i}
             </span>
-            {animeCover(a) ? (
-              <Image src={animeCover(a)!} alt="" width={48} height={64} className="h-16 w-12 shrink-0 rounded object-cover" />
-            ) : (
-              <div className="h-16 w-12 shrink-0 rounded bg-zinc-800" />
-            )}
+            <div className="relative h-16 w-12 shrink-0 overflow-hidden rounded">
+              {animeCover(a) ? (
+                <Image src={animeCover(a)!} alt="" width={48} height={64} className="h-16 w-12 rounded object-cover" />
+              ) : (
+                <div className="h-16 w-12 rounded bg-zinc-800" />
+              )}
+              <AdultGuard anime={a} size="sm" rounded="rounded" />
+            </div>
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium text-zinc-100 group-hover:text-accent">{displayTitle(a)}</p>
               <p className="text-xs text-zinc-500">

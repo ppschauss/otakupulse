@@ -19,7 +19,7 @@ export const Episodes: CollectionConfig = {
       ],
     },
     { name: 'airDate', type: 'date' },
-    { name: 'synopsisSource', type: 'textarea' },
+    { name: 'synopsisSource', type: 'textarea', access: { read: ({ req }: any) => !!req?.user } },
     { name: 'synopsisDe', type: 'textarea' },
     { name: 'thumbnailUrl', type: 'text' },
     { name: 'duration', type: 'number' },

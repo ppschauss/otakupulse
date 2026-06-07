@@ -22,7 +22,7 @@ export const Characters: CollectionConfig = {
     { name: 'aliases', type: 'text', hasMany: true },
     { name: 'imageUrl', type: 'text' },
     { name: 'imageLocal', type: 'text', admin: { description: 'Lokal gespiegelter Pfad (später).' } },
-    { name: 'descriptionSource', type: 'textarea', admin: { description: 'Originaltext (API).' } },
+    { name: 'descriptionSource', type: 'textarea', access: { read: ({ req }: any) => !!req?.user }, admin: { description: 'Originaltext (API).' } },
     { name: 'descriptionDe', type: 'textarea', admin: { description: 'Öffentlicher DE-Text.' } },
     {
       type: 'row',

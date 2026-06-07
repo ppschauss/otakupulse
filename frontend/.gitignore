@@ -8,6 +8,9 @@ dist
 .env.local
 secrets.env
 
+# Telegram-Notifier State (bereits gepostete Artikel-IDs)
+.telegram-posted.json
+
 # media (lokal gespiegelte Bilder)
 /media
 

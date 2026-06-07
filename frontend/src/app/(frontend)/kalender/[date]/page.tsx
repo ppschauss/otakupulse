@@ -23,8 +23,15 @@ export async function generateMetadata({ params }: { params: Promise<{ date: str
   })
 }
 
-export default async function KalenderDate({ params }: { params: Promise<{ date: string }> }) {
+export default async function KalenderDate({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ date: string }>
+  searchParams: Promise<{ genre?: string }>
+}) {
   const { date } = await params
+  const { genre } = await searchParams
   const d = parseDate(date)
   if (!d) notFound()
 
@@ -32,9 +39,9 @@ export default async function KalenderDate({ params }: { params: Promise<{ date:
   const isCurrent = ws.getTime() === startOfWeek(new Date()).getTime()
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10">
+    <main className="mx-auto max-w-7xl px-4 py-10">
       <h1 className="text-2xl font-extrabold text-white">Simulcast-Kalender</h1>
-      <CalendarWeek weekStart={ws} isCurrent={isCurrent} />
+      <CalendarWeek weekStart={ws} isCurrent={isCurrent} genreSlug={genre} basePath={`/kalender/${date}`} />
     </main>
   )
 }

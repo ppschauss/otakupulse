@@ -41,8 +41,8 @@ export default function ImpressumPage() {
           <h2 className="text-lg font-bold text-white">Kontakt</h2>
           <p className="mt-2">
             E-Mail:{' '}
-            <a href="mailto:info@patrickschauss.de" className="text-accent hover:underline">
-              info@patrickschauss.de
+            <a href="mailto:info@otakupulse.de" className="text-accent hover:underline">
+              info@otakupulse.de
             </a>
           </p>
         </section>

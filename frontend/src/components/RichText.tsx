@@ -61,7 +61,9 @@ function renderNode(node: any, key: React.Key): React.ReactNode {
     case 'listitem':
       return <li key={key}>{renderChildren(node.children)}</li>
     case 'link': {
-      const url = node.fields?.url || node.url || '#'
+      const raw = node.fields?.url || node.url || '#'
+      // Nur sichere Schemata (verhindert javascript:-/data:-XSS in Link-Knoten).
+      const url = /^(https?:|mailto:|\/|#)/i.test(String(raw)) ? raw : '#'
       return (
         <a key={key} href={url} className="text-accent hover:underline" target="_blank" rel="noopener noreferrer">
           {renderChildren(node.children)}

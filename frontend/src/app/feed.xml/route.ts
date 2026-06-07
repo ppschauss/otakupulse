@@ -9,7 +9,7 @@ export async function GET() {
   const payload = await getPayload({ config })
   const { docs } = await payload.find({
     collection: 'articles',
-    where: { publishDate: { exists: true } },
+    where: { and: [{ publishDate: { exists: true } }, { _status: { equals: 'published' } }] },
     sort: '-publishDate',
     limit: 30,
     depth: 0,

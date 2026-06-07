@@ -33,24 +33,76 @@ NEXT_PUBLIC_UMAMI_SRC=https://<umami>/script.js
 2. Property in der Search Console anlegen (Domain oder URL-Präfix).
 3. Sitemap einreichen: `https://<domain>/sitemap.xml`
 
-## Täglicher Auto-Sync (Cron)
+## Täglicher Auto-Sync (Cron) — EINGERICHTET
 
-Script ist fertig: `npm run sync` (aktualisiert laufende Anime + aktuelle Season inkl. Episoden). Wrapper: `/root/otakupulse-sync.sh`.
+Läuft täglich **04:15** automatisch. Wrapper (persistent in der Appdata, da `/root` auf
+Unraid den Reboot nicht überlebt): `/mnt/cache/appdata/otakupulse/otakupulse-sync.sh`
+(`/root/otakupulse-sync.sh` ist ein Symlink darauf). Er macht:
 
-Auf Unraid am besten über das **User Scripts**-Plugin (überlebt Reboots) — Schedule „daily", Inhalt:
+1. `docker exec otakupulse-app npm run sync` — laufende Anime + aktuelle Season inkl. Episoden.
+2. `justwatch-streaming.py --recent 3` — Streaming-Anbieter **für neu hinzugekommene Titel**
+   (nur die letzten 3 Tage → kleine Charge, kaum 429-Drosselung). So bekommt jeder neue
+   Anime automatisch seine Plattform-Zuordnung; die `/plattform`-Seiten aktualisieren sich.
+
+Geplant **reboot-fest** über Unraids Cron-Mechanismus (kein User-Scripts-Plugin nötig):
+
+```
+/boot/config/plugins/dynamix/otakupulse-sync.cron   # Flash → überlebt Reboot
+15 4 * * * /mnt/cache/appdata/otakupulse/otakupulse-sync.sh &> /dev/null
+```
+
+Nach Änderungen am Fragment: `update_cron` ausführen (regeneriert `/etc/cron.d/root`).
+Log: `/tmp/otaku-sync.log`.
+
+**JustWatch-Modi** (`justwatch-streaming.py`):
+- *(ohne Flag)* — voll, alle Anime. Achtung: 8 Worker × ~7.800 Titel ⇒ viele 429-Fehler,
+  nur populäre Titel kommen sicher durch. Für gelegentliche Voll-Auffrischung (z.B. wöchentlich).
+- `--recent N` — nur Titel der letzten N Tage (täglicher Lauf, s.o.).
+- `--only-missing` — nur Titel ganz ohne Anbieter.
+
+Die übrigen Host-Skripte (Dub/Logos) weiter nach Bedarf, wöchentlich genügt. `curl_cffi` ist
+auf dem Host installiert:
 
 ```sh
-docker exec otakupulse-app npm run sync
-# Streaming/Dub frisch halten (HOST, brauchen curl_cffi; wöchentlich reicht):
 F=/mnt/cache/appdata/otakupulse/frontend/src/scripts
 python3 $F/crunchyroll-dub.py        # echte Ger/Eng-Dub (audio_locales)
-python3 $F/justwatch-streaming.py     # Anbieter-Verfügbarkeit (alle DE-Plattformen)
 python3 $F/wikipedia-dub.py           # legale Ger-Dub-Ergänzung (Klassiker/Filme)
 python3 $F/studio-logos.py            # Studio-Logos + Websites aus Wikidata (selten nötig)
 ```
 
-(Roh-Crontab `0 4 * * * /root/otakupulse-sync.sh` funktioniert auch, überlebt aber keinen Reboot.)
-Die drei Host-Skripte müssen nicht täglich laufen — wöchentlich reicht. Einmalig vorher: `pip install curl_cffi`.
+> **Erst-Lauf-Hinweis:** Bis ~2026-06-08 fällt der Großimport (06-05) noch ins `--recent 3`-
+> Fenster → der erste, zweite Lauf ist größer und teils gedrosselt. Danach rollt das Fenster
+> weiter und der tägliche Lauf umfasst nur noch die paar wirklich neuen Titel.
+
+## Auto-Blog für neue Titel + Telegram-Channel
+
+**Blog-Beitrag pro neuem Titel** (`generate-anime-news.ts`, Claude Sonnet): erzeugt für
+angekündigte (NOT_YET_RELEASED) und im Simulcast laufende (RELEASING) Titel je einen
+Artikel (Kategorie `news`, Slug `neu-<anime-slug>` → Dedup). Der **Steckbrief** (Titel,
+Studio, Genres, Episoden m. Fallback „unbekannt", Format, Release = Season+Jahr, Status,
+Plattform, „Fortsetzung von …" via PREQUEL-Relation) wird DETERMINISTISCH aus DB-Fakten
+gebaut; nur Headline + Teaser + der Beschreibungs-Rewrite (Otaku-/Weeb-Style) kommen von
+der KI. Standard: **veröffentlicht** (`--draft` für Entwurf). Modi: `--recent N` (Pipeline),
+`--season-current --limit N` (Backfill), `--slug <s>` (Test), `--dry`.
+
+**Telegram-Bot** (`telegram-notify.ts`): postet neu *veröffentlichte* Artikel (Anime +
+News) in einen Channel. Inkrementell über `frontend/.telegram-posted.json` (gitignored,
+kein Schema-Feld). Env in `secrets.env`: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHANNEL_ID`
+(@name oder -100…; Bot muss Channel-Admin sein). `--seed` markiert den Altbestand als
+gepostet (kein Versand), `--max N`, `--dry`. Selbstdrosselung 3 s/Post; sendPhoto mit
+Fallback auf sendMessage.
+
+Beide laufen im **enrich-Container** (bind-mountet Live-Code) via
+`docker exec --env-file secrets.env otakupulse-enrich …`. Verdrahtung:
+- Täglicher Wrapper (04:15) macht jetzt 4 Schritte: AniList-Sync → JustWatch (neue Titel)
+  → `generate-anime-news.ts --recent 3` → `telegram-notify.ts --max 15`.
+- Zusätzlicher Cron alle 30 Min: `telegram-notify.ts --max 8`
+  (`/boot/config/plugins/dynamix/otakupulse-telegram.cron`) — postet auch manuell
+  erstellte Redaktions-News zeitnah.
+
+> **Voraussetzungen:** (1) `ANTHROPIC_API_KEY` mit freiem Limit (News + Übersetzungen).
+> (2) `TELEGRAM_CHANNEL_ID` gesetzt + Bot als Channel-Admin. Fehlt eins, no-op'en die
+> Scripts sauber (dedup/seed verhindern Dubletten bzw. Flut).
 
 ## Bewusst zurückgestellt (mit Begründung)
 

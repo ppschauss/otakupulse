@@ -29,6 +29,9 @@ export function Analytics() {
   const plausibleSrc = process.env.NEXT_PUBLIC_PLAUSIBLE_SRC || 'https://plausible.io/js/script.js'
   const umamiId = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID
   const umamiSrc = process.env.NEXT_PUBLIC_UMAMI_SRC
+  // First-Party: Skript + Collect laufen über die eigene Domain (data-host-url),
+  // damit nichts an Dritt-Hosts geht und Adblocker nicht greifen.
+  const umamiHost = process.env.NEXT_PUBLIC_UMAMI_HOST_URL
 
   return (
     <>
@@ -36,7 +39,13 @@ export function Analytics() {
         <Script defer data-domain={plausibleDomain} src={plausibleSrc} strategy="afterInteractive" />
       ) : null}
       {umamiId && umamiSrc ? (
-        <Script defer data-website-id={umamiId} src={umamiSrc} strategy="afterInteractive" />
+        <Script
+          defer
+          data-website-id={umamiId}
+          src={umamiSrc}
+          {...(umamiHost ? { 'data-host-url': umamiHost } : {})}
+          strategy="afterInteractive"
+        />
       ) : null}
     </>
   )

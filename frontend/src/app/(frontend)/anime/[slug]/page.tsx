@@ -5,6 +5,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
+import { AdultGuard } from '@/components/AdultGuard'
+import { DescriptionText } from '@/components/DescriptionText'
 import { PortraitCard } from '@/components/PortraitCard'
 import { ScrollRow } from '@/components/ScrollRow'
 import { MediaRow } from '@/components/MediaRow'
@@ -127,6 +129,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
           <div className="h-full w-full bg-gradient-to-br from-accent/30 to-accent-2/30" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent" />
+        <AdultGuard anime={anime} size="md" rounded="" />
       </div>
 
       <div className="mx-auto max-w-5xl px-4">
@@ -142,6 +145,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
                 className="rounded-xl object-cover shadow-xl ring-1 ring-white/10"
               />
             ) : null}
+            <AdultGuard anime={anime} size="md" rounded="rounded-xl" interactive />
           </div>
 
           {/* Titel & Meta */}
@@ -233,8 +237,12 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
             </div>
             <p className="mt-2 text-xs text-zinc-500">
               Verfügbarkeit & Sprachfassung können je nach Region variieren —{' '}
+              <Link href={`/streamen/${anime.slug}`} className="text-zinc-400 hover:text-accent">
+                wo läuft {title} im Stream?
+              </Link>
+              {' · '}
               <Link href="/plattform" className="text-zinc-400 hover:text-accent">
-                alle Anbieter im Überblick
+                alle Anbieter
               </Link>
               .
             </p>
@@ -245,10 +253,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
         {anime.descriptionDe || anime.descriptionSource ? (
           <section className="mt-8 max-w-3xl">
             <h2 className="mb-2 text-lg font-bold text-white">Handlung</h2>
-            <div
-              className="leading-relaxed text-zinc-300 [&_a]:text-accent"
-              dangerouslySetInnerHTML={{ __html: String(anime.descriptionDe || anime.descriptionSource) }}
-            />
+            <DescriptionText raw={anime.descriptionDe || anime.descriptionSource} className="leading-relaxed text-zinc-300" />
           </section>
         ) : null}
 
@@ -409,9 +414,18 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
         {/* Empfehlungen */}
         {recommendations.length ? (
           <div className="mt-10 pb-4">
-            <MediaRow title="Ähnliche Anime" items={recommendations} />
+            <MediaRow title="Ähnliche Anime" href={`/aehnlich/${anime.slug}`} items={recommendations} />
+            <Link href={`/aehnlich/${anime.slug}`} className="mt-2 inline-block text-sm font-medium text-accent hover:underline">
+              Mehr Anime ähnlich wie {title} →
+            </Link>
           </div>
-        ) : null}
+        ) : (
+          <div className="mt-10 pb-4">
+            <Link href={`/aehnlich/${anime.slug}`} className="text-sm font-medium text-accent hover:underline">
+              Anime ähnlich wie {title} entdecken →
+            </Link>
+          </div>
+        )}
       </div>
 
       <SeoFooter data={anime.footerText} vars={animeVars(anime)} maxW="max-w-6xl" />

@@ -17,8 +17,11 @@ import { Tags } from './collections/Tags'
 import { Platforms } from './collections/Platforms'
 import { AnimeSeasons } from './collections/AnimeSeasons'
 import { Articles } from './collections/Articles'
+import { Feeds } from './collections/Feeds'
+import { ContactMessages } from './collections/ContactMessages'
 import { Navigation } from './globals/Navigation'
 import { PageContent } from './globals/PageContent'
+import { Settings } from './globals/Settings'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -47,13 +50,18 @@ export default buildConfig({
     AnimeSeasons,
     // Redaktion
     Articles,
+    Feeds,
+    ContactMessages,
     Authors,
     Users,
   ],
-  globals: [Navigation, PageContent],
+  globals: [Navigation, PageContent, Settings],
   editor: lexicalEditor(),
   // Admin-Panel versteckt unter /legal/admin (Route-Ordner: (payload)/legal/admin)
   routes: { admin: '/legal/admin' },
+  // API/Session nur für die eigene Domain (statt offenem Default).
+  cors: [process.env.NEXT_PUBLIC_SITE_URL || 'https://www.otakupulse.de'],
+  csrf: [process.env.NEXT_PUBLIC_SITE_URL || 'https://www.otakupulse.de'],
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
     outputFile: path.resolve(dirname, 'payload-types.ts'),

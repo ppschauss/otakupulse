@@ -21,6 +21,10 @@ export const TYPES: SitemapType[] = [
   { key: 'tags', collection: 'tags', path: (s) => `/tag/${s}` },
   { key: 'seasons', collection: 'anime-seasons', path: (s) => `/season/${s}` },
   { key: 'articles', collection: 'articles', path: (s) => `/news/${s}`, where: { _status: { equals: 'published' } } },
+  // Intent-Seiten — nur inhaltsstarke (sonst noindex): Streaming nur mit Anbietern,
+  // „ähnlich" nur mit Genre (Genre-Fallback liefert dann genug ähnliche Titel).
+  { key: 'streamen', collection: 'anime', path: (s) => `/streamen/${s}`, where: { streamingProviders: { exists: true } } },
+  { key: 'aehnlich', collection: 'anime', path: (s) => `/aehnlich/${s}`, where: { genres: { exists: true } } },
 ]
 
 export const STATIC_PATHS = [
@@ -29,15 +33,40 @@ export const STATIC_PATHS = [
   ...PROVIDER_SLUGS.map((s) => `/plattform/${s}`),
 ]
 
-// Liste aller Chunk-IDs ('static', 'anime-0', 'characters-0', …) für den Index.
+// Doppel-Unterstrich als Delimiter: Slugs enthalten nie '_' (slugify nutzt '-'),
+// daher kollisionsfrei trennbar – auch bei Slugs mit Bindestrichen (slice-of-life).
+export const GENRE_PREFIX = 'genre__' // genre__<slug>__<page> → Anime des Genres
+export const TAG_ANIME_PREFIX = 'tagsanime__' // tagsanime__<page> → alle getaggten Anime
+export const TAG_ANIME_WHERE = { 'tags.tag': { exists: true } } as any
+
+// Liste aller Chunk-IDs für den Index – gestaffelt:
+// static · <typ>-N (anime, characters, …) · genre__<slug>__N · tagsanime__N
 export async function listChunkIds(): Promise<string[]> {
   const payload = await getPayload({ config })
   const ids = ['static']
+
+  // 1) Bestehende Typen (anime, characters, persons, studios, genres, tags, seasons, articles)
   for (const type of TYPES) {
     const res = await payload.find({ collection: type.collection, where: type.where, limit: 1, depth: 0 })
     const pages = Math.ceil((res.totalDocs || 0) / PER)
     for (let p = 0; p < pages; p++) ids.push(`${type.key}-${p}`)
   }
+
+  // 2) Pro Genre eine Sitemap (Anime des Genres), alphabetisch, ggf. paginiert.
+  const genres = await payload.find({ collection: 'genres', sort: 'slug', limit: 500, depth: 0, select: { slug: true } as any })
+  for (const g of genres.docs as any[]) {
+    if (!g.slug) continue
+    const res = await payload.find({ collection: 'anime', where: { genres: { in: [g.id] } }, limit: 1, depth: 0 })
+    const pages = Math.max(1, Math.ceil((res.totalDocs || 0) / PER))
+    if (!res.totalDocs) continue
+    for (let p = 0; p < pages; p++) ids.push(`${GENRE_PREFIX}${g.slug}__${p}`)
+  }
+
+  // 3) Kombinierte, deduplizierte Tag-Sitemap(s): alle Anime mit ≥1 Tag, je 5.000.
+  const tagged = await payload.find({ collection: 'anime', where: TAG_ANIME_WHERE, limit: 1, depth: 0 })
+  const tagPages = Math.ceil((tagged.totalDocs || 0) / PER)
+  for (let p = 0; p < tagPages; p++) ids.push(`${TAG_ANIME_PREFIX}${p}`)
+
   return ids
 }
 

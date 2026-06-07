@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
 import { MediaRow } from '@/components/MediaRow'
+import { DescriptionText } from '@/components/DescriptionText'
 import { ScrollRow } from '@/components/ScrollRow'
 import { PortraitCard } from '@/components/PortraitCard'
 import { Faq } from '@/components/Faq'
@@ -140,10 +141,7 @@ export default async function CharacterDetail({ params }: { params: Promise<{ sl
       {character.descriptionDe || character.descriptionSource ? (
         <section className="mt-8 max-w-3xl">
           <h2 className="mb-2 text-lg font-bold text-white">Über {name}</h2>
-          <div
-            className="leading-relaxed text-zinc-300 [&_a]:text-accent"
-            dangerouslySetInnerHTML={{ __html: String(character.descriptionDe || character.descriptionSource) }}
-          />
+          <DescriptionText raw={character.descriptionDe || character.descriptionSource} className="leading-relaxed text-zinc-300" />
         </section>
       ) : null}
 

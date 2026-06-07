@@ -7,6 +7,7 @@ import type { Metadata } from 'next'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { pageMeta } from '@/lib/seo'
 import { displayTitle, formatLabel, statusLabel, seasonLabel, plainText } from '@/lib/anime'
+import { AdultGuard } from '@/components/AdultGuard'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,6 +79,7 @@ export default async function ComparePage({ params }: { params: Promise<{ slug: 
               sizes="(max-width: 640px) 112px, 144px"
               className="object-cover"
             />
+            <AdultGuard anime={anime} size="sm" rounded="rounded-lg" />
           </span>
         ) : null}
         <p className="mt-2 line-clamp-2 font-bold text-white group-hover:text-accent">{title}</p>
