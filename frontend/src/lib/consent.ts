@@ -22,7 +22,7 @@ export const CATEGORY_INFO: { key: ConsentCategory; label: string; description: 
     key: 'statistics',
     label: 'Statistik',
     description:
-      'Anonyme Reichweitenmessung (z. B. Plausible/Umami), um die Nutzung der Seite zu verstehen und zu verbessern.',
+      'Reichweitenmessung mit Umami (cookielos) sowie Google Analytics (Google Ireland/USA), um die Nutzung der Seite zu verstehen und zu verbessern. Wird nur nach deiner Einwilligung geladen.',
   },
   {
     key: 'marketing',

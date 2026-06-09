@@ -14,7 +14,9 @@ const securityHeaders = [
 // Umami) genutzt werden, deren Host bei script-src ergänzen.
 const contentSecurityPolicy = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  // Google Analytics (gtag.js) lädt von googletagmanager.com; Daten gehen an google-analytics.com
+  // (connect-src 'self' https: deckt das Senden bereits ab). Lädt nur nach Statistik-Einwilligung.
+  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",

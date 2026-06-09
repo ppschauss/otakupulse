@@ -32,6 +32,8 @@ export function Analytics() {
   // First-Party: Skript + Collect laufen über die eigene Domain (data-host-url),
   // damit nichts an Dritt-Hosts geht und Adblocker nicht greifen.
   const umamiHost = process.env.NEXT_PUBLIC_UMAMI_HOST_URL
+  // Google Analytics (GA4) — lädt NUR hier (also erst nach Statistik-Einwilligung).
+  const gaId = process.env.NEXT_PUBLIC_GA_ID
 
   return (
     <>
@@ -46,6 +48,17 @@ export function Analytics() {
           {...(umamiHost ? { 'data-host-url': umamiHost } : {})}
           strategy="afterInteractive"
         />
+      ) : null}
+      {gaId ? (
+        <>
+          <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
+          <Script id="ga-init" strategy="afterInteractive">
+            {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${gaId}', { anonymize_ip: true });`}
+          </Script>
+        </>
       ) : null}
     </>
   )

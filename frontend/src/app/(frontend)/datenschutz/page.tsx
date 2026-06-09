@@ -85,6 +85,31 @@ export default function DatenschutzPage() {
             Einwilligung in die Kategorie „Statistik" geladen (Art. 6 Abs. 1 lit. a DSGVO); ohne Einwilligung findet
             keine Messung statt.
           </p>
+          <p className="mt-2">
+            Zusätzlich setzen wir – ebenfalls nur nach deiner Einwilligung in die Kategorie „Statistik" – <strong>Google
+            Analytics 4</strong> ein, einen Dienst der Google Ireland Limited (Gordon House, Barrow Street, Dublin 4,
+            Irland; Mutterkonzern Google LLC, USA). Google Analytics verwendet Cookies bzw. vergleichbare Technologien und
+            verarbeitet u.&nbsp;a. gekürzte IP-Adresse (IP-Anonymisierung aktiv), Geräte-/Browser-Informationen,
+            aufgerufene Seiten und Interaktionen, um die Nutzung der Website auszuwerten. Rechtsgrundlage ist deine
+            Einwilligung (Art. 6 Abs. 1 lit. a DSGVO, § 25 Abs. 1 TDDDG). Das Tracking-Skript wird erst nach deiner
+            Zustimmung geladen; ohne Einwilligung findet keine Erhebung statt.
+          </p>
+          <p className="mt-2">
+            Dabei kann es zu einer Übermittlung von Daten an Server von Google in die USA kommen. Google ist unter dem
+            <strong> EU-US Data Privacy Framework</strong> zertifiziert; ergänzend bestehen Standardvertragsklauseln. Du
+            kannst deine Einwilligung jederzeit mit Wirkung für die Zukunft widerrufen, indem du deine{' '}
+            <ConsentSettingsLink className="font-medium text-accent underline-offset-2 hover:underline" /> anpasst.
+            Weitere Informationen findest du in der{' '}
+            <a
+              href="https://policies.google.com/privacy"
+              rel="nofollow noopener noreferrer"
+              target="_blank"
+              className="text-accent hover:underline"
+            >
+              Datenschutzerklärung von Google
+            </a>
+            .
+          </p>
         </section>
 
         <section>

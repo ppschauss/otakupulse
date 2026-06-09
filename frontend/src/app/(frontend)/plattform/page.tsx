@@ -4,10 +4,12 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
 import { JsonLd } from '@/components/JsonLd'
+import { Faq } from '@/components/Faq'
 import { breadcrumbLd } from '@/lib/seo'
 import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
 import { STREAMING_PROVIDERS } from '@/lib/streaming'
+import { url } from '@/lib/site'
 
 // ISR: Anbieter-Übersicht ändert sich selten (Zahlen alle 10 Min frisch).
 export const revalidate = 600
@@ -71,6 +73,38 @@ export default async function PlatformListPage() {
           </Link>
         ))}
       </div>
+
+      <Faq
+        title="Häufige Fragen zum Anime-Streaming"
+        items={[
+          {
+            q: 'Wo kann ich Anime legal auf Deutsch streamen?',
+            a: 'Die wichtigsten Anbieter im deutschsprachigen Raum sind Crunchyroll, ADN (Anime on Demand), aniverse, Netflix, Amazon Prime Video und Disney+. Pro Titel zeigen wir die verfügbaren Plattformen und ob deutsche Untertitel (Sub) oder Synchronisation (Dub) vorliegen.',
+          },
+          {
+            q: 'Sind die Streaming-Angaben tagesaktuell?',
+            a: 'Die Verfügbarkeit wird regelmäßig aktualisiert, kann sich aber je nach Region und Lizenzlage ändern. Maßgeblich ist immer die Anzeige beim jeweiligen Anbieter.',
+          },
+          {
+            q: 'Was ist der Unterschied zwischen Sub und Dub?',
+            a: 'Sub = Originalton (meist Japanisch) mit deutschen Untertiteln. Dub = deutsche Synchronisation. Beim Anime ist „Sub" oft früher verfügbar (Simulcast), „Dub" folgt später.',
+          },
+        ]}
+      />
+
+      <JsonLd
+        data={{
+          '@context': 'https://schema.org',
+          '@type': 'ItemList',
+          name: 'Anime-Streaming-Anbieter',
+          itemListElement: visible.map(({ provider }, i) => ({
+            '@type': 'ListItem',
+            position: i + 1,
+            url: url(`/plattform/${provider.slug}`),
+            name: provider.name,
+          })),
+        }}
+      />
     </main>
     <PageSeoFooter pageKey="plattform" vars={{ count: visible.length }} maxW="max-w-5xl" />
     </>
