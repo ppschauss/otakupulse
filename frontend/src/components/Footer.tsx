@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { FooterColumn, NavLink } from '@/lib/navigation'
 import { ConsentSettingsLink } from '@/components/ConsentSettingsLink'
-import { DISCORD_INVITE, TELEGRAM_CHANNEL } from '@/lib/site'
+import { DISCORD_INVITE, TELEGRAM_CHANNEL, X_URL } from '@/lib/site'
 
 const ext = (href: string) => href.startsWith('http')
 
@@ -42,6 +42,17 @@ export function Footer({ columns, legal }: { columns: FooterColumn[]; legal: Nav
                 </svg>
                 Telegram
               </a>
+              <a
+                href={X_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 transition hover:bg-zinc-800"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+                X
+              </a>
             </div>
           </div>
           {columns.map((col, ci) => (
@@ -62,6 +73,28 @@ export function Footer({ columns, legal }: { columns: FooterColumn[]; legal: Nav
               </ul>
             </div>
           ))}
+
+          {/* Community / Socials */}
+          <div>
+            <p className="mb-3 font-bold uppercase tracking-wide text-zinc-400">Community</p>
+            <ul className="space-y-2">
+              <li>
+                <Link href="/anime-discord-server" className="transition hover:text-accent">
+                  Anime-Discord-Server
+                </Link>
+              </li>
+              <li>
+                <Link href="/anime-telegram-kanal" className="transition hover:text-accent">
+                  Anime-Telegram-Kanal
+                </Link>
+              </li>
+              <li>
+                <a href={X_URL} target="_blank" rel="noopener" className="transition hover:text-accent">
+                  Twitter / X
+                </a>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">

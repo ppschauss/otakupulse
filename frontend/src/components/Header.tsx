@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import type { NavLink } from '@/lib/navigation'
-import { DISCORD_INVITE, TELEGRAM_CHANNEL } from '@/lib/site'
+import { DISCORD_INVITE, TELEGRAM_CHANNEL, X_URL } from '@/lib/site'
 
 function isActive(pathname: string, href: string) {
   if (href.startsWith('http')) return false
@@ -23,6 +23,14 @@ function TelegramIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
       <path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z" />
+    </svg>
+  )
+}
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
     </svg>
   )
 }
@@ -99,6 +107,16 @@ export function Header({ nav }: { nav: NavLink[] }) {
           >
             <TelegramIcon className="h-4 w-4 fill-current" />
           </a>
+          <a
+            href={X_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="OtakuPulse auf X / Twitter folgen"
+            title="OtakuPulse auf X"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-black text-white ring-1 ring-white/15 transition hover:bg-zinc-800"
+          >
+            <XIcon className="h-3.5 w-3.5 fill-current" />
+          </a>
         </div>
 
         {/* Mobile: Hamburger */}
@@ -118,7 +136,7 @@ export function Header({ nav }: { nav: NavLink[] }) {
       {/* Mobile-Panel (aufklappend) */}
       <div
         className={`overflow-hidden border-t border-white/10 transition-[max-height] duration-300 ease-out md:hidden ${
-          open ? 'max-h-[48rem]' : 'max-h-0 border-transparent'
+          open ? 'max-h-[52rem]' : 'max-h-0 border-transparent'
         }`}
       >
         <div className="space-y-1 px-4 pb-5 pt-4">
@@ -166,6 +184,16 @@ export function Header({ nav }: { nav: NavLink[] }) {
           >
             <TelegramIcon className="h-5 w-5 fill-current" />
             Anime-News auf Telegram
+          </a>
+          <a
+            href={X_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={close}
+            className="mt-1 flex items-center gap-2 rounded-lg bg-black px-3 py-2.5 text-base font-semibold text-white ring-1 ring-white/15 transition hover:bg-zinc-800"
+          >
+            <XIcon className="h-4 w-4 fill-current" />
+            OtakuPulse auf X
           </a>
         </div>
       </div>

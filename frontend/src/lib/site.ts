@@ -5,6 +5,8 @@ export const SITE_NAME = 'OtakuPulse'
 export const DISCORD_INVITE = 'https://discord.gg/UwX9akYq5F'
 // Telegram-News-Kanal (öffentlich). Broadcast: neue Artikel + Anime-Ankündigungen.
 export const TELEGRAM_CHANNEL = 'https://t.me/otakupulse_de'
+// X / Twitter-Profil.
+export const X_URL = 'https://x.com/OtakuPulseDE'
 export const SITE_DESCRIPTION =
   'Die deutschsprachige Anime-Datenbank: Anime, Charaktere, Synchronsprecher, Studios, Genres, Seasons, Kalender und News — alles verlinkt und durchsuchbar.'
 
