@@ -27,6 +27,14 @@ export type FeedItem = {
   // ausgegeben, damit Autoposter (n8n → Facebook/Bluesky/Mastodon/Discord) ein Bild
   // anhängen können.
   image?: string | null
+  // Voller Artikel-HTML für content:encoded (Vollinhalts-Feed, z. B. Flipboard).
+  contentHtml?: string | null
+}
+
+// CDATA-sicher: zerlegt eventuelle ]]> -Sequenzen, damit der HTML-Inhalt den
+// CDATA-Block nicht vorzeitig schließt.
+function cdata(s: string): string {
+  return `<![CDATA[${s.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`
 }
 
 export function buildRssFeed(opts: {
@@ -46,6 +54,7 @@ export function buildRssFeed(opts: {
       <guid isPermaLink="true">${escapeXml(it.link)}</guid>
       ${date ? `<pubDate>${date}</pubDate>` : ''}
       ${it.description ? `<description>${escapeXml(it.description)}</description>` : ''}
+      ${it.contentHtml ? `<content:encoded>${cdata(it.contentHtml)}</content:encoded>` : ''}
       ${img ? `<enclosure url="${escapeXml(img)}" type="image/jpeg" length="0" />` : ''}
       ${img ? `<media:content url="${escapeXml(img)}" medium="image" />` : ''}
     </item>`
@@ -53,7 +62,7 @@ export function buildRssFeed(opts: {
     .join('\n')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
   <channel>
     <title>${escapeXml(opts.title)}</title>
     <link>${escapeXml(url(opts.linkPath))}</link>
