@@ -161,6 +161,11 @@ export default function HomePage() {
             nächste Episode droppt. Jede Seite ist mit allem Drumherum verknüpft — ein Klick und du fällst ins nächste
             Kaninchenloch. Stay weeb. 🌸
           </p>
+          <p>
+            Lust auf Austausch? Komm in unseren{' '}
+            <Link href="/anime-discord-server" className="text-accent hover:underline">deutschen Anime-Discord-Server</Link>{' '}
+            und quatsch mit anderen Fans über die laufende Season, Empfehlungen und Memes.
+          </p>
         </div>
       </section>
 

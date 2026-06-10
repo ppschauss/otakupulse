@@ -35,6 +35,7 @@ export const TYPES: SitemapType[] = [
 export const STATIC_PATHS = [
   '/', '/anime', '/genre', '/tag', '/studio', '/character', '/person',
   '/plattform', '/season', '/news', '/kalender', '/suche', '/top-anime',
+  '/anime-discord-server',
   ...PROVIDER_SLUGS.map((s) => `/plattform/${s}`),
 ]
 
