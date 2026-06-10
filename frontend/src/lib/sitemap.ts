@@ -2,6 +2,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { PROVIDER_SLUGS } from './streaming'
+import { liveArticleFilters } from './anime'
 
 export const PER = 5000
 
@@ -9,8 +10,11 @@ export type SitemapType = {
   key: string
   collection: any
   path: (slug: string) => string
-  where?: any
+  /** Statisches Where ODER Thunk (für zeitabhängige Filter, pro Request ausgewertet). */
+  where?: any | (() => any)
 }
+
+export const resolveWhere = (w: SitemapType['where']) => (typeof w === 'function' ? w() : w)
 
 export const TYPES: SitemapType[] = [
   { key: 'anime', collection: 'anime', path: (s) => `/anime/${s}` },
@@ -20,7 +24,8 @@ export const TYPES: SitemapType[] = [
   { key: 'genres', collection: 'genres', path: (s) => `/genre/${s}` },
   { key: 'tags', collection: 'tags', path: (s) => `/tag/${s}` },
   { key: 'seasons', collection: 'anime-seasons', path: (s) => `/season/${s}` },
-  { key: 'articles', collection: 'articles', path: (s) => `/news/${s}`, where: { _status: { equals: 'published' } } },
+  // Geplante Artikel (publishDate in der Zukunft) erst zum Termin in die Sitemap.
+  { key: 'articles', collection: 'articles', path: (s) => `/news/${s}`, where: () => ({ and: liveArticleFilters() }) },
   // Intent-Seiten — nur inhaltsstarke (sonst noindex): Streaming nur mit Anbietern,
   // „ähnlich" nur mit Genre (Genre-Fallback liefert dann genug ähnliche Titel).
   { key: 'streamen', collection: 'anime', path: (s) => `/streamen/${s}`, where: { streamingProviders: { exists: true } } },
@@ -47,7 +52,7 @@ export async function listChunkIds(): Promise<string[]> {
 
   // 1) Bestehende Typen (anime, characters, persons, studios, genres, tags, seasons, articles)
   for (const type of TYPES) {
-    const res = await payload.find({ collection: type.collection, where: type.where, limit: 1, depth: 0 })
+    const res = await payload.find({ collection: type.collection, where: resolveWhere(type.where), limit: 1, depth: 0 })
     const pages = Math.ceil((res.totalDocs || 0) / PER)
     for (let p = 0; p < pages; p++) ids.push(`${type.key}-${p}`)
   }

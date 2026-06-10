@@ -150,19 +150,20 @@ async function fetchEpisodes(payload: Payload, from: Date, to: Date): Promise<Ep
 const platformNames = (a: any): string[] =>
   ((a.streamingProviders || []) as string[]).map((s) => providerBySlug(s)?.name).filter(Boolean) as string[]
 
-/** Eine Episoden-Zeile für die deterministischen Listen. */
-function epLine(r: EpRow, withTime = true): string {
-  const t = displayTitle(r.anime)
+/** Pipe-Zeichen aus Zellinhalten halten (würde die Tabellen-Syntax brechen). */
+const cell = (s: string): string => s.replace(/\|/g, '∕')
+
+/** Eine Episoden-Zeile als Tabellen-Row: | Zeit | Anime | Episode | Plattform | */
+function epRow(r: EpRow): string {
+  const t = cell(displayTitle(r.anime))
   const plat = platformNames(r.anime)
   const n = Number(r.ep.number)
-  const parts = [
-    withTime ? `${TIME.format(r.time)} Uhr —` : '',
-    `[[anime:${r.anime.slug}|${t}]]`,
-    `· Episode ${Number.isFinite(n) ? n : r.ep.number}`,
-    plat.length ? `(${plat.slice(0, 3).join(', ')})` : '',
-  ]
-  return `- ${parts.filter(Boolean).join(' ')}`
+  return `| ${TIME.format(r.time)} Uhr | [[anime:${r.anime.slug}|${t}]] | ${Number.isFinite(n) ? n : cell(String(r.ep.number))} | ${
+    plat.length ? cell(plat.slice(0, 3).join(', ')) : '—'
+  } |`
 }
+
+const EP_TABLE_HEAD = '| Zeit | Anime | Episode | Plattform |\n|---|---|---|---|'
 
 /** Slug-Existenz-Check (Dedup). */
 async function slugExists(payload: Payload, slug: string): Promise<boolean> {
@@ -276,7 +277,7 @@ async function runDaily(payload: Payload, authorId: any, ymd: string): Promise<v
   // 1) Tages-Digest
   await createArticle(payload, authorId, {
     slug: `simulcast-heute-${ymd}`,
-    category: 'news',
+    category: 'simulcast',
     coverImageUrl: bestBanner(rows),
     relatedAnime: rows.map((r) => r.anime.id),
     valid: validFor(rows),
@@ -294,7 +295,7 @@ async function runDaily(payload: Payload, authorId: any, ymd: string): Promise<v
       `Verweise am Ende auf unseren Simulcast-Kalender mit dem Baustein [[page:kalender|Simulcast-Kalender]].`,
       `headline: Muss "Simulcast" und den Wochentag/das Datum enthalten, z. B. Bezug auf "${dayLabel}".`,
     ].join('\n'),
-    appendix: [`## Alle neuen Episoden am ${dayLabel}`, ...rows.map((r) => epLine(r))].join('\n'),
+    appendix: [`## Alle neuen Episoden am ${dayLabel}`, '', EP_TABLE_HEAD, ...rows.map(epRow)].join('\n'),
   })
 
   // 2) Episoden-Highlights für Top-Titel (eigenständige Artikel)
@@ -316,7 +317,7 @@ async function runDaily(payload: Payload, authorId: any, ymd: string): Promise<v
 
     await createArticle(payload, authorId, {
       slug: `episode-${a.slug}-${Number.isFinite(n) ? n : String(r.ep.number).replace(/\./g, '-')}`,
-      category: 'news',
+      category: 'simulcast',
       coverImageUrl: animeBanner(a) || undefined,
       relatedAnime: [a.id],
       valid: {
@@ -343,11 +344,12 @@ async function runDaily(payload: Payload, authorId: any, ymd: string): Promise<v
         .join('\n'),
       appendix: [
         '## Auf einen Blick',
-        `- Anime: [[anime:${a.slug}|${t}]]`,
-        `- Episode: ${n}${epTitle ? ` — ${epTitle}` : ''}`,
-        `- Ausstrahlung: ${dayLabel}, ${TIME.format(r.time)} Uhr`,
-        `- Plattform: ${plat.length ? plat.join(', ') : 'siehe Anbieter-Übersicht'}`,
-        ...(score(a) ? [`- Community-Score: ${score(a)}/100`] : []),
+        '',
+        `| Anime | Episode | Ausstrahlung | Plattform${score(a) ? ' | Score' : ''} |`,
+        `|---|---|---|---${score(a) ? '|---' : ''}|`,
+        `| [[anime:${a.slug}|${cell(t)}]] | ${n}${epTitle ? ` — ${cell(epTitle)}` : ''} | ${dayLabel}, ${TIME.format(r.time)} Uhr | ${
+          plat.length ? cell(plat.join(', ')) : '—'
+        }${score(a) ? ` | ${score(a)}/100` : ''} |`,
         '',
         `Alle Sendetermine der Woche findest du im [[page:kalender|Simulcast-Kalender]].`,
       ].join('\n'),
@@ -377,13 +379,13 @@ async function runWeeklyPreview(payload: Payload, authorId: any, ymd: string): P
   const sections: string[] = []
   for (const [day, list] of [...byDay.entries()].sort()) {
     sections.push(`## ${DAY_SHORT.format(berlinMidnight(day))}`)
-    sections.push(list.map((r) => epLine(r)).join('\n'))
+    sections.push([EP_TABLE_HEAD, ...list.map(epRow)].join('\n'))
   }
 
   const topTitles = [...rows].sort((a, b) => score(b.anime) - score(a.anime) || pop(b.anime) - pop(a.anime)).slice(0, 4)
   await createArticle(payload, authorId, {
     slug: `simulcast-vorschau-kw${week}-${year}`,
-    category: 'news',
+    category: 'simulcast',
     coverImageUrl: bestBanner(rows),
     relatedAnime: topTitles.map((r) => r.anime.id),
     valid: validFor(rows),
@@ -424,14 +426,16 @@ async function runWeeklyRecap(payload: Payload, authorId: any, ymd: string): Pro
   const lines = top.map((list) => {
     const a = list[0].anime
     const eps = list.map((r) => Number(r.ep.number)).sort((x, y) => x - y)
-    const epStr = eps.length > 1 ? `Episoden ${eps[0]}–${eps[eps.length - 1]}` : `Episode ${eps[0]}`
+    const epStr = eps.length > 1 ? `${eps[0]}–${eps[eps.length - 1]}` : `${eps[0]}`
     const plat = platformNames(a)
-    return `- [[anime:${a.slug}|${displayTitle(a)}]] · ${epStr}${score(a) ? ` · Score ${score(a)}/100` : ''}${plat.length ? ` (${plat[0]})` : ''}`
+    return `| [[anime:${a.slug}|${cell(displayTitle(a))}]] | ${epStr} | ${score(a) ? `${score(a)}/100` : '—'} | ${
+      plat.length ? cell(plat[0]) : '—'
+    } |`
   })
 
   await createArticle(payload, authorId, {
     slug: `simulcast-rueckblick-kw${week}-${year}`,
-    category: 'news',
+    category: 'simulcast',
     coverImageUrl: bestBanner(rows),
     relatedAnime: top.map((l) => l[0].anime.id),
     valid: validFor(rows),
@@ -444,7 +448,7 @@ async function runWeeklyRecap(payload: Payload, authorId: any, ymd: string): Pro
       `Verweise auf den [[page:kalender|Simulcast-Kalender]] für die kommende Woche.`,
       `headline: Rückblick-Charakter, Bezug auf "KW ${week}" oder "diese Woche".`,
     ].join('\n'),
-    appendix: [`## Die Highlights der Woche`, lines.join('\n')].join('\n'),
+    appendix: [`## Die Highlights der Woche`, '', '| Anime | Episoden | Score | Plattform |', '|---|---|---|---|', ...lines].join('\n'),
   })
 }
 
@@ -479,9 +483,9 @@ async function runGenreSpotlight(payload: Payload, authorId: any, ymd: string): 
 
   const lines = top.map(
     (a, i) =>
-      `- Platz ${i + 1}: [[anime:${a.slug}|${displayTitle(a)}]]${a.seasonYear ? ` (${a.seasonYear})` : ''}${
-        a.averageScore ? ` · Score ${a.averageScore}/100` : ''
-      }`,
+      `| ${i + 1} | [[anime:${a.slug}|${cell(displayTitle(a))}]] | ${a.seasonYear || '—'} | ${
+        a.averageScore ? `${a.averageScore}/100` : '—'
+      } |`,
   )
 
   await createArticle(payload, authorId, {
@@ -505,7 +509,7 @@ async function runGenreSpotlight(payload: Payload, authorId: any, ymd: string): 
       `Erkläre kurz, was das Genre ausmacht, und verweise auf [[page:top-anime|alle Top-Anime]].`,
       `headline: Muss "${g.name}" und einen Ranking-Bezug ("Die besten …", "Top 10") enthalten.`,
     ].join('\n'),
-    appendix: [`## Die Top 10 ${g.name}-Anime nach Community-Score`, lines.join('\n')].join('\n'),
+    appendix: [`## Die Top 10 ${g.name}-Anime nach Community-Score`, '', '| Platz | Anime | Jahr | Score |', '|---|---|---|---|', ...lines].join('\n'),
   })
 }
 

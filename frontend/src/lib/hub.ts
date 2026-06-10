@@ -1,6 +1,7 @@
 // Gemeinsame Aggregation für SEO-Hub-Seiten (Studio, Tag, Season, …):
 // Top-Genres/Studios/Tags aus einer Anime-Menge + genre-/entitätsrelevante News.
 import type { Payload } from 'payload'
+import { liveArticleFilters } from './anime'
 
 export type Agg = { name: string; slug: string; n: number }
 export type HubExtras = { topGenres: Agg[]; topStudios: Agg[]; topTags: Agg[]; news: any[] }
@@ -52,7 +53,7 @@ export async function hubExtras(payload: Payload, where: any, opts: { news?: boo
   const news = ids.length && wantNews
     ? await payload.find({
         collection: 'articles',
-        where: { and: [{ relatedAnime: { in: ids } }, { _status: { equals: 'published' } }] },
+        where: { and: [{ relatedAnime: { in: ids } }, ...liveArticleFilters()] },
         sort: '-publishDate',
         limit: 6,
         depth: 0,

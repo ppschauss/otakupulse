@@ -8,7 +8,7 @@ import { Pagination } from '@/components/Pagination'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { NewsListSidebar } from '@/components/NewsListSidebar'
 import { pageMeta } from '@/lib/seo'
-import { ARTICLE_CATEGORY_LABELS, articleCategoryLabel } from '@/lib/anime'
+import { ARTICLE_CATEGORY_LABELS, articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 12
@@ -49,7 +49,7 @@ export default async function NewsCategoryPage({
   const payload = await getPayload({ config })
   const result = await payload.find({
     collection: 'articles',
-    where: { and: [{ category: { equals: category } }, { _status: { equals: 'published' } }] },
+    where: { and: [{ category: { equals: category } }, ...liveArticleFilters()] },
     sort: '-publishDate',
     limit: PER_PAGE,
     page,

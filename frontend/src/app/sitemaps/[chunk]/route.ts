@@ -1,6 +1,6 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
-import { TYPES, PER, STATIC_PATHS, xmlEscape, GENRE_PREFIX, TAG_ANIME_PREFIX, TAG_ANIME_WHERE } from '@/lib/sitemap'
+import { TYPES, PER, STATIC_PATHS, xmlEscape, resolveWhere, GENRE_PREFIX, TAG_ANIME_PREFIX, TAG_ANIME_WHERE } from '@/lib/sitemap'
 import { url } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
@@ -79,7 +79,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ chunk: 
   const payload = await getPayload({ config })
   const res = await payload.find({
     collection: type.collection,
-    where: type.where,
+    where: resolveWhere(type.where),
     limit: PER,
     page,
     depth: 0,

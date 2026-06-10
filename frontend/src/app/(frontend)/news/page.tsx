@@ -5,7 +5,7 @@ import Image from 'next/image'
 import type { Metadata } from 'next'
 import { Pagination } from '@/components/Pagination'
 import { NewsListSidebar } from '@/components/NewsListSidebar'
-import { ARTICLE_CATEGORY_LABELS, articleCategoryLabel } from '@/lib/anime'
+import { ARTICLE_CATEGORY_LABELS, articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 import { pageMeta } from '@/lib/seo'
 import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
@@ -63,7 +63,7 @@ export default async function NewsListPage({
 
   const payload = await getPayload({ config })
 
-  const and: any[] = [{ _status: { equals: 'published' } }]
+  const and: any[] = [...liveArticleFilters()]
   if (category) and.push({ category: { equals: category } })
   if (q) and.push({ or: [{ title: { like: q } }, { excerpt: { like: q } }] })
 

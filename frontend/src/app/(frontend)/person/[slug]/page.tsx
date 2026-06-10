@@ -17,7 +17,7 @@ import { personLd, pageMeta } from '@/lib/seo'
 import { personVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 import { hubExtras } from '@/lib/hub'
-import { displayName, displayTitle, genderLabel, personRoleLabel, localImage, plainText } from '@/lib/anime'
+import { displayName, displayTitle, genderLabel, liveArticleFilters, personRoleLabel, localImage, plainText } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,7 +74,7 @@ export default async function PersonDetail({ params }: { params: Promise<{ slug:
     hubExtras(payload, staffWhere, { news: false }),
     payload.find({
       collection: 'articles',
-      where: { and: [{ relatedPersons: { in: [person.id] } }, { _status: { equals: 'published' } }] },
+      where: { and: [{ relatedPersons: { in: [person.id] } }, ...liveArticleFilters()] },
       sort: '-publishDate',
       limit: 6,
       depth: 0,

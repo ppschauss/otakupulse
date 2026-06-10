@@ -16,7 +16,7 @@ import { pageMeta } from '@/lib/seo'
 import { characterVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 import { hubExtras } from '@/lib/hub'
-import { displayName, displayTitle, genderLabel, localImage, plainText } from '@/lib/anime'
+import { displayName, displayTitle, genderLabel, liveArticleFilters, localImage, plainText } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,7 +58,7 @@ export default async function CharacterDetail({ params }: { params: Promise<{ sl
     payload.find({ collection: 'anime', where, sort: '-popularity', limit: 6, depth: 1, select: { characters: true } as any }),
     payload.find({
       collection: 'articles',
-      where: { and: [{ relatedCharacters: { in: [character.id] } }, { _status: { equals: 'published' } }] },
+      where: { and: [{ relatedCharacters: { in: [character.id] } }, ...liveArticleFilters()] },
       sort: '-publishDate',
       limit: 6,
       depth: 0,

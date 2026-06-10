@@ -12,7 +12,7 @@ import { Chip } from '@/components/Chip'
 import { SeoFooter } from '@/components/SeoFooter'
 import { pageMeta } from '@/lib/seo'
 import { genreBlurb } from '@/lib/genre-info'
-import { articleCategoryLabel } from '@/lib/anime'
+import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 import { genreVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 
@@ -90,7 +90,7 @@ async function getExtras(payload: any, genre: any) {
     animeIds.length
       ? payload.find({
           collection: 'articles',
-          where: { and: [{ relatedAnime: { in: animeIds } }, { _status: { equals: 'published' } }] },
+          where: { and: [{ relatedAnime: { in: animeIds } }, ...liveArticleFilters()] },
           sort: '-publishDate',
           limit: 6,
           depth: 0,

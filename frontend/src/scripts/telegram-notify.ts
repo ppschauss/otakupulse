@@ -29,9 +29,16 @@ async function main() {
   const payload = await getPayload({ config })
 
   // Veröffentlichte Artikel ohne Telegram-Versand, älteste zuerst.
+  // Geplante Beiträge (publishDate in der Zukunft) werden erst zum Termin gepostet.
   const res = await payload.find({
     collection: 'articles',
-    where: { and: [{ _status: { equals: 'published' } }, { telegramPostedAt: { exists: false } }] },
+    where: {
+      and: [
+        { _status: { equals: 'published' } },
+        { telegramPostedAt: { exists: false } },
+        { or: [{ publishDate: { less_than_equal: new Date().toISOString() } }, { publishDate: { exists: false } }] },
+      ],
+    },
     sort: 'publishDate',
     limit: 500,
     depth: 0,

@@ -49,12 +49,23 @@ export const TAG_CATEGORY_LABELS: Record<string, string> = {
 
 export const ARTICLE_CATEGORY_LABELS: Record<string, string> = {
   news: 'News',
+  simulcast: 'Simulcast',
   review: 'Review',
   editorial: 'Editorial',
   guide: 'Guide',
   ranking: 'Ranking',
   seasonal_preview: 'Season-Vorschau',
 }
+
+/**
+ * Where-Bausteine für öffentlich sichtbare Artikel: veröffentlicht UND publishDate
+ * nicht in der Zukunft — geplante Beiträge erscheinen so automatisch zum Termin.
+ * In bestehende and-Arrays spreaden: `where: { and: [..., ...liveArticleFilters()] }`.
+ */
+export const liveArticleFilters = (): any[] => [
+  { _status: { equals: 'published' } },
+  { or: [{ publishDate: { less_than_equal: new Date().toISOString() } }, { publishDate: { exists: false } }] },
+]
 
 export const RELATION_LABELS: Record<string, string> = {
   SEQUEL: 'Fortsetzung',

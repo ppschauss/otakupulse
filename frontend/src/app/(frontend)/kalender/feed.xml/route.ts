@@ -23,7 +23,8 @@ export async function GET() {
   })
 
   const items = (docs as any[])
-    .filter((ep) => ep.anime && typeof ep.anime === 'object')
+    // Hentai nie automatisch in Feeds (Jugendschutz).
+    .filter((ep) => ep.anime && typeof ep.anime === 'object' && ep.anime.isHentai !== true)
     .map((ep) => {
       const a = ep.anime
       const title = `${displayTitle(a)} – Folge ${ep.number}`

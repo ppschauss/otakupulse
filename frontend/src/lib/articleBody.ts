@@ -18,7 +18,7 @@ export type Valid = {
 
 const PATH: Record<string, string> = { anime: 'anime', genre: 'genre', studio: 'studio', tag: 'tag' }
 
-const textNode = (text: string) => ({ type: 'text', version: 1, text, format: 0, style: '', mode: 'normal', detail: 0 })
+const textNode = (text: string, format = 0) => ({ type: 'text', version: 1, text, format, style: '', mode: 'normal', detail: 0 })
 const linkNode = (url: string, label: string) => ({
   type: 'link',
   version: 3,
@@ -30,13 +30,13 @@ const linkNode = (url: string, label: string) => ({
 })
 
 /** Ersetzt [[typ:slug|Label]] durch Link- bzw. Textknoten (nur bekannte Slugs werden verlinkt). */
-function inline(text: string, valid: Valid, used: { anime: Set<string>; tag: Set<string> }): any[] {
+function markers(text: string, valid: Valid, used: { anime: Set<string>; tag: Set<string> }, format = 0): any[] {
   const re = /\[\[(\w+):([a-z0-9-]+)\|([^\]]+)\]\]/g
   const nodes: any[] = []
   let last = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(text))) {
-    if (m.index > last) nodes.push(textNode(text.slice(last, m.index)))
+    if (m.index > last) nodes.push(textNode(text.slice(last, m.index), format))
     const [, type, slug, label] = m
     if (type === 'page' && valid.page?.has(slug)) {
       nodes.push(linkNode(valid.page.get(slug)!, label))
@@ -49,11 +49,26 @@ function inline(text: string, valid: Valid, used: { anime: Set<string>; tag: Set
       if (type === 'anime') used.anime.add(slug)
       if (type === 'tag') used.tag.add(slug)
     } else {
-      nodes.push(textNode(label))
+      nodes.push(textNode(label, format))
     }
     last = re.lastIndex
   }
-  if (last < text.length) nodes.push(textNode(text.slice(last)))
+  if (last < text.length) nodes.push(textNode(text.slice(last), format))
+  return nodes.length ? nodes : [textNode(text, format)]
+}
+
+/** Wie markers(), aber löst zusätzlich **fett**-Spans in echte Bold-Textknoten auf. */
+function inline(text: string, valid: Valid, used: { anime: Set<string>; tag: Set<string> }): any[] {
+  const re = /\*\*([^*]+)\*\*/g
+  const nodes: any[] = []
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) {
+    if (m.index > last) nodes.push(...markers(text.slice(last, m.index), valid, used))
+    nodes.push(...markers(m[1], valid, used, 1)) // format 1 = bold
+    last = re.lastIndex
+  }
+  if (last < text.length) nodes.push(...markers(text.slice(last), valid, used))
   return nodes.length ? nodes : [textNode(text)]
 }
 
@@ -62,14 +77,68 @@ export function stripMarkers(s: string): string {
   return s.replace(/\[\[[^\]|]*\|([^\]]*)\]\]/g, '$1').replace(/\[\[[^\]]*\]\]/g, '').trim()
 }
 
-/** Baut aus Marker-Fließtext (## Überschrift, - Liste, Absätze) einen Lexical-Root. */
+/** Lexical-Tabellenzelle (Inhalt als Absatz, damit Payloads Editor sie versteht). */
+const cellNode = (children: any[], header: boolean) => ({
+  type: 'tablecell',
+  version: 1,
+  headerState: header ? 1 : 0,
+  colSpan: 1,
+  rowSpan: 1,
+  children: [{ type: 'paragraph', version: 1, direction: 'ltr', format: '', indent: 0, children }],
+})
+
+/** Markdown-Pipe-Tabelle (| a | b |) → Lexical-Table-Knoten. Erste Zeile wird nur
+ *  zum Header, wenn eine Separator-Zeile (|---|---|) folgt — sonst reine Datentabelle. */
+function tableNode(lines: string[], valid: Valid, used: { anime: Set<string>; tag: Set<string> }): any {
+  const isSep = (s: string) => /^\|?[\s:|-]+\|?$/.test(s.trim()) && s.includes('-')
+  // Zellen am Pipe trennen — aber NICHT innerhalb von [[typ:slug|Label]]-Markern.
+  const splitCells = (s: string): string[] => {
+    const out: string[] = []
+    let cur = ''
+    let depth = 0
+    for (let i = 0; i < s.length; i++) {
+      if (s.startsWith('[[', i)) depth++
+      else if (s.startsWith(']]', i) && depth > 0) depth--
+      if (s[i] === '|' && depth === 0) {
+        out.push(cur)
+        cur = ''
+      } else {
+        cur += s[i]
+      }
+    }
+    out.push(cur)
+    return out.map((c) => c.trim())
+  }
+  const rows: any[] = []
+  let header = lines.length > 1 && isSep(lines[1])
+  for (const line of lines) {
+    const t = line.trim()
+    if (isSep(t)) continue
+    const cells = splitCells(t.replace(/^\|/, '').replace(/\|\s*$/, ''))
+    rows.push({
+      type: 'tablerow',
+      version: 1,
+      children: cells.map((c) => cellNode(inline(c, valid, used), header)),
+    })
+    header = false
+  }
+  return { type: 'table', version: 1, children: rows }
+}
+
+/** Baut aus Marker-Fließtext (## Überschrift, - Liste, | Tabelle |, Absätze) einen Lexical-Root. */
 export function toLexical(body: string, valid: Valid): { root: any; usedAnime: Set<string>; usedTag: Set<string> } {
   const used = { anime: new Set<string>(), tag: new Set<string>() }
   const children: any[] = []
-  for (const raw of body.split(/\n\n+/)) {
+  // Überschrift-Zeilen immer als eigenen Block behandeln (auch ohne Leerzeile danach).
+  const normalized = body.replace(/^(#{1,3} [^\n]+)\n(?!\n)/gm, '$1\n\n')
+  for (const raw of normalized.split(/\n\n+/)) {
     const block = raw.trim()
     if (!block) continue
     const lines = block.split('\n')
+    if (lines.length > 1 && lines.every((l) => l.trim().startsWith('|'))) {
+      children.push(tableNode(lines, valid, used))
+      continue
+    }
     if (block.startsWith('## ') || block.startsWith('# ')) {
       children.push({
         type: 'heading',

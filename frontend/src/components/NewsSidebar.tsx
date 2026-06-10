@@ -2,6 +2,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
 import Image from 'next/image'
+import { liveArticleFilters } from '@/lib/anime'
 
 function fmtDate(d?: string | null) {
   if (!d) return ''
@@ -17,7 +18,7 @@ export async function NewsSidebar() {
   const payload = await getPayload({ config })
   const { docs } = await payload.find({
     collection: 'articles',
-    where: { and: [{ category: { equals: 'seasonal_preview' } }, { _status: { equals: 'published' } }] },
+    where: { and: [{ category: { equals: 'seasonal_preview' } }, ...liveArticleFilters()] },
     sort: '-publishDate',
     limit: 6,
     depth: 0,

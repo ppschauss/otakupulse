@@ -138,22 +138,22 @@ async function gatherFacts(payload: Payload, a: any): Promise<Facts> {
   }
 }
 
-/** Deterministischer Steckbrief als Marker-Text (wird an den KI-body angehängt). */
+/** Deterministischer Steckbrief als Tabelle (wird an den KI-body angehängt). */
 function steckbrief(a: any, f: Facts): string {
-  const titleBlock = `[[anime:${a.slug}|${displayTitle(a)}]]`
-  const lines = [
-    '## Steckbrief',
-    `- **Titel:** ${titleBlock}`,
-    `- **Studio:** ${f.studioBlocks.length ? f.studioBlocks.join(', ') : 'unbekannt'}`,
-    `- **Genres:** ${f.genreBlocks.length ? f.genreBlocks.join(', ') : 'unbekannt'}`,
-    `- **Episoden:** ${f.episodes}`,
-    `- **Format:** ${f.formatStr}`,
-    `- **Release:** ${f.release}`,
-    `- **Status:** ${f.statusStr}`,
-    `- **Plattform:** ${f.platforms.length ? f.platforms.join(', ') : 'noch nicht bekannt'}`,
+  const esc = (s: string) => s.replace(/\|/g, '∕')
+  const titleBlock = `[[anime:${a.slug}|${esc(displayTitle(a))}]]`
+  const rows: [string, string][] = [
+    ['Titel', titleBlock],
+    ['Studio', f.studioBlocks.length ? esc(f.studioBlocks.join(', ')) : 'unbekannt'],
+    ['Genres', f.genreBlocks.length ? esc(f.genreBlocks.join(', ')) : 'unbekannt'],
+    ['Episoden', f.episodes],
+    ['Format', f.formatStr],
+    ['Release', f.release],
+    ['Status', f.statusStr],
+    ['Plattform', f.platforms.length ? esc(f.platforms.join(', ')) : 'noch nicht bekannt'],
   ]
-  if (f.prequel) lines.push(`- **Fortsetzung von:** [[anime:${f.prequel.slug}|${f.prequel.title}]]`)
-  return lines.join('\n')
+  if (f.prequel) rows.push(['Fortsetzung von', `[[anime:${f.prequel.slug}|${esc(f.prequel.title)}]]`])
+  return ['## Steckbrief', '', ...rows.map(([k, v]) => `| **${k}** | ${v} |`)].join('\n')
 }
 
 function buildPrompt(a: any, f: Facts): string {

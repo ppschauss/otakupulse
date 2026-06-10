@@ -49,6 +49,11 @@ export default async function FeedsPage() {
 
   const builtIn: FeedEntry[] = [
     { name: 'Alle News & Anime-Ankündigungen', description: 'Jeder neue Beitrag landet hier — der Haupt-Feed.', path: '/feed.xml' },
+    {
+      name: 'Simulcast-News',
+      description: 'Nur Simulcast-Beiträge: Tages-Überblick, Episoden-News, Wochenvorschau & Rückblick.',
+      path: '/news/kategorie/simulcast/feed.xml',
+    },
     { name: 'Simulcast-Kalender', description: 'Anstehende Episoden der aktuellen Season.', path: '/kalender/feed.xml' },
   ]
 

@@ -2,7 +2,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ARTICLE_CATEGORY_LABELS } from '@/lib/anime'
+import { ARTICLE_CATEGORY_LABELS, liveArticleFilters } from '@/lib/anime'
 
 function fmtDate(d?: string | null) {
   if (!d) return ''
@@ -32,7 +32,7 @@ export async function NewsListSidebar({ activeCategory = '', query = '' }: { act
   const [latest, ...catCounts] = await Promise.all([
     payload.find({
       collection: 'articles',
-      where: { _status: { equals: 'published' } },
+      where: { and: liveArticleFilters() },
       sort: '-publishDate',
       limit: 5,
       depth: 0,
@@ -41,7 +41,7 @@ export async function NewsListSidebar({ activeCategory = '', query = '' }: { act
       payload
         .find({
           collection: 'articles',
-          where: { and: [{ category: { equals: key } }, { _status: { equals: 'published' } }] },
+          where: { and: [{ category: { equals: key } }, ...liveArticleFilters()] },
           limit: 0,
           depth: 0,
         })

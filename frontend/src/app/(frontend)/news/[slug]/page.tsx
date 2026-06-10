@@ -6,7 +6,7 @@ import Image from 'next/image'
 import type { Metadata } from 'next'
 import { RichText } from '@/components/RichText'
 import { AnimeCard } from '@/components/AnimeCard'
-import { articleCategoryLabel } from '@/lib/anime'
+import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +14,7 @@ async function getArticle(slug: string) {
   const payload = await getPayload({ config })
   const { docs } = await payload.find({
     collection: 'articles',
-    where: { slug: { equals: slug }, _status: { equals: 'published' } },
+    where: { and: [{ slug: { equals: slug } }, ...liveArticleFilters()] },
     limit: 1,
     depth: 1,
   })
@@ -58,8 +58,8 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
       where: {
         and: [
           { category: { equals: article.category } },
-          { _status: { equals: 'published' } },
           { id: { not_equals: article.id } },
+          ...liveArticleFilters(),
         ],
       },
       sort: '-publishDate',

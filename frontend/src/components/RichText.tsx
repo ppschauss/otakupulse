@@ -60,6 +60,35 @@ function renderNode(node: any, key: React.Key): React.ReactNode {
     }
     case 'listitem':
       return <li key={key}>{renderChildren(node.children)}</li>
+    case 'table':
+      return (
+        <div key={key} className="my-5 overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full border-collapse text-sm">
+            <tbody>{renderChildren(node.children)}</tbody>
+          </table>
+        </div>
+      )
+    case 'tablerow':
+      return (
+        <tr key={key} className="border-b border-white/5 last:border-0 even:bg-white/[0.02] hover:bg-white/[0.04]">
+          {renderChildren(node.children)}
+        </tr>
+      )
+    case 'tablecell': {
+      // Absätze in Zellen ohne Margin inline rendern.
+      const inner = (node.children || []).map((c: any, i: number) =>
+        c?.type === 'paragraph' ? <React.Fragment key={i}>{renderChildren(c.children)}</React.Fragment> : renderNode(c, i),
+      )
+      return node.headerState ? (
+        <th key={key} className="bg-white/[0.06] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-300">
+          {inner}
+        </th>
+      ) : (
+        <td key={key} className="px-3 py-2 align-top text-zinc-300">
+          {inner}
+        </td>
+      )
+    }
     case 'link': {
       const raw = node.fields?.url || node.url || '#'
       // Nur sichere Schemata (verhindert javascript:-/data:-XSS in Link-Knoten).

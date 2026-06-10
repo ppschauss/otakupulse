@@ -42,7 +42,7 @@ export const Articles: CollectionConfig = {
     {
       name: 'category',
       type: 'select',
-      options: ['news', 'review', 'editorial', 'guide', 'ranking', 'seasonal_preview'],
+      options: ['news', 'simulcast', 'review', 'editorial', 'guide', 'ranking', 'seasonal_preview'],
     },
     { name: 'body', type: 'richText' },
     { name: 'author', type: 'relationship', relationTo: 'authors' },

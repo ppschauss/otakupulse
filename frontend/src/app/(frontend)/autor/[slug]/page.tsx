@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
-import { articleCategoryLabel } from '@/lib/anime'
+import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +38,7 @@ export default async function AuthorDetail({ params }: { params: Promise<{ slug:
   const payload = await getPayload({ config })
   const articles = await payload.find({
     collection: 'articles',
-    where: { author: { equals: author.id }, _status: { equals: 'published' } },
+    where: { and: [{ author: { equals: author.id } }, ...liveArticleFilters()] },
     sort: '-publishDate',
     limit: 50,
     depth: 0,

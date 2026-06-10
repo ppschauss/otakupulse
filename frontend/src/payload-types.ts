@@ -762,7 +762,7 @@ export interface Article {
    */
   excerpt?: string | null;
   coverImageUrl?: string | null;
-  category?: ('news' | 'review' | 'editorial' | 'guide' | 'ranking' | 'seasonal_preview') | null;
+  category?: ('news' | 'simulcast' | 'review' | 'editorial' | 'guide' | 'ranking' | 'seasonal_preview') | null;
   body?: {
     root: {
       type: string;
