@@ -110,6 +110,10 @@ export function Footer({ columns, legal }: { columns: FooterColumn[]; legal: Nav
                 {l.label}
               </Link>
             ))}
+            {/* Nutzungsbedingungen fest ergänzt (Pflichtseite, u. a. für Google Publisher Center). */}
+            <Link href="/nutzungsbedingungen" className="transition hover:text-accent">
+              Nutzungsbedingungen
+            </Link>
             <ConsentSettingsLink className="transition hover:text-accent" />
           </nav>
         </div>
