@@ -20,9 +20,11 @@ export function pageMeta({
   canonical?: string | null
 }): Metadata {
   const canonical = canonicalOverride || url(path)
-  // Fallback auf das generierte Standard-OG-Bild (src/app/(frontend)/opengraph-image.tsx),
-  // damit JEDE Seite eine saubere Share-Vorschau hat — auch ohne seitenspezifisches Bild.
-  const ogImage = image || url('/opengraph-image')
+  // Seitenspezifisches Bild explizit setzen; OHNE eins NICHT setzen, damit Next die
+  // Datei-Konvention src/app/(frontend)/opengraph-image.tsx automatisch als og:image
+  // UND twitter:image injiziert (mit korrektem, gehashtem Pfad). So hat jede Seite eine
+  // Share-Vorschau, ohne dass wir eine URL hartkodieren (die sich pro Build ändert).
+  const images = image ? [{ url: image }] : undefined
   return {
     title,
     description,
@@ -35,13 +37,13 @@ export function pageMeta({
       siteName: SITE_NAME,
       type: 'website',
       locale: 'de_DE',
-      images: [{ url: ogImage }],
+      ...(images ? { images } : {}),
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      images: [ogImage],
+      ...(image ? { images: [image] } : {}),
     },
   }
 }
