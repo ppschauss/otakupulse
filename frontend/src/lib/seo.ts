@@ -20,7 +20,9 @@ export function pageMeta({
   canonical?: string | null
 }): Metadata {
   const canonical = canonicalOverride || url(path)
-  const images = image ? [{ url: image }] : undefined
+  // Fallback auf das generierte Standard-OG-Bild (src/app/(frontend)/opengraph-image.tsx),
+  // damit JEDE Seite eine saubere Share-Vorschau hat — auch ohne seitenspezifisches Bild.
+  const ogImage = image || url('/opengraph-image')
   return {
     title,
     description,
@@ -33,13 +35,13 @@ export function pageMeta({
       siteName: SITE_NAME,
       type: 'website',
       locale: 'de_DE',
-      images,
+      images: [{ url: ogImage }],
     },
     twitter: {
-      card: image ? 'summary_large_image' : 'summary',
+      card: 'summary_large_image',
       title,
       description,
-      images: image ? [image] : undefined,
+      images: [ogImage],
     },
   }
 }

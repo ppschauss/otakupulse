@@ -13,6 +13,9 @@ secrets.env
 # --- PostgreSQL-Datenverzeichnis (Volume, root-owned) ---
 db/
 
+# --- n8n-Laufzeitdaten + Credentials (Volume) — Workflows liegen versioniert in n8n-workflows/ ---
+n8n/
+
 # --- Gespiegelte Bilder (groß: ~4 GB / 61k Dateien) ---
 # Beim Stagen via rsync/Volume übertragen oder mit `npm run mirror` neu erzeugen.
 frontend/public/media/

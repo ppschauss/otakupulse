@@ -72,6 +72,33 @@ services:
         sleep 180;
         done
 
+  # Autoposter: zieht den News-RSS-Feed (intern http://otakupulse-app:3000/feed.xml,
+  # kein Cloudflare-Umweg) und postet neue Artikel nach Facebook/Reddit/Bluesky/
+  # Mastodon/Discord. Workflow als JSON unter ./n8n-workflows/ versioniert.
+  # NUR im LAN erreichbar (kein eingehender Webhook nötig — n8n pollt ausgehend).
+  # Erststart: http://<host>:5678 → Owner-Account anlegen → Workflow importieren.
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: otakupulse-n8n
+    restart: unless-stopped
+    env_file: ./frontend/secrets.env
+    environment:
+      GENERIC_TIMEZONE: Europe/Berlin
+      TZ: Europe/Berlin
+      # Plain-HTTP-Zugriff im LAN: sonst setzt n8n das Login-Cookie nicht.
+      N8N_SECURE_COOKIE: 'false'
+      N8N_RUNNERS_ENABLED: 'true'
+      # Encryption-Key für gespeicherte Credentials (optional in secrets.env;
+      # gesetzt = Credentials überleben einen Volume-Wechsel). Fällt sonst auf
+      # einen automatisch erzeugten Key im Volume zurück.
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-}
+    ports:
+      - '5678:5678'
+    volumes:
+      - /mnt/cache/appdata/otakupulse/n8n:/home/node/.n8n
+    networks:
+      - otakupulse-net
+
 networks:
   otakupulse-net:
     name: otakupulse-net

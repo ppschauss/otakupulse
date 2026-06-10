@@ -1,0 +1,94 @@
+{
+  "name": "OtakuPulse Autoposter",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 15,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "feedUrl": "http://otakupulse-app:3000/feed.xml"
+      },
+      "id": "rss-trigger",
+      "name": "Neue Artikel (RSS)",
+      "type": "n8n-nodes-base.rssFeedReadTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "HIER_DISCORD_WEBHOOK_URL_EINTRAGEN",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: `**${$json.title}**\\n${$json.link}` }) }}",
+        "options": {}
+      },
+      "id": "post-discord",
+      "name": "→ Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://DEINE-INSTANZ.social/api/v1/statuses",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer HIER_MASTODON_ACCESS_TOKEN_EINTRAGEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: `${$json.title}\\n\\n${$json.link}` }) }}",
+        "options": {}
+      },
+      "id": "post-mastodon",
+      "name": "→ Mastodon",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Neue Artikel (RSS)": {
+      "main": [
+        [
+          {
+            "node": "→ Discord",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "→ Mastodon",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

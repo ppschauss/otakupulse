@@ -7,7 +7,19 @@ const securityHeaders = [
   { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  // Cross-Origin-Isolation (Werte bewusst verträglich gewählt):
+  // - COOP same-origin: isoliert den Browsing-Kontext (kein Cross-Origin-window-Zugriff).
+  // - CORP cross-origin: erlaubt weiterhin, dass Bilder/OG-Assets von Dritten (Discord,
+  //   Facebook) eingebettet werden — sonst bräche das Social-Sharing.
+  // - COEP credentialless: lädt Cross-Origin-Subressourcen ohne Credentials, statt sie
+  //   (wie require-corp) komplett zu blocken → GA/Umami/Remote-Bilder bleiben funktional.
+  //   NUR auf öffentlichen Routen (Admin ausgenommen, s.u.).
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+  { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
 ]
+
+// COEP separat, da es das Payload-Admin (Worker/Inline) eher bricht → nur öffentlich.
+const coepHeader = { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' }
 
 // CSP nur für öffentliche Routen (Admin ausgenommen, s.u.). 'unsafe-inline' ist für
 // Next.js nötig; externe Skripte sind gesperrt. Falls externe Analytics (Plausible/
@@ -33,6 +45,8 @@ const cspHeader = { key: 'Content-Security-Policy', value: contentSecurityPolicy
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Kein `X-Powered-By: Next.js`-Header (Tech-Fingerprinting reduzieren).
+  poweredByHeader: false,
   // Erlaubt dem Dev-Server, /_next/-Ressourcen an diese Origins auszuliefern
   // (sonst bleibt z.B. das Admin-Panel im LAN weiß, weil die JS-Chunks geblockt werden).
   allowedDevOrigins: ['192.168.0.161', '100.87.113.82'],
@@ -52,7 +66,7 @@ const nextConfig = {
     return [
       // Öffentliche Routen: Security-Header inkl. CSP. /legal/admin ist ausgenommen,
       // damit das Payload-Admin-Panel (Inline-/Worker-Skripte) nicht bricht.
-      { source: '/((?!legal/admin).*)', headers: [...securityHeaders, cspHeader] },
+      { source: '/((?!legal/admin).*)', headers: [...securityHeaders, coepHeader, cspHeader] },
       { source: '/legal/admin/:path*', headers: securityHeaders },
     ]
   },

@@ -26,6 +26,7 @@ export async function GET() {
       link: url(`/news/${a.slug}`),
       date: a.publishDate,
       description: a.excerpt,
+      image: a.coverImageUrl,
     })),
   })
 
