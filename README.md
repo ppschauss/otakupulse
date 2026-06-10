@@ -10,6 +10,9 @@ Stammdaten stammen aus **AniList**, angereichert um echte **Dub-/Sub-Sprachen** 
 **Streaming-Anbieter** aus mehreren Quellen sowie um **eigene deutsche Beschreibungen**
 (KI-Rewrite gegen Duplicate Content).
 
+> 📄 **Vollständige Pfad-Referenz & Architektur:** [`docs/PROJEKT.md`](docs/PROJEKT.md)
+> (auch als PDF: `docs/OtakuPulse-Projektdokumentation.pdf`).
+
 ---
 
 ## Inhalt
@@ -21,6 +24,7 @@ Stammdaten stammen aus **AniList**, angereichert um echte **Dub-/Sub-Sprachen** 
 - [`secrets.env`](#secretsenv--niemals-committen)
 - [Daten-Pipeline](#daten-pipeline)
 - [Redaktion & Automatik](#redaktion--automatik)
+- [Community & Social](#community--social)
 - [Jugendschutz](#jugendschutz)
 - [SEO](#seo)
 - [Analytics (Umami, self-hosted)](#analytics-umami-self-hosted)
@@ -146,6 +150,9 @@ TELEGRAM_BOT_TOKEN=<botfather-token>
 TELEGRAM_CHANNEL=@otakupulse_de
 ALERT_CHAT_ID=<private-chat-id>               # Ziel der Watchdog-Alarme
 
+# n8n-Autoposter (stabiler Key für gespeicherte Credentials)
+N8N_ENCRYPTION_KEY=<hex-key>
+
 # Analytics (self-hosted Umami, first-party über /stats)
 NEXT_PUBLIC_UMAMI_WEBSITE_ID=<website-id>
 NEXT_PUBLIC_UMAMI_SRC=/stats/script.js
@@ -202,6 +209,41 @@ Brauchen TLS-Impersonation (Cloudflare) bzw. eine **DE-IP**. Wöchentlich genüg
   (`telegramPostedAt`-Feld als Dedup). Flags `--max N`, `--seed`, `--dry`.
 - **RSS** — pflegbare `Feeds` (Artikel + Anime + Custom-Items), Übersicht unter `/feeds`.
 
+### RSS-Feeds
+
+Alle Feeds tragen Cover-Bilder (`<enclosure>` + `media:content`); jede Seite weist
+den Haupt-Feed via `<link rel="alternate">` aus (Auto-Discovery durch Reader/Crawler).
+
+| Feed | Zweck |
+|---|---|
+| `/feed.xml` | Haupt-Feed (Teaser + Cover) — Quelle des Autoposters |
+| `/feed-full.xml` | **Vollinhalt** (`content:encoded`) — für Flipboard & Volltext-Reader |
+| `/kalender/feed.xml` | Simulcast-Kalender |
+| `/news/kategorie/<cat>/feed.xml` | je News-Kategorie |
+| `/genre/<slug>/feed.xml` | je Genre |
+| `/feed/<slug>.xml` | kuratierte Themen-Feeds (Collection `Feeds`) |
+
+---
+
+## Community & Social
+
+Konstanten zentral in `frontend/src/lib/site.ts` (`DISCORD_INVITE`,
+`TELEGRAM_CHANNEL`, `X_URL`) — verlinkt in Header, Footer und auf der Startseite.
+
+- **Discord** — Community-Server; SEO-Landingpage `/anime-discord-server`.
+- **Telegram** — News-Kanal `@otakupulse_de` (Bot postet Artikel automatisch);
+  Landingpage `/anime-telegram-kanal`.
+- **X / Twitter** — `@OtakuPulseDE` (Header/Footer).
+
+**n8n-Autoposter** (`n8n-workflows/otakupulse-autoposter.json`): self-hosteter
+Container `otakupulse-n8n` (LAN, Port 5678) zieht intern
+`http://otakupulse-app:3000/feed.xml` und postet neue Artikel nach **Discord,
+Mastodon, Bluesky, Reddit und Facebook**. Dedup über den RSS-Trigger; Tokens werden
+im n8n-UI eingetragen. Anleitung: `n8n-workflows/README.md`.
+
+> Die Footer-„Community"-Spalte (Discord/Telegram/X-Landingpages) ist **fest in
+> `components/Footer.tsx`** verdrahtet — nicht über das CMS pflegbar.
+
 ---
 
 ## Jugendschutz
@@ -237,6 +279,14 @@ Brauchen TLS-Impersonation (Cloudflare) bzw. eine **DE-IP**. Wöchentlich genüg
   - **`genre__<slug>__N`** — Anime je Genre (Indexierung pro Genre in der GSC verfolgbar)
   - **`tagsanime__N`** — alle getaggten Anime (dedupliziert, gestaffelt)
   - **`streamen-*`**, **`aehnlich-*`** — die inhaltsstarken Intent-Seiten
+- **Community-Landingpages**: `/anime-discord-server`, `/anime-telegram-kanal`
+  (Keyword-Fokus „anime discord/telegram … deutsch", FAQPage-Schema, interne Verlinkung).
+- **Open Graph**: generiertes Default-Bild (`app/(frontend)/opengraph-image.tsx`),
+  per-Seite über `pageMeta` (`lib/seo.ts`); `og:image`/`twitter:image` automatisch.
+- **Feed-Discovery**: `pageMeta` setzt auf jeder Seite `<link rel="alternate" type="application/rss+xml">`.
+- **Google „Subscribe with Google"** (Reader Revenue Manager, Open Access):
+  `components/SubscribeWithGoogle.tsx` nur auf Artikelseiten + `NewsArticle`-JSON-LD
+  mit `isAccessibleForFree`/`isPartOf` (Publication `CAow_dDLDA`).
 
 ---
 
@@ -316,7 +366,13 @@ Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron
 - Härtung: Payload-Field-Access (interne Felder API-seitig versteckt), Drafts nicht
   öffentlich, **CSP** (`'self'`), **CORS/CSRF** auf die eigene Domain begrenzt,
   Login-Rate-Limit, On-Demand-Import mit Flut-Schutz.
+- **HTTP-Header** (`next.config.mjs`, öffentliche Routen): HSTS, X-Content-Type-Options,
+  X-Frame-Options, Referrer-/Permissions-Policy, **COOP** (same-origin),
+  **CORP** (cross-origin), **COEP** (credentialless), `poweredByHeader: false`.
+  CSP-Freigaben für GA und `news.google.com` (Subscribe with Google).
+- **`public/.well-known/security.txt`** (RFC 9116). Offen: **DNSSEC** (Cloudflare).
 - Admin nur unter `/legal/admin` erreichbar.
+- Rechtsseiten: `/impressum`, `/datenschutz`, `/nutzungsbedingungen` (ToS).
 
 ---
 
