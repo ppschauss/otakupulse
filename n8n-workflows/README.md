@@ -23,11 +23,14 @@ otakupulse-app  ──(intern)──►  n8n  ──(ausgehend)──►  Discor
 ## Erststart
 
 1. `http://<host>:5678` öffnen → Owner-Account anlegen (lokal, bleibt im LAN).
-2. **Import:** Menü (oben rechts) → *Import from File* → `otakupulse-autoposter.json`.
-3. In den beiden Nodes die Platzhalter ersetzen (s. u.), dann **Save** + Workflow **aktivieren**.
+2. Der Workflow **„OtakuPulse Autoposter" ist bereits importiert** (via `n8n import:workflow`).
+   Falls er fehlt: Menü → *Import from File* → `otakupulse-autoposter.json`.
+3. In den Plattform-Nodes die `HIER_…`-Platzhalter ersetzen (s. u.). Nicht genutzte
+   Kanäle einfach löschen oder deaktivieren (Node → *Disable*).
+4. **Save** + Workflow oben rechts **aktivieren**.
 
-> Der Starter enthält **Discord + Mastodon** (je ein einzelner POST, sofort verifizierbar).
-> Bluesky/Reddit/Facebook unten anbauen.
+> Enthält **alle fünf Kanäle**: Discord, Mastodon, Bluesky (Login → Post mit Link-Karte),
+> Reddit (nativer Node), Facebook. Discord/Mastodon laufen sofort, sobald Token gesetzt.
 
 ## Tokens je Plattform
 
@@ -40,29 +43,25 @@ Auf deiner Instanz: *Einstellungen → Entwicklung → Neue Anwendung*, Scope `w
 Token kopieren. Im Node **→ Mastodon**: `DEINE-INSTANZ.social` auf deine Instanz ändern und
 `HIER_MASTODON_ACCESS_TOKEN_EINTRAGEN` ersetzen.
 
-### Bluesky (Anbau, 2 Schritte)
-Bluesky braucht erst eine Session, dann den Post. Per **App-Passwort** (Einstellungen → App Passwords):
-1. HTTP POST `https://bsky.social/xrpc/com.atproto.server.createSession`
-   Body `{ "identifier": "handle.bsky.social", "password": "APP-PASSWORT" }` → liefert `accessJwt` + `did`.
-2. HTTP POST `https://bsky.social/xrpc/com.atproto.repo.createRecord`
-   Header `Authorization: Bearer {{accessJwt}}`, Body:
-   ```json
-   { "repo": "{{did}}", "collection": "app.bsky.feed.post",
-     "record": { "$type": "app.bsky.feed.post", "text": "TITEL\n\nLINK", "createdAt": "{{$now.toISO()}}" } }
-   ```
-   Für eine Link-Karte mit Bild zusätzlich `embed: app.bsky.embed.external` mit `uri/title/description`
-   und (optional) `thumb` via `uploadBlob` setzen.
+### Bluesky (im Workflow: „Bluesky: Login" → „→ Bluesky")
+Per **App-Passwort** (bsky.app → Einstellungen → App-Passwords → neues anlegen).
+Im Node **Bluesky: Login** im JSON-Body `DEIN-HANDLE.bsky.social` und `HIER_BLUESKY_APP_PASSWORT`
+ersetzen. Der Login liefert `accessJwt` + `did`; der Folge-Node **→ Bluesky** baut daraus einen
+Post mit **externer Link-Karte** (`app.bsky.embed.external`, Titel + Teaser).
+Optional: Vorschaubild via `com.atproto.repo.uploadBlob` hochladen und als `external.thumb` setzen.
 
-### Reddit (Anbau — erst eigenes Sub anlegen!)
+### Reddit (nativer Node „→ Reddit" — erst eigenes Sub anlegen!)
 **Wichtig:** In fremden Subs wird Self-Promo gebannt → leg ein eigenes Sub an (z. B. r/OtakuPulse).
-Dann reddit.com/prefs/apps → *script*-App anlegen (client id + secret). In n8n den nativen
-**Reddit**-Node nutzen (OAuth2-Credential), Operation *Post → Create*, Subreddit = euer Sub,
-Kind *link*, Title = `{{$json.title}}`, URL = `{{$json.link}}`.
+1. reddit.com/prefs/apps → *create app* → Typ **script** → client id + secret notieren.
+2. In n8n: Node **→ Reddit** öffnen → *Credential to connect with* → **Reddit OAuth2 API** neu
+   anlegen (client id/secret eintragen, OAuth-Flow durchklicken).
+3. Im Node ggf. `subreddit` (Default `OtakuPulse`) anpassen. Kind = *link*, Title/URL sind verdrahtet.
 
-### Facebook (Anbau — höchster Aufwand)
+### Facebook (HTTP-Node „→ Facebook" — höchster Aufwand)
 Meta-App anlegen, **Page Access Token** (long-lived) besorgen, App-Review für `pages_manage_posts`.
-Dann HTTP POST `https://graph.facebook.com/v21.0/{PAGE_ID}/feed`
-Body `{ "message": "{{title}}", "link": "{{link}}", "access_token": "PAGE_TOKEN" }`.
+Im Node **→ Facebook**: `HIER_PAGE_ID` und `HIER_PAGE_ACCESS_TOKEN` im JSON-Body ersetzen
+(POST an `https://graph.facebook.com/v21.0/{PAGE_ID}/feed`). Tipp: Token nicht im Klartext lassen —
+besser als n8n-Credential bzw. über den nativen *Facebook Graph API*-Node speichern.
 
 ## Betrieb / Tipps
 
