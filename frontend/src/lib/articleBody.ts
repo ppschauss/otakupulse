@@ -7,7 +7,14 @@
  * eigene, identische Kopie — bewusst nicht angefasst, um Regressionen zu vermeiden).
  */
 
-export type Valid = { anime: Set<string>; genre: Set<string>; studio: Set<string>; tag: Set<string> }
+export type Valid = {
+  anime: Set<string>
+  genre: Set<string>
+  studio: Set<string>
+  tag: Set<string>
+  /** Whitelist interner Seiten-Links: Marker-Slug → Pfad (z. B. 'kalender' → '/kalender'). */
+  page?: Map<string, string>
+}
 
 const PATH: Record<string, string> = { anime: 'anime', genre: 'genre', studio: 'studio', tag: 'tag' }
 
@@ -31,6 +38,11 @@ function inline(text: string, valid: Valid, used: { anime: Set<string>; tag: Set
   while ((m = re.exec(text))) {
     if (m.index > last) nodes.push(textNode(text.slice(last, m.index)))
     const [, type, slug, label] = m
+    if (type === 'page' && valid.page?.has(slug)) {
+      nodes.push(linkNode(valid.page.get(slug)!, label))
+      last = re.lastIndex
+      continue
+    }
     const known = (valid as any)[type] as Set<string> | undefined
     if (PATH[type] && known?.has(slug)) {
       nodes.push(linkNode(`/${PATH[type]}/${slug}`, label))
