@@ -153,6 +153,10 @@ export default function DatenschutzPage() {
           Siehe auch unser{' '}
           <Link href="/impressum" className="text-accent hover:underline">
             Impressum
+          </Link>{' '}
+          und unsere{' '}
+          <Link href="/nutzungsbedingungen" className="text-accent hover:underline">
+            Nutzungsbedingungen
           </Link>
           .
         </p>

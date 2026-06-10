@@ -6,7 +6,10 @@ import Image from 'next/image'
 import type { Metadata } from 'next'
 import { RichText } from '@/components/RichText'
 import { AnimeCard } from '@/components/AnimeCard'
+import { JsonLd } from '@/components/JsonLd'
+import { SubscribeWithGoogle } from '@/components/SubscribeWithGoogle'
 import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
+import { url, SITE_NAME } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,8 +71,41 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
     })
   ).docs as any[]
 
+  const articleImage = article.coverImageUrl
+    ? article.coverImageUrl.startsWith('http')
+      ? article.coverImageUrl
+      : url(article.coverImageUrl)
+    : undefined
+  const articleLd = {
+    '@context': 'https://schema.org',
+    '@type': 'NewsArticle',
+    headline: article.title,
+    description: article.excerpt || article.seoDescription || undefined,
+    image: articleImage ? [articleImage] : undefined,
+    datePublished: article.publishDate || undefined,
+    dateModified: article.updatedAt || article.publishDate || undefined,
+    author: author
+      ? { '@type': 'Person', name: author.name, url: url(`/autor/${author.slug}`) }
+      : { '@type': 'Organization', name: SITE_NAME },
+    publisher: {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      logo: { '@type': 'ImageObject', url: url('/icon.svg') },
+    },
+    mainEntityOfPage: url(`/news/${article.slug}`),
+    // Google „Subscribe with Google" / Reader Revenue Manager — Open Access.
+    isAccessibleForFree: true,
+    isPartOf: {
+      '@type': ['CreativeWork', 'Product'],
+      name: SITE_NAME,
+      productID: 'CAow_dDLDA:openaccess',
+    },
+  }
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
+      <JsonLd data={articleLd} />
+      <SubscribeWithGoogle />
       <div className="flex items-center gap-2 text-xs text-zinc-500">
         {article.category ? <span className="font-semibold text-accent">{articleCategoryLabel(article.category)}</span> : null}
         {article.publishDate ? <span>· {fmtDate(article.publishDate)}</span> : null}

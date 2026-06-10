@@ -28,12 +28,15 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   // Google Analytics (gtag.js) lädt von googletagmanager.com; Daten gehen an google-analytics.com
   // (connect-src 'self' https: deckt das Senden bereits ab). Lädt nur nach Statistik-Einwilligung.
-  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com",
+  // news.google.com: Google „Subscribe with Google" / Reader Revenue Manager (swg-basic.js) auf Artikelseiten.
+  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com https://news.google.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
   "connect-src 'self' https:",
   "media-src 'self' https:",
+  // SWG öffnet für Account-/Following-Flows Iframes von Google.
+  "frame-src 'self' https://news.google.com https://www.google.com",
   "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'self'",
