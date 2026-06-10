@@ -164,7 +164,9 @@ export default function HomePage() {
           <p>
             Lust auf Austausch? Komm in unseren{' '}
             <Link href="/anime-discord-server" className="text-accent hover:underline">deutschen Anime-Discord-Server</Link>{' '}
-            und quatsch mit anderen Fans über die laufende Season, Empfehlungen und Memes.
+            und quatsch mit anderen Fans über die laufende Season, Empfehlungen und Memes — oder abonniere unseren{' '}
+            <Link href="/anime-telegram-kanal" className="text-accent hover:underline">Anime-Telegram-Kanal</Link>, wenn du
+            News lieber direkt aufs Handy bekommst.
           </p>
         </div>
       </section>

@@ -158,7 +158,9 @@ export default function AnimeDiscordServerPage() {
             <Link href="/season" className="text-accent hover:underline">aktuelle Anime-Season</Link> durchstöbern, nach{' '}
             <Link href="/genre" className="text-accent hover:underline">Genre</Link> oder{' '}
             <Link href="/plattform" className="text-accent hover:underline">Streaming-Anbieter</Link> filtern und die
-            neuesten <Link href="/news" className="text-accent hover:underline">Anime-News</Link> lesen.
+            neuesten <Link href="/news" className="text-accent hover:underline">Anime-News</Link> lesen. Lieber nur News
+            ohne Chat? Dann abonniere unseren{' '}
+            <Link href="/anime-telegram-kanal" className="text-accent hover:underline">deutschen Anime-Telegram-Kanal</Link>.
           </p>
         </section>
 
