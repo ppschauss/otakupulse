@@ -11,6 +11,7 @@ export function pageMeta({
   image,
   noindex,
   canonical: canonicalOverride,
+  feed,
 }: {
   title: string
   description?: string
@@ -18,8 +19,13 @@ export function pageMeta({
   image?: string | null
   noindex?: boolean | null
   canonical?: string | null
+  // RSS-Feed für die automatische Discovery (<link rel="alternate">). Default: Haupt-Feed.
+  // Damit findet JEDER Reader/Crawler den Feed über die Seite — Voraussetzung dafür,
+  // dass Cloud-Reader (Feedly, Inoreader, …) ihn aufnehmen und cachen.
+  feed?: { url: string; title: string } | null
 }): Metadata {
   const canonical = canonicalOverride || url(path)
+  const feedLink = feed === null ? null : (feed || { url: url('/feed.xml'), title: `${SITE_NAME} — News` })
   // Seitenspezifisches Bild explizit setzen; OHNE eins NICHT setzen, damit Next die
   // Datei-Konvention src/app/(frontend)/opengraph-image.tsx automatisch als og:image
   // UND twitter:image injiziert (mit korrektem, gehashtem Pfad). So hat jede Seite eine
@@ -28,7 +34,10 @@ export function pageMeta({
   return {
     title,
     description,
-    alternates: { canonical },
+    alternates: {
+      canonical,
+      ...(feedLink ? { types: { 'application/rss+xml': [{ url: feedLink.url, title: feedLink.title }] } } : {}),
+    },
     ...(noindex ? { robots: { index: false, follow: false } } : {}),
     openGraph: {
       title,
