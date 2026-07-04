@@ -6,6 +6,8 @@ automatisch generierte News. Alles verlinkt, durchsuchbar, SEO-optimiert.
 
 Live: **https://www.otakupulse.de**
 
+📱 **Android-App:** [ppschauss/otakupulse-android](https://github.com/ppschauss/otakupulse-android) — Kotlin-WebView-Wrapper mit AdMob-Werbung
+
 Stammdaten stammen aus **AniList**, angereichert um echte **Dub-/Sub-Sprachen** und
 **Streaming-Anbieter** aus mehreren Quellen sowie um **eigene deutsche Beschreibungen**
 (KI-Rewrite gegen Duplicate Content).
