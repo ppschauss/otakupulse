@@ -1,0 +1,7 @@
+# Secrets (NIEMALS committen) + Laufzeit-DB
+secrets.env
+.env
+data/
+*.sqlite3*
+__pycache__/
+*.pyc

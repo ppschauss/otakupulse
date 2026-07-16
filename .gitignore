@@ -15,6 +15,11 @@ db/
 
 # --- n8n-Laufzeitdaten + Credentials (Volume) — Workflows liegen versioniert in n8n-workflows/ ---
 n8n/
+# Roh-Exporte aus der n8n-DB: enthalten hartkodierte Tokens im Klartext.
+n8n-workflows/_backup-*/
+
+# --- Social-Agent: Laufzeit-DB ---
+social/data/
 
 # --- Gespiegelte Bilder (groß: ~4 GB / 61k Dateien) ---
 # Beim Stagen via rsync/Volume übertragen oder mit `npm run mirror` neu erzeugen.
