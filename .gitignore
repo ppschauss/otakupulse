@@ -38,3 +38,6 @@ Thumbs.db
 # rclone (enthält Offsite-Credentials) + Binary
 rclone.conf
 bin/
+
+# --- Ad-hoc-Backups von Config-Dateien ---
+*.bak-*

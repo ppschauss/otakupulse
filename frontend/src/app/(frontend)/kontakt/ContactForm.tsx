@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useEffect, useRef } from 'react'
 import { submitContact } from './actions'
 
 const initial: { ok?: boolean; error?: string } = {}
@@ -9,6 +9,20 @@ const field = 'w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2
 
 export function ContactForm() {
   const [state, action, pending] = useActionState(submitContact, initial)
+
+  // JS-Zeittrap: Mount-Zeit erst clientseitig setzen (kein Hydration-Mismatch).
+  // Beim Absenden schreibt onSubmit die verstrichene Zeit in das versteckte
+  // Feld `_elapsed` → die Server-Action verwirft Sofort-Submits von Bots.
+  const mountedAt = useRef<number | null>(null)
+  const elapsedInput = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    mountedAt.current = performance.now()
+  }, [])
+  const stampElapsed = () => {
+    if (elapsedInput.current && mountedAt.current != null) {
+      elapsedInput.current.value = String(Math.round(performance.now() - mountedAt.current))
+    }
+  }
 
   if (state.ok) {
     return (
@@ -20,9 +34,11 @@ export function ContactForm() {
   }
 
   return (
-    <form action={action} className="mt-8 space-y-4">
+    <form action={action} onSubmit={stampElapsed} className="mt-8 space-y-4">
       {/* Honeypot — für Menschen unsichtbar */}
       <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 opacity-0" />
+      {/* JS-Zeittrap: wird beim Absenden per onSubmit mit der Verweildauer (ms) befüllt */}
+      <input ref={elapsedInput} type="hidden" name="_elapsed" defaultValue="" />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
