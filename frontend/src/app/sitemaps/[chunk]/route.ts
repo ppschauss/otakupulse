@@ -1,11 +1,30 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
-import { TYPES, PER, STATIC_PATHS, xmlEscape, resolveWhere, GENRE_PREFIX, TAG_ANIME_PREFIX, TAG_ANIME_WHERE } from '@/lib/sitemap'
+import {
+  TYPES, PER, STATIC_PATHS, xmlEscape, resolveWhere,
+  GENRE_PREFIX, TAG_ANIME_PREFIX, TAG_ANIME_WHERE, hasContentUpdatedAt,
+} from '@/lib/sitemap'
 import { url } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
 
 type Entry = { loc: string; lastmod?: string }
+
+/**
+ * <lastmod> aus der letzten INHALTLICHEN Änderung.
+ *
+ * `updatedAt` allein wäre unehrlich: der nächtliche Sync schreibt jeden laufenden
+ * Anime und dessen Charaktere neu, auch wenn AniList nur den Popularitätszähler
+ * bewegt hat. Google verlangt, dass lastmod echte Änderungen markiert — sonst
+ * stuft es die Angabe site-weit als unzuverlässig ein und ignoriert sie.
+ *
+ * Fallback auf `updatedAt`, solange `contentUpdatedAt` noch nicht gesetzt ist
+ * (Dokumente, die seit Einführung des Feldes nicht neu synchronisiert wurden).
+ */
+const lastmodOf = (d: any): string | undefined => {
+  const raw = d?.contentUpdatedAt || d?.updatedAt
+  return raw ? new Date(raw).toISOString() : undefined
+}
 
 // Anime-URLs einer where-Bedingung als Sitemap-Einträge rendern.
 async function animeChunk(where: any, page: number): Promise<Entry[]> {
@@ -17,14 +36,11 @@ async function animeChunk(where: any, page: number): Promise<Entry[]> {
     limit: PER,
     page,
     depth: 0,
-    select: { slug: true, updatedAt: true } as any,
+    select: { slug: true, updatedAt: true, contentUpdatedAt: true } as any,
   })
   return (res.docs as any[])
     .filter((d) => d.slug)
-    .map((d) => ({
-      loc: url(`/anime/${d.slug}`),
-      lastmod: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
-    }))
+    .map((d) => ({ loc: url(`/anime/${d.slug}`), lastmod: lastmodOf(d) }))
 }
 
 function render(entries: Entry[]): Response {
@@ -83,16 +99,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ chunk: 
     limit: PER,
     page,
     depth: 0,
-    select: { slug: true, updatedAt: true, ...(type.select || {}) },
+    select: {
+      slug: true,
+      updatedAt: true,
+      ...(hasContentUpdatedAt(type.collection) ? { contentUpdatedAt: true } : {}),
+      ...(type.select || {}),
+    },
   })
 
   const entries: Entry[] = res.docs
     // Thinness-Gate (z.B. Charaktere/Personen ohne substanziellen Text) → nicht in die Sitemap.
     .filter((d: any) => d.slug && (!type.keep || type.keep(d)))
-    .map((d: any) => ({
-      loc: url(type.path(d.slug)),
-      lastmod: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
-    }))
+    .map((d: any) => ({ loc: url(type.path(d.slug)), lastmod: lastmodOf(d) }))
 
   return render(entries)
 }

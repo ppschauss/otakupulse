@@ -316,6 +316,10 @@ export interface Anime {
   dataSource?: string | null;
   lastSyncedAt?: string | null;
   /**
+   * Letzte inhaltliche Änderung (Basis für <lastmod>).
+   */
+  contentUpdatedAt?: string | null;
+  /**
    * Schützt manuelle Änderungen vor Überschreiben durch den Sync.
    */
   isEditoriallyLocked?: boolean | null;
@@ -368,6 +372,10 @@ export interface Studio {
   };
   dataSource?: string | null;
   lastSyncedAt?: string | null;
+  /**
+   * Letzte inhaltliche Änderung (Basis für <lastmod>).
+   */
+  contentUpdatedAt?: string | null;
   /**
    * Schützt manuelle Änderungen vor Überschreiben durch den Sync.
    */
@@ -542,6 +550,10 @@ export interface Character {
   dataSource?: string | null;
   lastSyncedAt?: string | null;
   /**
+   * Letzte inhaltliche Änderung (Basis für <lastmod>).
+   */
+  contentUpdatedAt?: string | null;
+  /**
    * Schützt manuelle Änderungen vor Überschreiben durch den Sync.
    */
   isEditoriallyLocked?: boolean | null;
@@ -623,6 +635,10 @@ export interface Person {
   };
   dataSource?: string | null;
   lastSyncedAt?: string | null;
+  /**
+   * Letzte inhaltliche Änderung (Basis für <lastmod>).
+   */
+  contentUpdatedAt?: string | null;
   /**
    * Schützt manuelle Änderungen vor Überschreiben durch den Sync.
    */
@@ -716,6 +732,10 @@ export interface Episode {
   animeSeason?: (number | null) | AnimeSeason;
   dataSource?: string | null;
   lastSyncedAt?: string | null;
+  /**
+   * Letzte inhaltliche Änderung (Basis für <lastmod>).
+   */
+  contentUpdatedAt?: string | null;
   /**
    * Schützt manuelle Änderungen vor Überschreiben durch den Sync.
    */
@@ -1133,6 +1153,7 @@ export interface AnimeSelect<T extends boolean = true> {
   episodeList?: T;
   dataSource?: T;
   lastSyncedAt?: T;
+  contentUpdatedAt?: T;
   isEditoriallyLocked?: T;
   footerText?: T;
   seoTitle?: T;
@@ -1172,6 +1193,7 @@ export interface EpisodesSelect<T extends boolean = true> {
   animeSeason?: T;
   dataSource?: T;
   lastSyncedAt?: T;
+  contentUpdatedAt?: T;
   isEditoriallyLocked?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -1212,6 +1234,7 @@ export interface CharactersSelect<T extends boolean = true> {
   appearances?: T;
   dataSource?: T;
   lastSyncedAt?: T;
+  contentUpdatedAt?: T;
   isEditoriallyLocked?: T;
   footerText?: T;
   seoTitle?: T;
@@ -1257,6 +1280,7 @@ export interface PersonsSelect<T extends boolean = true> {
   voiceCredits?: T;
   dataSource?: T;
   lastSyncedAt?: T;
+  contentUpdatedAt?: T;
   isEditoriallyLocked?: T;
   footerText?: T;
   seoTitle?: T;
@@ -1285,6 +1309,7 @@ export interface StudiosSelect<T extends boolean = true> {
   animeProduced?: T;
   dataSource?: T;
   lastSyncedAt?: T;
+  contentUpdatedAt?: T;
   isEditoriallyLocked?: T;
   footerText?: T;
   seoTitle?: T;

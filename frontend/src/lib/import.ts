@@ -45,6 +45,72 @@ export function mapTagCategory(cat?: string | null): string | undefined {
   return 'element'
 }
 
+// --- Inhaltliche Änderungen erkennen (für <lastmod>) --------------------
+//
+// Ziel: `contentUpdatedAt` darf sich NUR bewegen, wenn sich für einen Leser
+// etwas geändert hat. Der Sync schreibt jeden laufenden Anime jede Nacht neu,
+// meist nur weil AniList `popularity`/`averageScore`/`favourites` fortgeschrieben
+// hat. Solche Ticks als „Seite geändert" an Google zu melden, entwertet die
+// lastmod-Angabe für die gesamte Site.
+//
+// Bewusst als POSITIVLISTE: vergessen wir ein Feld, bleibt lastmod einmal zu alt
+// (harmlos). Eine Negativliste würde bei jedem neuen Feld stillschweigend wieder
+// Rauschen erzeugen. Die Daten selbst werden weiterhin IMMER geschrieben — diese
+// Logik entscheidet ausschließlich über den Zeitstempel.
+
+/** Felder von `anime`, die eine inhaltliche Änderung darstellen. */
+const ANIME_CONTENT_FIELDS = [
+  'titleRomaji', 'titleEnglish', 'titleNative',
+  'format', 'status', 'episodes', 'duration', 'season', 'seasonYear',
+  'source', 'countryOfOrigin', 'descriptionSource',
+  'coverImageUrl', 'bannerImageUrl', 'trailerUrl',
+  'genres', 'studios', 'isHentai', 'availableLanguages',
+] as const
+
+/** Felder von `characters`, die eine inhaltliche Änderung darstellen. */
+const CHARACTER_CONTENT_FIELDS = [
+  'nameRomaji', 'nameNative', 'imageUrl', 'descriptionSource', 'gender', 'age', 'bloodType',
+] as const
+
+/**
+ * Vergleicht ein Feld robust gegen den DB-Stand.
+ * Relationen kommen bei `depth: 0` als IDs zurück, unsere Import-Daten ebenfalls —
+ * Arrays werden daher als sortierte ID-Listen verglichen (Reihenfolge aus der API
+ * ist nicht stabil und wäre sonst eine Dauer-Falschmeldung).
+ */
+function sameValue(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown): string => {
+    if (v === null || v === undefined) return ''
+    if (Array.isArray(v)) {
+      return v
+        .map((x: any) => String(x && typeof x === 'object' ? (x.id ?? x.value ?? JSON.stringify(x)) : x))
+        .sort()
+        .join('|')
+    }
+    return String(v)
+  }
+  return norm(a) === norm(b)
+}
+
+/**
+ * Liefert den `contentUpdatedAt`-Wert für ein Update: `now`, wenn sich eines der
+ * gelisteten Felder geändert hat — sonst der bisherige Wert (bzw. `updatedAt` als
+ * Startwert, solange das Feld noch nie gesetzt war).
+ */
+function nextContentUpdatedAt(
+  existing: any,
+  next: Record<string, any>,
+  fields: readonly string[],
+  now: string,
+): string {
+  const changed = fields.some((f) => !sameValue(existing?.[f], next[f]))
+  if (changed) return now
+  return existing?.contentUpdatedAt || existing?.updatedAt || now
+}
+
+/** Nur für Unit-Tests exportiert (die Helfer selbst bleiben modul-intern). */
+export const __test = { sameValue, nextContentUpdatedAt, ANIME_CONTENT_FIELDS, CHARACTER_CONTENT_FIELDS }
+
 const REL_TYPES = ['SEQUEL', 'PREQUEL', 'SIDE_STORY', 'ADAPTATION', 'ALTERNATIVE', 'SPIN_OFF', 'PARENT', 'OTHER']
 function mapRelationType(t?: string | null): string {
   return t && REL_TYPES.includes(t) ? t : 'OTHER'
@@ -206,11 +272,21 @@ async function upsertCharacter(payload: Payload, edge: any): Promise<Id | null> 
     lastSyncedAt: new Date().toISOString(),
   }
 
-  const found = await payload.find({ collection: 'characters', where: { anilistId: { equals: node.id } }, limit: 1 })
+  // depth: 0 — wir brauchen nur Skalare für den Inhaltsvergleich, keine
+  // aufgelösten Relationen (spart bei ~2.000 Charakteren pro Sync-Nacht spürbar).
+  const found = await payload.find({
+    collection: 'characters',
+    where: { anilistId: { equals: node.id } },
+    limit: 1,
+    depth: 0,
+  })
   if (found.docs.length) {
-    await payload.update({ collection: 'characters', id: found.docs[0].id, data })
-    return found.docs[0].id
+    const doc = found.docs[0] as any
+    data.contentUpdatedAt = nextContentUpdatedAt(doc, data, CHARACTER_CONTENT_FIELDS, data.lastSyncedAt)
+    await payload.update({ collection: 'characters', id: doc.id, data })
+    return doc.id
   }
+  data.contentUpdatedAt = data.lastSyncedAt
   return (await payload.create({ collection: 'characters', data })).id
 }
 
@@ -337,7 +413,14 @@ export async function importAnime(payload: Payload, anilistId: number, opts: Imp
     lastSyncedAt: new Date().toISOString(),
   }
 
-  const existing = await payload.find({ collection: 'anime', where: { anilistId: { equals: m.id } }, limit: 1 })
+  // depth: 0 — Relationen als IDs, damit der Inhaltsvergleich (genres/studios)
+  // gegen dieselbe Darstellung läuft wie unsere Import-Daten.
+  const existing = await payload.find({
+    collection: 'anime',
+    where: { anilistId: { equals: m.id } },
+    limit: 1,
+    depth: 0,
+  })
   let animeId: Id
   if (existing.docs.length) {
     animeId = existing.docs[0].id
@@ -348,8 +431,16 @@ export async function importAnime(payload: Payload, anilistId: number, opts: Imp
       ? (existing.docs[0] as any).availableLanguages
       : []
     animeData.availableLanguages = [...new Set([...prevLangs, ...(animeData.availableLanguages || [])])]
+    // Nach dem Sprach-Merge vergleichen, sonst meldet der Merge selbst eine Änderung.
+    animeData.contentUpdatedAt = nextContentUpdatedAt(
+      existing.docs[0],
+      animeData,
+      ANIME_CONTENT_FIELDS,
+      animeData.lastSyncedAt,
+    )
     await payload.update({ collection: 'anime', id: animeId, data: animeData })
   } else {
+    animeData.contentUpdatedAt = animeData.lastSyncedAt
     animeId = (await payload.create({ collection: 'anime', data: animeData })).id
   }
 

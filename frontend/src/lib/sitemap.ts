@@ -20,6 +20,12 @@ export type SitemapType = {
 
 export const resolveWhere = (w: SitemapType['where']) => (typeof w === 'function' ? w() : w)
 
+// Collections mit `syncMetaFields` — nur die haben `contentUpdatedAt` (die Quelle
+// für ein ehrliches <lastmod>). Genres/Tags/Seasons/Artikel werden redaktionell
+// bzw. selten gepflegt; dort ist `updatedAt` bereits eine ehrliche Angabe.
+const SYNCED_COLLECTIONS = new Set(['anime', 'characters', 'persons', 'studios', 'episodes'])
+export const hasContentUpdatedAt = (collection: string) => SYNCED_COLLECTIONS.has(collection)
+
 export const TYPES: SitemapType[] = [
   { key: 'anime', collection: 'anime', path: (s) => `/anime/${s}` },
   // Charaktere/Personen: nur mit substanziellem Text in Index + Sitemap (sonst dünn → noindex).
