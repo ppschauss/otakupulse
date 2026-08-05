@@ -242,6 +242,10 @@ export interface Anime {
         | 'tencent'
       )[]
     | null;
+  /**
+   * Letzte JustWatch-Anbieter-Prüfung (rollierender Refresh).
+   */
+  streamingCheckedAt?: string | null;
   coverImageUrl?: string | null;
   bannerImageUrl?: string | null;
   /**
@@ -762,6 +766,10 @@ export interface Article {
    */
   excerpt?: string | null;
   coverImageUrl?: string | null;
+  /**
+   * YouTube-Link (watch?v=… oder youtu.be/…). Wird als eingebetteter Trailer über dem Beitrag angezeigt.
+   */
+  trailerUrl?: string | null;
   category?: ('news' | 'simulcast' | 'review' | 'editorial' | 'guide' | 'ranking' | 'seasonal_preview') | null;
   body?: {
     root: {
@@ -1076,6 +1084,7 @@ export interface AnimeSelect<T extends boolean = true> {
   descriptionSource?: T;
   descriptionDe?: T;
   streamingProviders?: T;
+  streamingCheckedAt?: T;
   coverImageUrl?: T;
   bannerImageUrl?: T;
   coverImageLocal?: T;
@@ -1379,6 +1388,7 @@ export interface ArticlesSelect<T extends boolean = true> {
   slug?: T;
   excerpt?: T;
   coverImageUrl?: T;
+  trailerUrl?: T;
   category?: T;
   body?: T;
   author?: T;

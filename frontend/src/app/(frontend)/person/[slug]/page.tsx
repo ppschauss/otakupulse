@@ -17,7 +17,7 @@ import { personLd, pageMeta } from '@/lib/seo'
 import { personVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 import { hubExtras } from '@/lib/hub'
-import { displayName, displayTitle, genderLabel, liveArticleFilters, personRoleLabel, localImage, plainText } from '@/lib/anime'
+import { displayName, displayTitle, genderLabel, liveArticleFilters, personRoleLabel, localImage, plainText, textTooThin } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,7 +40,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       `${name}: Biografie, Rollen und Anime-Credits.`,
     path: `/person/${slug}`,
     image: localImage(p),
-    noindex: p.noindex || undefined,
+    // Dünn (keine/zu kurze Bio) → noindex; identisch zum Sitemap-keep.
+    noindex: p.noindex || textTooThin(p.bioDe, p.bioSource) || undefined,
     canonical: p.canonicalUrl || undefined,
   })
 }

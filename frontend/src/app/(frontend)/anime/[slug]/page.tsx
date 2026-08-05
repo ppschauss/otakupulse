@@ -12,7 +12,9 @@ import { ScrollRow } from '@/components/ScrollRow'
 import { MediaRow } from '@/components/MediaRow'
 import { JsonLd } from '@/components/JsonLd'
 import { SeoFooter } from '@/components/SeoFooter'
+import { ShareButtons } from '@/components/ShareButtons'
 import { animeLd, breadcrumbLd, pageMeta } from '@/lib/seo'
+import { url } from '@/lib/site'
 import {
   displayTitle,
   displayName,
@@ -198,6 +200,10 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
                 })}
               </div>
             ) : null}
+
+            <div className="mt-4">
+              <ShareButtons url={url(`/anime/${anime.slug}`)} title={title} message={`Schau dir den Anime „${title}“ auf OtakuPulse an 👀`} />
+            </div>
           </div>
         </div>
 

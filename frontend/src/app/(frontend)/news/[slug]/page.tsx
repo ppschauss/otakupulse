@@ -7,11 +7,25 @@ import type { Metadata } from 'next'
 import { RichText } from '@/components/RichText'
 import { AnimeCard } from '@/components/AnimeCard'
 import { JsonLd } from '@/components/JsonLd'
-import { SubscribeWithGoogle } from '@/components/SubscribeWithGoogle'
+import { ShareButtons } from '@/components/ShareButtons'
 import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
+import { pageMeta } from '@/lib/seo'
 import { url, SITE_NAME } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
+
+/** YouTube-Video-ID aus watch?v=… / youtu.be/… / embed/… extrahieren. */
+function youtubeId(u?: string | null): string | null {
+  if (!u) return null
+  const m = String(u).match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+  return m ? m[1] : null
+}
+
+/** Cover-URL absolut machen (lokale /media-Pfade → volle Domain). */
+function coverUrl(raw?: string | null): string | undefined {
+  if (!raw) return undefined
+  return raw.startsWith('http') ? raw : url(raw)
+}
 
 async function getArticle(slug: string) {
   const payload = await getPayload({ config })
@@ -28,10 +42,25 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const a = await getArticle(slug)
   if (!a) return {}
-  return {
+  const author = a.author && typeof a.author === 'object' ? a.author : null
+  const meta = pageMeta({
     title: a.seoTitle || `${a.title} — OtakuPulse`,
     description: a.seoDescription || a.excerpt || a.title,
+    path: `/news/${a.slug}`,
+    image: coverUrl(a.coverImageUrl),
+    noindex: a.noindex,
+    canonical: a.canonicalUrl || undefined,
+  })
+  // Für Beiträge den passenderen og:type „article" (+ Zeitstempel/Autor) setzen.
+  meta.openGraph = {
+    ...(meta.openGraph as any),
+    type: 'article',
+    publishedTime: a.publishDate || undefined,
+    modifiedTime: a.updatedAt || a.publishDate || undefined,
+    ...(author ? { authors: [author.name] } : {}),
+    ...(a.category ? { section: articleCategoryLabel(a.category) } : {}),
   }
+  return meta
 }
 
 function fmtDate(d?: string | null) {
@@ -71,11 +100,9 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
     })
   ).docs as any[]
 
-  const articleImage = article.coverImageUrl
-    ? article.coverImageUrl.startsWith('http')
-      ? article.coverImageUrl
-      : url(article.coverImageUrl)
-    : undefined
+  const articleImage = coverUrl(article.coverImageUrl)
+  const ytId = youtubeId(article.trailerUrl)
+  const shareUrl = url(`/news/${article.slug}`)
   const articleLd = {
     '@context': 'https://schema.org',
     '@type': 'NewsArticle',
@@ -93,19 +120,13 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
       logo: { '@type': 'ImageObject', url: url('/icon.svg') },
     },
     mainEntityOfPage: url(`/news/${article.slug}`),
-    // Google „Subscribe with Google" / Reader Revenue Manager — Open Access.
+    // Paywall-frei — sinnvolles SEO-Signal (unabhängig von Google-Diensten).
     isAccessibleForFree: true,
-    isPartOf: {
-      '@type': ['CreativeWork', 'Product'],
-      name: SITE_NAME,
-      productID: 'CAow_dDLDA:openaccess',
-    },
   }
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <JsonLd data={articleLd} />
-      <SubscribeWithGoogle />
       <div className="flex items-center gap-2 text-xs text-zinc-500">
         {article.category ? <span className="font-semibold text-accent">{articleCategoryLabel(article.category)}</span> : null}
         {article.publishDate ? <span>· {fmtDate(article.publishDate)}</span> : null}
@@ -121,7 +142,22 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
         </p>
       ) : null}
 
-      {article.coverImageUrl ? (
+      <div className="mt-4">
+        <ShareButtons url={shareUrl} title={article.title} message={`Schau dir diesen Beitrag auf OtakuPulse an: „${article.title}“ 👀`} />
+      </div>
+
+      {ytId ? (
+        <div className="relative mt-6 aspect-video w-full overflow-hidden rounded-xl ring-1 ring-white/10">
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${ytId}`}
+            title={`${article.title} – Trailer`}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            loading="lazy"
+            className="absolute inset-0 h-full w-full"
+          />
+        </div>
+      ) : article.coverImageUrl ? (
         <div className="relative mt-6 aspect-video w-full overflow-hidden rounded-xl ring-1 ring-white/10">
           <Image
             src={article.coverImageUrl}
@@ -137,6 +173,10 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
       <article className="mt-8">
         <RichText data={article.body} />
       </article>
+
+      <div className="mt-8 border-t border-white/10 pt-6">
+        <ShareButtons url={shareUrl} title={article.title} message={`Schau dir diesen Beitrag auf OtakuPulse an: „${article.title}“ 👀`} />
+      </div>
 
       {relatedAnime.length ? (
         <section className="mt-12">

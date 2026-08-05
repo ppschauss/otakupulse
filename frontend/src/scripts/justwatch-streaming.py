@@ -14,9 +14,20 @@ Für Dub siehe `crunchyroll-dub.py`.
 WICHTIG: Läuft auf dem HOST. `pip install curl_cffi` + `docker`. Grau-Zone
 (inoffizielle GraphQL-API), konservativ rate-limitiert, idempotent.
 
-Aufruf:  python3 src/scripts/justwatch-streaming.py                 (voll, alle Anime)
-         python3 src/scripts/justwatch-streaming.py --recent 3      (nur Titel der letzten 3 Tage — täglich)
-         python3 src/scripts/justwatch-streaming.py --only-missing  (nur Titel ohne Anbieter)
+Aufruf:  python3 src/scripts/justwatch-streaming.py                 (voll, alle Anime — additiv)
+         python3 src/scripts/justwatch-streaming.py --recent 3      (nur Titel der letzten 3 Tage — täglich, additiv)
+         python3 src/scripts/justwatch-streaming.py --only-missing  (nur Titel ohne Anbieter — additiv)
+         python3 src/scripts/justwatch-streaming.py --stale 250     (rollierend: die 250 am längsten nicht
+                                                                      geprüften Titel AUTORITATIV neu abgleichen
+                                                                      — Anbieter hinzufügen UND entfernen — und
+                                                                      streaming_checked_at stempeln. Für den Cron:
+                                                                      rotiert über viele kleine Läufe den ganzen
+                                                                      Katalog durch, ohne die Quelle zu hämmern.)
+
+Modi-Unterschied: --recent/--only-missing/voll sind ADDITIV (ergänzen nur, löschen nie —
+robust gegen Fehl-Matches). --stale ist AUTORITATIV auf gematchten Titeln (spiegelt den
+echten JustWatch-Stand, entfernt also auch verschwundene Anbieter). Bei fehlendem Titel-
+Match wird der Bestand NIE angetastet.
 """
 import json
 import subprocess
@@ -89,14 +100,19 @@ def norm(s):
     return re.sub(r"[^a-z0-9]", "", s.lower()) if s else ""
 
 
-def load_anime(recent_days=None):
-    # Optional nur kürzlich hinzugefügte Titel (für den täglichen Lauf nach dem Sync).
+def load_anime(recent_days=None, stale_limit=None):
+    # Optional nur kürzlich hinzugefügte Titel (täglicher Lauf) ODER die am
+    # längsten nicht geprüften N (rollierender --stale-Refresh, NULL zuerst).
     where = ""
     if recent_days:
         where = f" WHERE a.created_at > now() - interval '{int(recent_days)} days'"
+    tail = ""
+    if stale_limit:
+        tail = f" ORDER BY a.streaming_checked_at ASC NULLS FIRST LIMIT {int(stale_limit)}"
     rows = json.loads(psql(
-        "SELECT COALESCE(json_agg(json_build_object('id',a.id,'en',a.title_english,"
-        f"'ro',a.title_romaji,'na',a.title_native)),'[]') FROM anime a{where};"
+        "SELECT COALESCE(json_agg(json_build_object('id',s.id,'en',s.en,"
+        "'ro',s.ro,'na',s.na)),'[]') FROM (SELECT a.id, a.title_english en, "
+        f"a.title_romaji ro, a.title_native na FROM anime a{where}{tail}) s;"
     ).strip() or "[]")
     anime = {r["id"]: {"id": r["id"], "titles": [r.get("en") or "", r.get("ro") or "", r.get("na") or ""], "have": set()}
              for r in rows}
@@ -151,7 +167,7 @@ def providers_for(session, a):
         if score > best_score:
             best, best_score = node, score
     if not best or best_score < 0.90:
-        return set()
+        return False  # kein sicherer Titel-Match → Aufrufer lässt den Bestand unangetastet
     slugs = set()
     for o in best.get("offers", []) or []:
         if o.get("monetizationType") not in STREAM_MONETIZATION:
@@ -172,10 +188,16 @@ def _arg(name, default=None):
 
 def main():
     recent = _arg("--recent")
+    stale = _arg("--stale")
+    # --stale = rollierender Refresh: die N am längsten nicht geprüften Titel
+    # AUTORITATIV neu abgleichen (Anbieter hinzufügen UND entfernen) + stempeln.
+    authoritative = bool(stale)
     print("→ Lade Anime + vorhandene Anbieter …")
-    anime = load_anime(recent_days=recent)
+    anime = load_anime(recent_days=recent, stale_limit=stale)
     if recent:
         print(f"  --recent {recent}: {len(anime)} Titel der letzten {recent} Tage.")
+    if stale:
+        print(f"  --stale {stale}: {len(anime)} am längsten nicht geprüfte Titel.")
     print(f"  {len(anime)} Anime.")
     if not anime:
         print("  Nichts zu tun.")
@@ -191,7 +213,8 @@ def main():
             print("  Nichts zu tun.")
             return
 
-    results, added, errors, done = {}, 0, 0, 0
+    results, added, removed, errors, nomatch, done = {}, 0, 0, 0, 0, 0
+    checked_ids = []  # alle definitiv geprüften (Match ODER No-Match, NICHT Fehler)
 
     def worker(a):
         s = requests.Session(impersonate=IMPERSONATE)
@@ -203,30 +226,49 @@ def main():
             a, found = f.result()
             done += 1
             if found is None:
-                errors += 1
-            elif found:
-                merged = a["have"] | found
-                new = found - a["have"]
-                if new:
-                    results[a["id"]] = merged
-                    added += len(new)
+                errors += 1  # API-Fehler → NICHT stempeln, nächste Runde erneut
+            else:
+                checked_ids.append(a["id"])
+                if found is False:
+                    nomatch += 1  # kein sicherer Match → Bestand nicht anfassen
+                elif authoritative:
+                    if set(found) != a["have"]:
+                        results[a["id"]] = set(found)  # exakt auf JW-Stand setzen
+                        added += len(found - a["have"])
+                        removed += len(a["have"] - found)
+                else:
+                    new = found - a["have"]
+                    if new:
+                        results[a["id"]] = a["have"] | found  # additiv: nur ergänzen
+                        added += len(new)
             if done % 200 == 0:
-                print(f"  {done}/{len(anime)} … (Anime mit neuen Anbietern: {len(results)})")
+                print(f"  {done}/{len(anime)} … (geändert: {len(results)})")
 
-    print(f"  Fertig: {len(results)} Anime erweitert, {added} neue Anbieter-Zuordnungen, {errors} Fehler.")
-    if not results:
-        return
+    if authoritative:
+        print(f"  Fertig: {len(results)} geändert (+{added} / -{removed} Anbieter), "
+              f"{nomatch} ohne Match, {errors} Fehler.")
+    else:
+        print(f"  Fertig: {len(results)} Anime erweitert, {added} neue Anbieter-Zuordnungen, {errors} Fehler.")
 
-    print("→ Schreibe streamingProviders …")
-    stmts = ["BEGIN;"]
-    for aid, slugs in results.items():
-        ordered = sorted(slugs)
-        stmts.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {aid};")
-        vals = ",".join(f"({i+1}, {aid}, '{s}'::enum_anime_streaming_providers)" for i, s in enumerate(ordered))
-        stmts.append(f'INSERT INTO anime_streaming_providers ("order", parent_id, value) VALUES {vals};')
-    stmts.append("COMMIT;")
-    psql("\n".join(stmts), read=False)
-    print(f"✓ {len(results)} Anime aktualisiert.")
+    if results:
+        print("→ Schreibe streamingProviders …")
+        stmts = ["BEGIN;"]
+        for aid, slugs in results.items():
+            ordered = sorted(slugs)
+            stmts.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {aid};")
+            if ordered:  # leeres Set (autoritativ „nirgends mehr") → nur löschen
+                vals = ",".join(f"({i+1}, {aid}, '{s}'::enum_anime_streaming_providers)" for i, s in enumerate(ordered))
+                stmts.append(f'INSERT INTO anime_streaming_providers ("order", parent_id, value) VALUES {vals};')
+        stmts.append("COMMIT;")
+        psql("\n".join(stmts), read=False)
+        print(f"✓ {len(results)} Anime aktualisiert.")
+
+    # Rollierender Refresh: alle geprüften Titel stempeln (auch unveränderte /
+    # ohne Match), damit die Rotation weiterläuft. Fehler bleiben ungestempelt.
+    if authoritative and checked_ids:
+        ids = ",".join(str(i) for i in checked_ids)
+        psql(f"UPDATE anime SET streaming_checked_at = now() WHERE id IN ({ids});", read=False)
+        print(f"✓ {len(checked_ids)} Titel als geprüft markiert (rollierend).")
 
 
 if __name__ == "__main__":

@@ -40,6 +40,11 @@ export const Articles: CollectionConfig = {
     { name: 'excerpt', type: 'textarea', admin: { description: 'Teaser/Meta-Description (~160 Zeichen).' } },
     { name: 'coverImageUrl', type: 'text' },
     {
+      name: 'trailerUrl',
+      type: 'text',
+      admin: { description: 'YouTube-Link (watch?v=… oder youtu.be/…). Wird als eingebetteter Trailer über dem Beitrag angezeigt.' },
+    },
+    {
       name: 'category',
       type: 'select',
       options: ['news', 'simulcast', 'review', 'editorial', 'guide', 'ranking', 'seasonal_preview'],

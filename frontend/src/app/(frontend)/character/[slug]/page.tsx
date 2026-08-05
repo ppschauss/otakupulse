@@ -16,7 +16,7 @@ import { pageMeta } from '@/lib/seo'
 import { characterVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 import { hubExtras } from '@/lib/hub'
-import { displayName, displayTitle, genderLabel, liveArticleFilters, localImage, plainText } from '@/lib/anime'
+import { displayName, displayTitle, genderLabel, liveArticleFilters, localImage, plainText, textTooThin } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +39,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       `${name}: Profil, Synchronsprecher und Anime-Auftritte.`,
     path: `/character/${slug}`,
     image: localImage(c),
-    noindex: c.noindex || undefined,
+    // Dünn (kein/zu kurzer Beschreibungstext) → noindex; identisch zum Sitemap-keep.
+    noindex: c.noindex || textTooThin(c.descriptionDe, c.descriptionSource) || undefined,
     canonical: c.canonicalUrl || undefined,
   })
 }

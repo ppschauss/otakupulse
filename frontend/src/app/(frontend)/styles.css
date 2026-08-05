@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* Tailwind v4 scannt Sources automatisch; wir deklarieren den kompletten
+   src-Baum explizit, damit KEINE Komponente (z. B. CookieConsent mit
+   pointer-events-auto / z-[70] / bg-*\/95) beim Build übersehen wird. */
+@source '../../**/*.{ts,tsx}';
+
 /* OtakuPulse-Design-Tokens (erzeugen Utilities wie bg-accent, text-accent, from-accent …) */
 @theme {
   --color-accent: #ff4d6d;

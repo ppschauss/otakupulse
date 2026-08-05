@@ -5,6 +5,7 @@
 #   2) JustWatch-Streaming-Anbieter für NEU hinzugekommene Titel (HOST, curl_cffi).
 #   3) Blog-Beitrag pro neuem Titel (Claude) im enrich-Container (Live-Code).
 #   4) Neue Beiträge in den Telegram-Channel posten.
+#   5) IndexNow-Push: neu/geänderte URLs (letzte 3 Tage) an Suchmaschinen melden.
 # enrich-Container bind-mountet den Live-Code; Env per --env-file injiziert
 # (so unabhängig davon, wann der Container erstellt wurde).
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -22,4 +23,6 @@ echo "----- $(date) Blog-Beiträge für neue Titel -----" >> "$LOG"
 enrich "npx tsx src/scripts/generate-anime-news.ts --recent 3"
 echo "----- $(date) Telegram: neue Beiträge posten -----" >> "$LOG"
 enrich "npx tsx src/scripts/telegram-notify.ts --max 15"
+echo "----- $(date) IndexNow: neue/geänderte URLs melden -----" >> "$LOG"
+enrich "npx tsx src/scripts/indexnow.ts --recent 3"
 echo "===== $(date) Sync-Ende =====" >> "$LOG"

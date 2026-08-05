@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { HeroBlockAsync } from '@/components/HeroBlockAsync'
 import { AnimeRowAsync } from '@/components/AnimeRowAsync'
 import { NewsSidebar } from '@/components/NewsSidebar'
+import { LatestNews } from '@/components/LatestNews'
 import { GenreOfTheDay } from '@/components/GenreOfTheDay'
 import { SiteHubGrid } from '@/components/SiteHubGrid'
 import { HomeDiscover } from '@/components/HomeDiscover'
@@ -117,6 +118,11 @@ export default function HomePage() {
           <AnimeRowAsync title="Top bewertet" href="/suche" where={{ averageScore: { greater_than: 0 } }} sort="-averageScore" />
         </Suspense>
       </div>
+
+      {/* Aktuelle News — frisch generierte Beiträge über alle Kategorien */}
+      <Suspense fallback={<BoxSkeleton />}>
+        <LatestNews />
+      </Suspense>
 
       {/* Alle Bereiche der Seite (Orientierung) */}
       <SiteHubGrid />

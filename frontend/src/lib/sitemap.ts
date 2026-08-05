@@ -2,7 +2,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { PROVIDER_SLUGS } from './streaming'
-import { liveArticleFilters } from './anime'
+import { liveArticleFilters, textTooThin } from './anime'
 
 export const PER = 5000
 
@@ -12,14 +12,32 @@ export type SitemapType = {
   path: (slug: string) => string
   /** Statisches Where ODER Thunk (für zeitabhängige Filter, pro Request ausgewertet). */
   where?: any | (() => any)
+  /** Zusätzliche Felder, die der Chunk für das keep-Prädikat laden muss. */
+  select?: Record<string, true>
+  /** JS-seitiger Thinness-Filter — Payload-`where` kann keine Textlänge ausdrücken. */
+  keep?: (doc: any) => boolean
 }
 
 export const resolveWhere = (w: SitemapType['where']) => (typeof w === 'function' ? w() : w)
 
 export const TYPES: SitemapType[] = [
   { key: 'anime', collection: 'anime', path: (s) => `/anime/${s}` },
-  { key: 'characters', collection: 'characters', path: (s) => `/character/${s}` },
-  { key: 'persons', collection: 'persons', path: (s) => `/person/${s}` },
+  // Charaktere/Personen: nur mit substanziellem Text in Index + Sitemap (sonst dünn → noindex).
+  // keep-Kriterium identisch zur noindex-Bedingung der jeweiligen Seite (via textTooThin).
+  {
+    key: 'characters',
+    collection: 'characters',
+    path: (s) => `/character/${s}`,
+    select: { descriptionDe: true, descriptionSource: true, noindex: true },
+    keep: (d) => !d.noindex && !textTooThin(d.descriptionDe, d.descriptionSource),
+  },
+  {
+    key: 'persons',
+    collection: 'persons',
+    path: (s) => `/person/${s}`,
+    select: { bioDe: true, bioSource: true, noindex: true },
+    keep: (d) => !d.noindex && !textTooThin(d.bioDe, d.bioSource),
+  },
   { key: 'studios', collection: 'studios', path: (s) => `/studio/${s}` },
   { key: 'genres', collection: 'genres', path: (s) => `/genre/${s}` },
   { key: 'tags', collection: 'tags', path: (s) => `/tag/${s}` },

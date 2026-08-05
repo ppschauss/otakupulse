@@ -47,8 +47,8 @@ export function CookieConsent() {
     <div
       className={
         isModal
-          ? 'fixed inset-0 z-[70] flex items-end justify-center sm:items-center'
-          : 'pointer-events-none fixed inset-x-0 bottom-0 z-[70] flex justify-center'
+          ? 'fixed inset-0 z-[70] flex items-end justify-center p-3 sm:items-center'
+          : 'pointer-events-none fixed inset-x-0 bottom-0 z-[70] flex justify-center p-3'
       }
     >
       {isModal ? <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" /> : null}
@@ -57,7 +57,7 @@ export function CookieConsent() {
         role="dialog"
         aria-modal={isModal}
         aria-label="Cookie-Einstellungen"
-        className="pointer-events-auto relative m-3 w-full max-w-2xl rounded-2xl border border-white/10 bg-zinc-900/95 p-5 shadow-2xl backdrop-blur-md sm:p-6"
+        className="pointer-events-auto relative w-full max-w-2xl rounded-2xl border border-white/10 bg-zinc-900/95 p-5 shadow-2xl backdrop-blur-md sm:p-6"
       >
         <h2 className="text-lg font-bold text-white">
           {phase === 'banner' ? 'Datenschutz & Cookies' : 'Cookie-Einstellungen'}

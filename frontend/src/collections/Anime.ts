@@ -110,6 +110,15 @@ export const Anime: CollectionConfig = {
         { label: 'Tencent Video', value: 'tencent' },
       ],
     },
+    {
+      // Zeitstempel der letzten JustWatch-Prüfung. Steuert die rollierende
+      // Batch-Auffrischung (justwatch-streaming.py --stale N wählt die am
+      // längsten nicht geprüften Titel). NULL = nie geprüft (kommt zuerst dran).
+      name: 'streamingCheckedAt',
+      type: 'date',
+      index: true,
+      admin: { position: 'sidebar', readOnly: true, description: 'Letzte JustWatch-Anbieter-Prüfung (rollierender Refresh).' },
+    },
 
     // --- Bilder ---
     { name: 'coverImageUrl', type: 'text' },

@@ -130,3 +130,12 @@ export function plainText(html?: string | null): string {
   if (!html) return ''
   return html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
 }
+
+// Mindest-Klartextlänge, ab der eine Detailseite als indexierbar gilt. Darunter ist die
+// Seite dünn (name-only / Ein-Satz-Stub) → noindex UND raus aus der Sitemap. Eine Quelle
+// für Seiten-noindex und Sitemap-Filter, damit beide Kriterien nie auseinanderlaufen.
+export const INDEX_MIN_CHARS = 100
+export function textTooThin(...sources: (string | null | undefined)[]): boolean {
+  const first = sources.find((s) => s && s.trim())
+  return plainText(first).length < INDEX_MIN_CHARS
+}

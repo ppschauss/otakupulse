@@ -83,11 +83,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ chunk: 
     limit: PER,
     page,
     depth: 0,
-    select: { slug: true, updatedAt: true },
+    select: { slug: true, updatedAt: true, ...(type.select || {}) },
   })
 
   const entries: Entry[] = res.docs
-    .filter((d: any) => d.slug)
+    // Thinness-Gate (z.B. Charaktere/Personen ohne substanziellen Text) → nicht in die Sitemap.
+    .filter((d: any) => d.slug && (!type.keep || type.keep(d)))
     .map((d: any) => ({
       loc: url(type.path(d.slug)),
       lastmod: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
