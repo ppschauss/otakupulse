@@ -1,17 +1,60 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
+import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
 import { FORMAT_LABELS, STATUS_LABELS, TAG_CATEGORY_LABELS } from '@/lib/anime'
 import { STREAMING_PROVIDERS, providerBySlug } from '@/lib/streaming'
+import { pageMeta } from '@/lib/seo'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
 
-export const metadata = {
-  title: 'Anime-Suche & Filter — OtakuPulse',
-  description:
-    'Volltext-Suche in der Anime-Datenbank — kombiniere Genre, Tags, Typ, Jahr und Sprache (Japanisch, Deutscher/Englischer Dub).',
+// Query-Parameter, die aus /suche eine interne Trefferliste machen. Sobald einer
+// gesetzt ist, ist die Seite ein Suchergebnis und darf NICHT in den Index.
+const FILTER_PARAMS = ['q', 'genre', 'tag', 'status', 'format', 'year', 'lang', 'anbieter', 'sort', 'page'] as const
+
+/**
+ * Interne Suchergebnisse gehören nicht in den Google-Index.
+ *
+ * Seit 2026 steht das zwar nicht mehr in den Search Essentials, John Mueller
+ * empfiehlt es aber weiterhin ausdrücklich — aus zwei Gründen, die beide auf uns
+ * zutreffen:
+ *
+ *  1. Unendlicher URL-Raum: jede Parameter-Kombination ist eine eigene URL. Das
+ *     Crawl-Budget ist site-weit gedeckelt und wird über alle Crawler geteilt —
+ *     verschwendete Crawls fehlen bei den ~149k echten URLs.
+ *  2. „Hacked"-Risiko: `?q=` rendert beliebige Fremdbegriffe auf unserer Domain.
+ *     Lässt jemand Pharma-/Adult-/Casino-Terme crawlen, entstehen indexierbare
+ *     Seiten für genau diese Queries — Google flaggt das als gehackt und wertet
+ *     die Domain ab.
+ *
+ * Bewusst `follow: true` (wie auf /news): die Links auf echte Anime-Seiten dürfen
+ * weiterverfolgt werden, nur die Trefferliste selbst nicht indexiert.
+ *
+ * Bewusst NICHT zusätzlich per robots.txt gesperrt: bereits indexierte
+ * `/suche?...`-URLs müssen erst gecrawlt werden können, damit Google das noindex
+ * überhaupt sieht. Eine Disallow-Regel kommt frühestens, wenn sie aus dem Index
+ * verschwunden sind.
+ */
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}): Promise<Metadata> {
+  const sp = await searchParams
+  const isFiltered = FILTER_PARAMS.some((p) => {
+    const v = sp[p]
+    return typeof v === 'string' ? v.trim() !== '' : Array.isArray(v) ? v.length > 0 : false
+  })
+  const meta = pageMeta({
+    title: 'Anime-Suche & Filter — OtakuPulse',
+    description:
+      'Volltext-Suche in der Anime-Datenbank — kombiniere Genre, Tags, Typ, Jahr und Sprache (Japanisch, Deutscher/Englischer Dub).',
+    path: '/suche',
+  })
+  if (isFiltered) meta.robots = { index: false, follow: true }
+  return meta
 }
 
 const SORTS: Record<string, { label: string; sort: string }> = {

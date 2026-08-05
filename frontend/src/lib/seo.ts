@@ -3,6 +3,30 @@ import type { Metadata } from 'next'
 import { SITE_NAME, SITE_URL, url } from './site'
 import { displayTitle, plainText } from './anime'
 
+/**
+ * Robots-Direktiven für indexierbare Seiten.
+ *
+ * `max-image-preview:large` ist die technische Voraussetzung für **Google
+ * Discover**: ohne die Direktive liefert Google keine großformatigen Bildkarten
+ * aus und spielt die Seite dort faktisch nicht aus. Discover ist bei Publishern
+ * inzwischen der größere Kanal als die klassische Websuche — für eine bildstarke
+ * Anime-Seite mit täglich neuen Artikeln ist das der wichtigste Hebel überhaupt.
+ *
+ * `max-snippet:-1` und `max-video-preview:-1` heben die Längenbegrenzung für
+ * Textausschnitte bzw. Video-Vorschauen auf (mehr Fläche in Snippets, Top Stories
+ * und AI-Antworten).
+ *
+ * Bewusst auf der obersten Ebene statt unter `googleBot`, damit auch Bing und
+ * andere Suchmaschinen die Direktiven sehen (ein einziges <meta name="robots">).
+ */
+const INDEXABLE_ROBOTS = {
+  index: true,
+  follow: true,
+  'max-image-preview': 'large',
+  'max-snippet': -1,
+  'max-video-preview': -1,
+} as const
+
 // Baut ein konsistentes Metadata-Objekt inkl. OG/Twitter/canonical.
 export function pageMeta({
   title,
@@ -38,7 +62,7 @@ export function pageMeta({
       canonical,
       ...(feedLink ? { types: { 'application/rss+xml': [{ url: feedLink.url, title: feedLink.title }] } } : {}),
     },
-    ...(noindex ? { robots: { index: false, follow: false } } : {}),
+    robots: noindex ? { index: false, follow: false } : INDEXABLE_ROBOTS,
     openGraph: {
       title,
       description,

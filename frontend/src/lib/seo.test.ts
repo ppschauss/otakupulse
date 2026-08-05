@@ -16,9 +16,32 @@ describe('pageMeta', () => {
     expect((m.twitter as any)?.card).toBe('summary_large_image')
     expect((m.openGraph as any)?.images).toEqual([{ url: 'http://img/cover.jpg' }])
   })
-  it('fällt ohne Bild auf summary zurück (keine Bilder)', () => {
+  // Ohne explizites Bild setzen wir bewusst KEINE images-Liste, damit Next die
+  // Datei-Konvention opengraph-image.tsx greifen lässt (gehashter Pfad, ändert
+  // sich pro Build). Es gibt also trotzdem immer ein Vorschaubild — deshalb
+  // bleibt die Card `summary_large_image`.
+  it('setzt ohne explizites Bild keine images (Datei-Konvention greift)', () => {
     const m = pageMeta({ title: 'T', path: '/x' })
-    expect((m.twitter as any)?.card).toBe('summary')
+    expect((m.twitter as any)?.card).toBe('summary_large_image')
     expect((m.openGraph as any)?.images).toBeUndefined()
+  })
+
+  // max-image-preview:large ist die Eintrittskarte für Google Discover — ohne die
+  // Direktive gibt es dort keine großformatigen Bildkarten und faktisch keine
+  // Ausspielung. Deshalb hier festgenagelt.
+  it('setzt auf indexierbaren Seiten die Discover-Direktiven', () => {
+    const r = pageMeta({ title: 'T', path: '/x' }).robots as any
+    expect(r.index).toBe(true)
+    expect(r.follow).toBe(true)
+    expect(r['max-image-preview']).toBe('large')
+    expect(r['max-snippet']).toBe(-1)
+    expect(r['max-video-preview']).toBe(-1)
+  })
+
+  it('setzt bei noindex weder index noch Preview-Direktiven', () => {
+    const r = pageMeta({ title: 'T', path: '/x', noindex: true }).robots as any
+    expect(r.index).toBe(false)
+    expect(r.follow).toBe(false)
+    expect(r['max-image-preview']).toBeUndefined()
   })
 })
