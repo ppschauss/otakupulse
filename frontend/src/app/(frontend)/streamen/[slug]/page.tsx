@@ -11,7 +11,25 @@ import { pageMeta, breadcrumbLd } from '@/lib/seo'
 import { displayTitle, languageLabel, statusLabel, seasonLabel, formatLabel, plainText, LANGUAGE_ORDER } from '@/lib/anime'
 import { streamingProvidersOf } from '@/lib/streaming'
 
-export const dynamic = 'force-dynamic'
+// ISR statt force-dynamic: Detailseiten wurden bislang bei JEDEM Aufruf neu aus
+// der DB gerendert und schickten `Cache-Control: no-store` — dadurch konnte weder
+// Cloudflare noch ein Crawler-Cache greifen. Bei ~149k crawlbaren URLs auf einem
+// Heim-NAS ist das der Flaschenhals: Googles Crawl-Kapazität ist site-weit
+// gedeckelt und wird über alle Crawler geteilt, und langsame Antworten drücken
+// sie zusätzlich. Die Daten hier ändern sich selten (der Sync fasst pro Nacht
+// ~255 von 11k Anime an), deshalb ist ein Cache-Fenster von 1 Stunde unkritisch.
+export const revalidate = 3600
+
+// Leere Liste + dynamicParams: zur Build-Zeit wird NICHTS vorgerendert (bei ~149k
+// URLs wäre das absurd), aber Next registriert das dynamische Segment überhaupt
+// erst als ISR-fähig. Ohne generateStaticParams landet die Route nicht im
+// prerender-manifest und `revalidate` bleibt wirkungslos — die Seite würde
+// weiterhin bei jedem Aufruf neu gerendert und `no-store` ausliefern.
+export const dynamicParams = true
+export async function generateStaticParams() {
+  return []
+}
+
 
 const getAnime = cache(async (slug: string) => {
   const payload = await getPayload({ config })
