@@ -15,7 +15,7 @@ Deep-Link werden nicht übernommen — lieber „nicht gelistet" als ein Link au
 eine Startseite, der die Verfügbarkeit nur behauptet.
 
 Aufruf (HOST, `pip install curl_cffi` + docker):
-  python3 src/scripts/justwatch-streaming.py                    # alle Anime (Backfill, ~30 min)
+  python3 src/scripts/justwatch-streaming.py                    # alle Anime (nur kleine Kataloge — sonst 403, siehe unten)
   python3 src/scripts/justwatch-streaming.py --recent 3         # Titel der letzten 3 Tage (täglich)
   python3 src/scripts/justwatch-streaming.py --only-missing     # nur Titel ohne Offers
   python3 src/scripts/justwatch-streaming.py --stale 150        # rollierend: die 150 am längsten nicht geprüften
@@ -34,10 +34,11 @@ auf „Mono" gematcht; solche Flags sind wertlos). Bei Match sind die Offers
 IMMER autoritativ (Angebote sind der neue Wahrheitsbestand); first_seen_at
 bleibt über Läufe hinweg erhalten.
 
-Rate-Limit: 3 Worker + 0.4 s Pause pro Request (~4–5 req/s), Keep-Alive-Session
-pro Worker. Bei 403/429 langer Backoff (30/60/120 s) — JustWatch sperrt die IP
-zeitweise, wenn zu viele Verbindungen aufgebaut werden (2026-09-10: 4 Worker mit
-neuer TLS-Session pro Titel reichten dafür; ein früherer Blast mit ~85 req/s ebenso).
+Rate-Limit: 2 Worker + 0.6 s Pause pro Request (~3 req/s), Keep-Alive-Session pro
+Worker. Bei 403/429 langer Backoff (30/60/120 s). JustWatch sperrt die IP für ~1 h,
+wenn zu viel Volumen kommt: 2026-09-10 reichten dafür 4 Worker mit neuer TLS-Session
+pro Titel UND später 3 Worker bei ~5 Titel/s über 15 Minuten. Große Läufe deshalb
+NICHT am Stück, sondern in Batches (--stale N, ~1.200 Titel pro Stunde).
 """
 import json
 import re
@@ -57,8 +58,8 @@ except ImportError:
 DB_CONTAINER = "otakupulse-db"
 GQL = "https://apis.justwatch.com/graphql"
 IMPERSONATE = "chrome124"
-MAX_WORKERS = 3
-REQUEST_PAUSE = 0.4
+MAX_WORKERS = 2
+REQUEST_PAUSE = 0.6
 MONETIZATION = {"FLATRATE": "flatrate", "ADS": "ads", "FREE": "free"}
 
 # JustWatch-`clearName` (lower) -> Provider-Slug (muss zu lib/streaming.ts passen).
@@ -107,7 +108,11 @@ query($c:Country!,$l:Language!,$q:String!){
         package{clearName}
       }
       ... on Show { seasons {
-        offers(country:$c,platform:WEB){ monetizationType elementCount audioLanguages subtitleLanguages package{clearName} }
+        content(country:$c,language:$l){ title seasonNumber originalReleaseYear }
+        offers(country:$c,platform:WEB){
+          monetizationType standardWebURL elementCount audioLanguages subtitleLanguages availableTo
+          package{clearName}
+        }
       } }
     }}
   }
@@ -212,36 +217,85 @@ def api_post(session, payload):
 
 
 def best_match(data, our_titles, want="SHOW", year=None):
+    """Bester JustWatch-Node oder None.
+
+    Rückgabe: (node, remainder). remainder="" = exakter Titel-Match (Serie/Film als
+    Ganzes). remainder="stardustcrusaders" = unser Titel beginnt mit dem Serien-
+    titel und ist eine Fortsetzung/Staffel → der Aufrufer wählt die Staffel.
+    """
     our = [v for t in our_titles for v in norm_variants(t)]
-    best, best_score = None, 0.0
+    best, best_score, best_rem = None, 0.0, ""
     for edge in data.get("edges", []):
         node = edge.get("node") or {}
         if node.get("objectType") != want:
             continue  # Film vs. Serie darf nie verwechselt werden
         c = node.get("content") or {}
         cand = norm_variants(c.get("title")) + norm_variants(c.get("originalTitle"))
-        score = 0.0
+        cy = c.get("originalReleaseYear")
+        score, rem = 0.0, ""
         for t in our:
             for cn in cand:
                 ratio = SequenceMatcher(None, t, cn).ratio()
+                # Fortsetzung: UNSER Titel beginnt mit dem JW-Serientitel („spyxfamily" +
+                # „season3"). Nur Präfix, nie Suffix; Serie darf nicht jünger sein als wir.
+                # Hat Vorrang vor der Substring-Regel — sonst gilt „JoJo … Golden Wind"
+                # als exakter Treffer der Serie und fällt am Jahres-Tie-Break (2012/2018).
+                if (want == "SHOW" and len(cn) >= 6 and t.startswith(cn) and len(t) > len(cn)
+                        and (not year or not cy or int(cy) <= int(year) + 1)):
+                    if ratio < 0.9 and score < 0.9:
+                        score, rem = 0.9, t[len(cn):]
+                    continue
+                # Umkehrung: JW hängt einen Untertitel an („Nichijou – Das ganz normale
+                # Leben"). Nur mit gleichem Jahr, sonst würde „Naruto" auf „Naruto Shippuden" passen.
+                if (len(t) >= 6 and cn.startswith(t) and len(cn) > len(t)
+                        and year and cy and abs(int(year) - int(cy)) <= 1):
+                    ratio = max(ratio, 0.95)
+                short, long_ = sorted((t, cn), key=len)
                 # Substring nur bei ähnlicher Länge: „journeysend" steckt zwar in
                 # „frierenbeyondjourneysend", ist aber ein anderer Film.
-                short, long_ = sorted((t, cn), key=len)
                 if len(short) >= 8 and short in long_ and len(short) / len(long_) >= 0.6:
                     ratio = max(ratio, 0.95)
-                score = max(score, ratio)
+                if ratio > score:
+                    score, rem = ratio, ""
         # Jahr als Tie-Breaker: gleicher Titel, anderes Werk (Netflix-Realserie „One
-        # Piece" 2023 vs. Anime 1999). Nur wenn beide Jahre bekannt sind.
-        cy = c.get("originalReleaseYear")
-        if score > 0 and year and cy:
+        # Piece" 2023 vs. Anime 1999). Nur bei exaktem Match und bekannten Jahren.
+        if score > 0 and not rem and year and cy:
             diff = abs(int(year) - int(cy))
             if diff <= 1:
                 score = min(1.0, score + 0.03)
             elif diff >= 5:
                 score -= 0.15
         if score > best_score:
-            best, best_score = node, score
-    return best if best and best_score >= 0.90 else None
+            best, best_score, best_rem = node, score, rem
+    return (best, best_rem) if best and best_score >= 0.90 else None
+
+
+_SEASON_NUM = re.compile(r"(?:season|staffel|part|cour|s)(\d{1,2})$|^(\d{1,2})(?:nd|rd|th)?(?:season|staffel)?$")
+
+
+def pick_season(node, remainder, year):
+    """Staffel einer Fortsetzung bestimmen: explizite Nummer → Staffeltitel → Jahr.
+    None, wenn nichts eindeutig passt (dann lieber kein Match als falsche Anbieter)."""
+    seasons = [se for se in (node.get("seasons") or []) if (se.get("content") or {}).get("seasonNumber")]
+    if not seasons:
+        return None
+    m = _SEASON_NUM.search(remainder)
+    if m:
+        n = int(m.group(1) or m.group(2))
+        hit = [se for se in seasons if se["content"]["seasonNumber"] == n]
+        if len(hit) == 1:
+            return hit[0]
+    # Staffeltitel („Stardust Crusaders", „SCIENCE FUTURE") gegen den Rest unseres Titels
+    for se in seasons:
+        for st in norm_variants(se["content"].get("title")):
+            if st and not re.fullmatch(r"(staffel|season)\d+", st) and (
+                    SequenceMatcher(None, remainder, st).ratio() >= 0.85 or (len(st) >= 6 and st in remainder)):
+                return se
+    if year:
+        hit = [se for se in seasons if se["content"].get("originalReleaseYear") == int(year)]
+        if len(hit) == 1:
+            return hit[0]
+    return None
 
 
 def _slug_and_monet(o):
@@ -250,13 +304,20 @@ def _slug_and_monet(o):
     return slug, m
 
 
-def aggregate_offers(node):
+def aggregate_offers(node, season=None):
     """JustWatch-Node -> Liste von Offer-Dicts (SD/HD dedupliziert, Sprachen vereinigt).
 
     Show-Ebene: elementCount = Staffeln beim Anbieter. Season-Ebene: elementCount =
     Episoden der Staffel → aufsummiert. Filme haben keine seasons.
+    Mit `season` (Fortsetzungs-Eintrag) zählen NUR die Angebote dieser Staffel:
+    seasons=1, episodes=elementCount der Staffel.
     """
     is_show = node.get("objectType") == "SHOW"
+    if season is not None:
+        node = {"objectType": "SHOW", "offers": season.get("offers") or [], "seasons": []}
+        single = True
+    else:
+        single = False
     offers = {}
     for o in node.get("offers") or []:
         slug, m = _slug_and_monet(o)
@@ -279,7 +340,9 @@ def aggregate_offers(node):
             e["available_to"] = o.get("availableTo") or None
         e["audio"] |= set(o.get("audioLanguages") or [])
         e["subs"] |= set(o.get("subtitleLanguages") or [])
-        if is_show and o.get("elementCount"):
+        if single and o.get("elementCount"):
+            e["seasons"], e["episodes"] = 1, max(e["episodes"] or 0, int(o["elementCount"]))
+        elif is_show and o.get("elementCount"):
             e["seasons"] = max(e["seasons"] or 0, int(o["elementCount"]))
     for season in node.get("seasons") or []:
         per = {}
@@ -326,9 +389,17 @@ def fetch_offers(session, a):
         if r.status_code != 200:
             return None
         data = (r.json().get("data") or {}).get("popularTitles") or {}
-        node = best_match(data, a["titles"], a["want"], a.get("year"))
-        if node is not None:
+        hit = best_match(data, a["titles"], a["want"], a.get("year"))
+        if hit is None:
+            continue
+        node, remainder = hit
+        if not remainder:
             return aggregate_offers(node)
+        season = pick_season(node, remainder, a.get("year"))
+        if season is not None:
+            return aggregate_offers(node, season)
+        # Serie erkannt, aber Staffel nicht eindeutig → kein Match (keine Serien-
+        # Anbieter pauschal auf eine Fortsetzung übertragen).
     return False
 
 
