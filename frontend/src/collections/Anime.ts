@@ -101,6 +101,51 @@ export const Anime: CollectionConfig = {
       index: true,
       admin: { position: 'sidebar', readOnly: true, description: 'Letzte JustWatch-Anbieter-Prüfung (rollierender Refresh).' },
     },
+    {
+      // Anbieter-genaue Streaming-Angebote (Quelle: JustWatch DE, Skript
+      // src/scripts/justwatch-streaming.py). Im Gegensatz zu `streamingProviders`
+      // (nur Flags) steht hier PRO Anbieter: Deep-Link, Abo/Werbung/Free, Audio-
+      // und Untertitelsprachen, Staffel-/Episodenzahl beim Anbieter, Ablaufdatum
+      // und seit wann wir das Angebot kennen (Basis für „Neu auf …“-Listen).
+      // `streamingProviders` wird aus diesen Zeilen abgeleitet und bleibt der
+      // Filter-Index für Suche/Plattform-Seiten.
+      name: 'streamingOffers',
+      type: 'array',
+      labels: { singular: 'Streaming-Angebot', plural: 'Streaming-Angebote' },
+      admin: { description: 'Anbieter-genaue Angebote (JustWatch DE). Wird vom Sync gepflegt.' },
+      fields: [
+        {
+          type: 'row',
+          fields: [
+            { name: 'provider', type: 'text', required: true, index: true, admin: { description: 'Slug aus lib/streaming.ts' } },
+            { name: 'monetization', type: 'select', options: ['flatrate', 'ads', 'free'], index: true },
+          ],
+        },
+        { name: 'url', type: 'text', required: true, admin: { description: 'Deep-Link zum Titel beim Anbieter.' } },
+        {
+          type: 'row',
+          fields: [
+            { name: 'audio', type: 'text', admin: { description: 'Audiosprachen, kommagetrennt (de,ja).' } },
+            { name: 'subs', type: 'text', admin: { description: 'Untertitelsprachen, kommagetrennt.' } },
+          ],
+        },
+        {
+          type: 'row',
+          fields: [
+            { name: 'seasons', type: 'number', admin: { description: 'Staffeln beim Anbieter.' } },
+            { name: 'episodes', type: 'number', admin: { description: 'Episoden beim Anbieter (Summe).' } },
+          ],
+        },
+        {
+          type: 'row',
+          fields: [
+            { name: 'availableTo', type: 'date', admin: { description: 'Lizenz läuft aus am (falls bekannt).' } },
+            { name: 'firstSeenAt', type: 'date', index: true, admin: { description: 'Erstmals gesehen (→ „Neu“).' } },
+            { name: 'lastSeenAt', type: 'date' },
+          ],
+        },
+      ],
+    },
 
     // --- Bilder ---
     { name: 'coverImageUrl', type: 'text' },

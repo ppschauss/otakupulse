@@ -257,3 +257,125 @@ export function streamingProvidersOf(anime: any): { provider: StreamingProvider;
     .sort((a, b) => PROVIDER_SLUGS.indexOf(a.slug) - PROVIDER_SLUGS.indexOf(b.slug))
     .map((p) => ({ provider: p, url: urlFor(p) }))
 }
+
+// --- Anbieter-genaue Angebote (streamingOffers) -------------------------------
+
+export type Monetization = 'flatrate' | 'ads' | 'free'
+
+export const MONETIZATION_LABELS: Record<Monetization, string> = {
+  flatrate: 'Im Abo',
+  ads: 'Kostenlos (mit Werbung)',
+  free: 'Kostenlos',
+}
+
+export type StreamingOffer = {
+  provider: string
+  url: string
+  monetization: Monetization | null
+  audio: string[]
+  subs: string[]
+  seasons?: number | null
+  episodes?: number | null
+  availableTo?: string | null
+  firstSeenAt?: string | null
+  lastSeenAt?: string | null
+  /** true = aus den Legacy-Flags abgeleitet: kein Deep-Link-Nachweis, keine Sprachen. */
+  legacy?: boolean
+}
+
+export type OfferView = { provider: StreamingProvider; offer: StreamingOffer }
+
+/** "de,ja" → ['de','ja'] (leer/null → []). */
+export const splitCsv = (s?: string | null): string[] =>
+  (s || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean)
+
+const MONETIZATIONS: readonly string[] = ['flatrate', 'ads', 'free']
+const providerRank = (slug: string) => PROVIDER_SLUGS.indexOf(slug)
+
+/**
+ * Alle Angebote eines Anime, sortiert wie das Register (wichtigste Anbieter zuerst).
+ * Solange ein Titel noch keine `streamingOffers` hat (Backfill läuft rollierend),
+ * fällt die Funktion auf die alten Flags + AniList-Link zurück — markiert als
+ * `legacy`, damit die UI keine Sprach-/Episodenangaben vortäuscht.
+ */
+export function streamingOffersOf(anime: any): OfferView[] {
+  const raw: any[] = Array.isArray(anime?.streamingOffers) ? anime.streamingOffers : []
+  const views: OfferView[] = []
+  for (const o of raw) {
+    const provider = providerBySlug(o?.provider)
+    if (!provider || !o?.url) continue
+    views.push({
+      provider,
+      offer: {
+        provider: provider.slug,
+        url: o.url,
+        monetization: MONETIZATIONS.includes(o.monetization) ? (o.monetization as Monetization) : null,
+        audio: splitCsv(o.audio),
+        subs: splitCsv(o.subs),
+        seasons: o.seasons ?? null,
+        episodes: o.episodes ?? null,
+        availableTo: o.availableTo ?? null,
+        firstSeenAt: o.firstSeenAt ?? null,
+        lastSeenAt: o.lastSeenAt ?? null,
+      },
+    })
+  }
+  if (views.length) {
+    return views.sort((a, b) => providerRank(a.provider.slug) - providerRank(b.provider.slug))
+  }
+  return streamingProvidersOf(anime).map(({ provider, url }) => ({
+    provider,
+    offer: { provider: provider.slug, url, monetization: null, audio: [], subs: [], legacy: true },
+  }))
+}
+
+/** Angebote nach Anbieter bündeln (z. B. Crunchyroll Abo + Crunchyroll Free). */
+export function groupOffersByProvider(views: OfferView[]): { provider: StreamingProvider; offers: StreamingOffer[] }[] {
+  const out: { provider: StreamingProvider; offers: StreamingOffer[] }[] = []
+  for (const v of views) {
+    const g = out.find((x) => x.provider.slug === v.provider.slug)
+    if (g) g.offers.push(v.offer)
+    else out.push({ provider: v.provider, offers: [v.offer] })
+  }
+  return out
+}
+
+export type StreamingSummary = {
+  hasStream: boolean
+  providerNames: string[]
+  hasDeDub: boolean
+  hasDeSub: boolean
+  hasFree: boolean
+  /** Mindestens ein Angebot ist jünger als 30 Tage. */
+  isNew: boolean
+  checkedAt: string | null
+  legacy: boolean
+}
+
+const NEW_WINDOW_MS = 30 * 86400_000
+
+/** Kompakte Kennzahlen für Title/Description/Intro-Satz der Anime-Seite. */
+export function streamingSummary(anime: any, now: Date = new Date()): StreamingSummary {
+  const views = streamingOffersOf(anime)
+  const legacy = views.length > 0 && views.every((v) => v.offer.legacy)
+  const langs: string[] = Array.isArray(anime?.availableLanguages) ? anime.availableLanguages : []
+  const hasDeDub = legacy ? langs.includes('de-dub') : views.some((v) => v.offer.audio.includes('de'))
+  const hasDeSub = legacy ? langs.includes('de-sub') : views.some((v) => v.offer.subs.includes('de'))
+  const isNew = views.some((v) => {
+    const t = v.offer.firstSeenAt ? Date.parse(v.offer.firstSeenAt) : NaN
+    return Number.isFinite(t) && now.getTime() - t <= NEW_WINDOW_MS
+  })
+  return {
+    hasStream: views.length > 0,
+    providerNames: groupOffersByProvider(views).map((g) => g.provider.name),
+    hasDeDub,
+    hasDeSub,
+    hasFree: views.some((v) => v.offer.monetization === 'ads' || v.offer.monetization === 'free'),
+    isNew,
+    checkedAt: anime?.streamingCheckedAt || null,
+    legacy,
+  }
+}

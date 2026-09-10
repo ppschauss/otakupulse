@@ -5,6 +5,9 @@ import {
   streamingProvidersOf,
   PROVIDER_SLUGS,
   DE_PROVIDER_SLUGS,
+  streamingOffersOf,
+  groupOffersByProvider,
+  streamingSummary,
 } from './streaming'
 
 describe('providerBySlug', () => {
@@ -74,5 +77,72 @@ describe('Register: DE-Anbieter', () => {
     expect(providerByName('Aniverse Amazon Channel')?.slug).toBe('aniverse')
     expect(providerByName('Anime Digital Network Amazon Channel')?.slug).toBe('adn')
     expect(providerByName('RTL+ Max Amazon Channel')?.slug).toBe('rtl-plus')
+  })
+})
+
+const offersAnime = {
+  streamingProviders: ['crunchyroll', 'joyn'],
+  externalLinks: [{ platform: 'Crunchyroll', url: 'https://www.crunchyroll.com/naruto' }],
+  availableLanguages: ['ja'],
+  streamingCheckedAt: '2026-09-10T00:00:00.000Z',
+  streamingOffers: [
+    { id: 'a', provider: 'joyn', url: 'https://www.joyn.de/serien/naruto', monetization: 'ads', audio: 'de', subs: '', seasons: 5, episodes: 220, firstSeenAt: '2026-09-05T00:00:00.000Z' },
+    { id: 'b', provider: 'crunchyroll', url: 'https://www.crunchyroll.com/watch/GYK5PJV7R', monetization: 'flatrate', audio: 'en,ja', subs: 'de,en', seasons: 5, episodes: 172, firstSeenAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'c', provider: 'gibtsnicht', url: 'https://x', monetization: 'flatrate', audio: '', subs: '' },
+  ],
+}
+
+describe('streamingOffersOf', () => {
+  it('liefert Offers in Register-Reihenfolge, parst CSV-Sprachen, ignoriert unbekannte Anbieter', () => {
+    const v = streamingOffersOf(offersAnime)
+    expect(v.map((x) => x.provider.slug)).toEqual(['crunchyroll', 'joyn'])
+    expect(v[0].offer.subs).toEqual(['de', 'en'])
+    expect(v[1].offer.audio).toEqual(['de'])
+    expect(v[0].offer.legacy).toBeUndefined()
+  })
+  it('fällt ohne Offers auf die Legacy-Flags zurück (markiert als legacy)', () => {
+    const v = streamingOffersOf({ ...offersAnime, streamingOffers: [] })
+    expect(v.map((x) => x.provider.slug)).toEqual(['crunchyroll', 'joyn'])
+    expect(v[0].offer.url).toBe('https://www.crunchyroll.com/naruto')
+    expect(v[0].offer.legacy).toBe(true)
+    expect(v[1].offer.url).toBe('https://www.joyn.de')
+  })
+})
+
+describe('groupOffersByProvider', () => {
+  it('bündelt mehrere Monetarisierungen desselben Anbieters', () => {
+    const v = streamingOffersOf({
+      streamingOffers: [
+        { provider: 'crunchyroll', url: 'https://a', monetization: 'flatrate', audio: '', subs: '' },
+        { provider: 'crunchyroll', url: 'https://b', monetization: 'free', audio: '', subs: '' },
+      ],
+    })
+    const g = groupOffersByProvider(v)
+    expect(g).toHaveLength(1)
+    expect(g[0].offers.map((o) => o.monetization)).toEqual(['flatrate', 'free'])
+  })
+})
+
+describe('streamingSummary', () => {
+  it('leitet Dub/Sub, Kostenlos und Neu aus den Offers ab', () => {
+    const s = streamingSummary(offersAnime, new Date('2026-09-10T12:00:00Z'))
+    expect(s.hasStream).toBe(true)
+    expect(s.providerNames).toEqual(['Crunchyroll', 'Joyn'])
+    expect(s.hasDeDub).toBe(true) // Joyn audio=de
+    expect(s.hasDeSub).toBe(true) // Crunchyroll subs=de
+    expect(s.hasFree).toBe(true) // Joyn ads
+    expect(s.isNew).toBe(true) // Joyn firstSeenAt 5 Tage alt
+    expect(s.checkedAt).toBe('2026-09-10T00:00:00.000Z')
+    expect(s.legacy).toBe(false)
+  })
+  it('nutzt im Legacy-Fall availableLanguages für Dub/Sub', () => {
+    const s = streamingSummary({ streamingProviders: ['netflix'], availableLanguages: ['de-dub'] })
+    expect(s.hasStream).toBe(true)
+    expect(s.hasDeDub).toBe(true)
+    expect(s.hasDeSub).toBe(false)
+    expect(s.legacy).toBe(true)
+  })
+  it('ohne Anbieter: hasStream=false', () => {
+    expect(streamingSummary({}).hasStream).toBe(false)
   })
 })
