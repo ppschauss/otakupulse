@@ -6,6 +6,7 @@ import {
 } from '@/lib/sitemap'
 import { url } from '@/lib/site'
 import { animeIndexable } from '@/lib/anime'
+import { platformListPaths } from '@/lib/platformLists'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,7 +68,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ chunk: 
   const id = chunk.replace(/\.xml$/, '')
 
   if (id === 'static') {
-    return render(STATIC_PATHS.map((p) => ({ loc: url(p) })))
+    // Plattform-Listen (/plattform/<anbieter>/<filter>) nur, wenn sie ≥ MIN_LIST_SIZE Titel haben.
+    const payload = await getPayload({ config })
+    const lists = await platformListPaths(payload)
+    return render([...STATIC_PATHS, ...lists].map((p) => ({ loc: url(p) })))
   }
 
   // Genre-Sitemap: Anime des Genres. ID = genre__<slug>__<page>

@@ -10,6 +10,7 @@ import { Faq } from '@/components/Faq'
 import { JsonLd } from '@/components/JsonLd'
 import { breadcrumbLd, pageMeta } from '@/lib/seo'
 import { providerBySlug } from '@/lib/streaming'
+import { platformListCounts, MIN_LIST_SIZE, staticFilter } from '@/lib/platformLists'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
@@ -64,6 +65,7 @@ export default async function PlatformDetail({
   // Dynamische Inhalte nur auf Seite 1: Dub-Quote + Top-Genres dieses Anbieters.
   let deDub = 0
   let topGenres: { name: string; slug: string; n: number }[] = []
+  let lists: { key: string; label: string; n: number }[] = []
   if (isFirst) {
     const pool = (payload.db as any).pool
     const [dub, genres] = await Promise.all([
@@ -87,6 +89,20 @@ export default async function PlatformDetail({
     ])
     deDub = dub.rows[0]?.n ?? 0
     topGenres = genres.rows
+
+    // Listen-Chips: nur Kombinationen, die indexwürdig sind (≥ MIN_LIST_SIZE).
+    const [counts, allGenres] = await Promise.all([
+      platformListCounts(payload),
+      payload.find({ collection: 'genres', limit: 100, depth: 0, select: { slug: true, name: true } as any }),
+    ])
+    const genreName = new Map((allGenres.docs as any[]).map((g) => [g.slug, g.name]))
+    lists = [...counts.entries()]
+      .filter(([k, n]) => k.startsWith(`${provider.slug}/`) && n >= MIN_LIST_SIZE)
+      .map(([k, n]) => {
+        const key = k.split('/')[1]
+        return { key, label: staticFilter(key)?.label ?? genreName.get(key) ?? key, n }
+      })
+      .sort((a, b) => b.n - a.n)
   }
 
   const total = result.totalDocs
@@ -176,6 +192,23 @@ export default async function PlatformDetail({
             <dd className="truncate text-lg font-bold text-white">{topGenres[0]?.name ?? '–'}</dd>
           </div>
         </dl>
+      ) : null}
+
+      {isFirst && lists.length ? (
+        <section className="mt-6">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-zinc-400">Listen für {provider.name}</h2>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {lists.map(({ key, label, n }) => (
+              <Link
+                key={key}
+                href={`/plattform/${provider.slug}/${key}`}
+                className="rounded-full border border-white/10 bg-zinc-900/40 px-3 py-1.5 text-sm text-zinc-300 transition hover:border-accent/40 hover:text-white"
+              >
+                {label} <span className="text-zinc-500">{n}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
       ) : null}
 
       {/* Sortierung */}
