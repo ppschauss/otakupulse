@@ -34,13 +34,16 @@ auf „Mono" gematcht; solche Flags sind wertlos). Bei Match sind die Offers
 IMMER autoritativ (Angebote sind der neue Wahrheitsbestand); first_seen_at
 bleibt über Läufe hinweg erhalten.
 
-Rate-Limit: 4 Worker + 0.25 s Pause pro Request (~8–10 req/s). Der frühere
-Massen-Backfill mit ~85 req/s endete in 403.
+Rate-Limit: 3 Worker + 0.4 s Pause pro Request (~4–5 req/s), Keep-Alive-Session
+pro Worker. Bei 403/429 langer Backoff (30/60/120 s) — JustWatch sperrt die IP
+zeitweise, wenn zu viele Verbindungen aufgebaut werden (2026-09-10: 4 Worker mit
+neuer TLS-Session pro Titel reichten dafür; ein früherer Blast mit ~85 req/s ebenso).
 """
 import json
 import re
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -54,8 +57,8 @@ except ImportError:
 DB_CONTAINER = "otakupulse-db"
 GQL = "https://apis.justwatch.com/graphql"
 IMPERSONATE = "chrome124"
-MAX_WORKERS = 4
-REQUEST_PAUSE = 0.25
+MAX_WORKERS = 3
+REQUEST_PAUSE = 0.4
 MONETIZATION = {"FLATRATE": "flatrate", "ADS": "ads", "FREE": "free"}
 
 # JustWatch-`clearName` (lower) -> Provider-Slug (muss zu lib/streaming.ts passen).
@@ -192,13 +195,17 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None):
     return list(anime.values())
 
 
+BLOCK_BACKOFF = (30, 60, 120)
+
+
 def api_post(session, payload):
-    for attempt in range(4):
+    for attempt in range(len(BLOCK_BACKOFF) + 1):
         r = session.post(GQL, json=payload, headers={"Content-Type": "application/json"},
                          impersonate=IMPERSONATE, timeout=30)
         time.sleep(REQUEST_PAUSE)
-        if r.status_code in (429, 403):
-            time.sleep(2 ** attempt)
+        if r.status_code in (429, 403) and attempt < len(BLOCK_BACKOFF):
+            # IP-Sperre/Rate-Limit: lange warten statt weiter zu hämmern.
+            time.sleep(BLOCK_BACKOFF[attempt])
             continue
         return r
     return r
@@ -368,6 +375,16 @@ def build_sql(a, offers, now_iso):
     return stmts, changed
 
 
+_tls = threading.local()
+
+
+def session():
+    """Eine TLS-Session pro Worker-Thread (Keep-Alive statt Handshake pro Titel)."""
+    if not getattr(_tls, "session", None):
+        _tls.session = requests.Session(impersonate=IMPERSONATE)
+    return _tls.session
+
+
 def main():
     recent, stale, slugs = _arg("--recent"), _arg("--stale"), _arg("--slugs")
     dry = "--dry-run" in sys.argv
@@ -382,53 +399,72 @@ def main():
 
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
     sql, changed_ids, checked_ids = [], [], []
-    errors = nomatch = done = 0
+    stats = {"checked": 0, "changed": 0, "nomatch": 0, "errors": 0}
+    done = 0
+    t0 = time.time()
+
+    def flush():
+        """Angesammelte Änderungen in EINER Transaktion schreiben + Prüfstempel setzen.
+        Wird alle FLUSH_EVERY Titel aufgerufen, damit ein Abbruch nicht alles verliert."""
+        nonlocal sql, changed_ids, checked_ids
+        if dry:
+            return
+        if sql:
+            if changed_ids:
+                ids = ",".join(str(i) for i in changed_ids)
+                # Änderungen zählen als Inhaltsänderung (Sitemap-lastmod, IndexNow).
+                sql.append(f"UPDATE anime SET content_updated_at = now(), updated_at = now() WHERE id IN ({ids});")
+            psql("BEGIN;\n" + "\n".join(sql) + "\nCOMMIT;", read=False)
+        if checked_ids:
+            ids = ",".join(str(i) for i in checked_ids)
+            psql(f"UPDATE anime SET streaming_checked_at = now() WHERE id IN ({ids});", read=False)
+        sql, changed_ids, checked_ids = [], [], []
+
+    FLUSH_EVERY = 500
 
     def worker(a):
-        s = requests.Session(impersonate=IMPERSONATE)
-        return a, fetch_offers(s, a)
+        return a, fetch_offers(session(), a)
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         for f in as_completed([ex.submit(worker, a) for a in anime]):
             a, offers = f.result()
             done += 1
             if offers is None:
-                errors += 1
-                continue
-            checked_ids.append(a["id"])
-            if offers is False:
-                nomatch += 1
-                if purge and not dry and (a["have"] or a["offers"]):
-                    sql.append(f"DELETE FROM anime_streaming_offers WHERE _parent_id = {a['id']};")
-                    sql.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {a['id']};")
-                    changed_ids.append(a["id"])
-                continue
-            stmts, changed = build_sql(a, offers, now_iso)
-            if dry:
-                print(f"  {a['slug']}: " + (", ".join(
-                    f"{o['provider']}/{o['monetization']} a={o['audio']} s={o['subs']} S{o['seasons']} E{o['episodes']} {o['url'][:60]}"
-                    for o in offers) or "(keine Streaming-Angebote)"))
-                continue
-            sql.extend(stmts)
-            if changed:
-                changed_ids.append(a["id"])
-            if done % 200 == 0:
-                print(f"  {done}/{len(anime)} … (geändert: {len(changed_ids)})")
+                stats["errors"] += 1  # API-Fehler → nicht stempeln, nächste Runde erneut
+            else:
+                checked_ids.append(a["id"])
+                stats["checked"] += 1
+                if offers is False:
+                    stats["nomatch"] += 1
+                    if purge and not dry and (a["have"] or a["offers"]):
+                        sql.append(f"DELETE FROM anime_streaming_offers WHERE _parent_id = {a['id']};")
+                        sql.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {a['id']};")
+                        changed_ids.append(a["id"])
+                        stats["changed"] += 1
+                else:
+                    stmts, changed = build_sql(a, offers, now_iso)
+                    if dry:
+                        print(f"  {a['slug']}: " + (", ".join(
+                            f"{o['provider']}/{o['monetization']} a={o['audio']} s={o['subs']} S{o['seasons']} E{o['episodes']} {o['url'][:60]}"
+                            for o in offers) or "(keine Streaming-Angebote)"))
+                    else:
+                        sql.extend(stmts)
+                        if changed:
+                            changed_ids.append(a["id"])
+                            stats["changed"] += 1
+            if done % 250 == 0:
+                rate = done / max(1.0, time.time() - t0)
+                eta = (len(anime) - done) / max(0.01, rate) / 60
+                print(f"  {done}/{len(anime)} … geändert {stats['changed']}, ohne Match {stats['nomatch']}, "
+                      f"Fehler {stats['errors']} ({rate:.1f} Titel/s, ETA {eta:.0f} min)", flush=True)
+            if done % FLUSH_EVERY == 0:
+                flush()
 
-    print(f"  Fertig: {len(checked_ids)} geprüft, {len(changed_ids)} geändert, {nomatch} ohne Match, {errors} Fehler.")
-    if dry:
-        return
-    if sql:
-        # Änderungen zählen als Inhaltsänderung (Sitemap-lastmod, IndexNow).
-        if changed_ids:
-            ids = ",".join(str(i) for i in changed_ids)
-            sql.append(f"UPDATE anime SET content_updated_at = now(), updated_at = now() WHERE id IN ({ids});")
-        psql("BEGIN;\n" + "\n".join(sql) + "\nCOMMIT;", read=False)
-        print("✓ Offers geschrieben.")
-    if checked_ids:
-        ids = ",".join(str(i) for i in checked_ids)
-        psql(f"UPDATE anime SET streaming_checked_at = now() WHERE id IN ({ids});", read=False)
-        print(f"✓ {len(checked_ids)} Titel als geprüft markiert.")
+    flush()
+    print(f"  Fertig: {stats['checked']} geprüft, {stats['changed']} geändert, {stats['nomatch']} ohne Match, "
+          f"{stats['errors']} Fehler in {(time.time() - t0) / 60:.1f} min.")
+    if not dry:
+        print("✓ Offers geschrieben, geprüfte Titel gestempelt.")
 
 
 if __name__ == "__main__":
