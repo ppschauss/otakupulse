@@ -34,13 +34,16 @@ auf „Mono" gematcht; solche Flags sind wertlos). Bei Match sind die Offers
 IMMER autoritativ (Angebote sind der neue Wahrheitsbestand); first_seen_at
 bleibt über Läufe hinweg erhalten.
 
-Rate-Limit: 2 Worker + 0.6 s Pause pro Request (~3 req/s), Keep-Alive-Session pro
-Worker. Bei 403/429 langer Backoff (30/60/120 s). JustWatch sperrt die IP für ~1 h,
-wenn zu viel Volumen kommt: 2026-09-10 reichten dafür 4 Worker mit neuer TLS-Session
-pro Titel UND später 3 Worker bei ~5 Titel/s über 15 Minuten. Große Läufe deshalb
-NICHT am Stück, sondern in Batches (--stale N, ~1.200 Titel pro Stunde).
+Rate-Limit: 1 Worker + 1.2 s Pause pro Request (~0.7 req/s), Keep-Alive-Session,
+max. 2 Suchanfragen pro Titel. Bei 403/429 langer Backoff (30/60/120 s). JustWatch
+sperrt die IP für ~1 h, sobald zu viel Volumen kommt — am 2026-09-10 reichten dafür
+nacheinander 4 Worker (TLS pro Titel), 3 Worker bei ~5 Titel/s über 15 min und
+2 Worker bei ~3 req/s nach ~4 min (mit parallelem Cron). Große Läufe deshalb nur in
+Batches (--stale N, ~500 Titel pro halbe Stunde) und NIE zwei Instanzen parallel
+(Instanz-Sperre unten).
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -58,8 +61,8 @@ except ImportError:
 DB_CONTAINER = "otakupulse-db"
 GQL = "https://apis.justwatch.com/graphql"
 IMPERSONATE = "chrome124"
-MAX_WORKERS = 2
-REQUEST_PAUSE = 0.6
+MAX_WORKERS = 1
+REQUEST_PAUSE = 1.2
 MONETIZATION = {"FLATRATE": "flatrate", "ADS": "ads", "FREE": "free"}
 
 # JustWatch-`clearName` (lower) -> Provider-Slug (muss zu lib/streaming.ts passen).
@@ -377,8 +380,9 @@ def fetch_offers(session, a):
     bis ein sicherer Match kommt — die JustWatch-Suche findet „Frieren – Nach dem
     Ende der Reise" nicht zuverlässig über den englischen Titel.
     """
+    # Max. 2 Suchanfragen: deutscher (falls vorhanden) oder englischer Titel, dann Romaji.
     queries = []
-    for t in a["titles"][:3]:
+    for t in [a["titles"][0] or a["titles"][1], a["titles"][2]]:
         t = (t or "").strip()
         if t and t not in queries:
             queries.append(t)
@@ -456,7 +460,18 @@ def session():
     return _tls.session
 
 
+def other_instance_running():
+    """Instanz-Sperre: Cron (--stale) und Backfill dürfen nie parallel laufen — zwei
+    Läufe verdoppeln das Volumen und JustWatch sperrt die IP."""
+    me, parent = str(os.getpid()), str(os.getppid())
+    out = subprocess.run(["pgrep", "-f", "src/scripts/justwatch-streaming.py"], capture_output=True, text=True).stdout.split()
+    return any(pid not in (me, parent) for pid in out)
+
+
 def main():
+    if other_instance_running():
+        print("→ Eine andere Instanz von justwatch-streaming.py läuft bereits — Abbruch (Instanz-Sperre).")
+        return
     recent, stale, slugs = _arg("--recent"), _arg("--stale"), _arg("--slugs")
     dry = "--dry-run" in sys.argv
     purge = "--purge-unmatched" in sys.argv
