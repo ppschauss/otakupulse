@@ -112,9 +112,16 @@ Beide laufen im **enrich-Container** (bind-mountet Live-Code) via
 
 ## JustWatch-Streaming-Sync (`justwatch-streaming.py`)
 
-Erweitert `streamingProviders` um ALLE DE-Anbieter via JustWatch (inoffizielle GraphQL-API).
-HOST, `curl_cffi` + `docker`. Titel-Match per Ähnlichkeit (Schwelle 0.90), nur
-FLATRATE/FREE/ADS (kein Kauf/Verleih), gemerged. Liefert KEINE Sprache/Dub.
+Schreibt pro Anime `anime_streaming_offers` (Feld `streamingOffers`): je Anbieter Deep-Link,
+`flatrate`/`ads`/`free`, Audio-/Untertitelsprachen, Staffeln/Episoden, Ablaufdatum,
+first/last_seen. Leitet `streamingProviders` ab (autoritativ bei Match) und ergänzt
+`availableLanguages` **additiv** (de/en Audio → Dub, de/en Sub → Sub). Quelle JustWatch DE
+(inoffizielle GraphQL-API), HOST, `curl_cffi` + `docker`. Titel-Match per Ähnlichkeit
+(Schwelle 0.90) — ohne Match bleibt der Bestand unangetastet. Nur FLATRATE/FREE/ADS, nur
+Angebote mit Deep-Link. Aufrufe: ohne Flag = alle Titel (Backfill), `--recent N`,
+`--only-missing`, `--stale N` (Cron), `--slugs a,b` + `--dry-run` zum Testen.
+Rate-Limit: 4 Worker + 0,25 s pro Request. Neue Anbieter im Mapping müssen auch in
+`lib/streaming.ts` stehen (Enum `streamingProviders` → `db-push.ts` vor dem ersten Lauf).
 
 ## Wikipedia-Dub-Sync (`wikipedia-dub.py`)
 

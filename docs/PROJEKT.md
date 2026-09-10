@@ -118,8 +118,8 @@ App-Router unter `frontend/src/app/`. Öffentliche Seiten liegen in der Route-Gr
 | `/top-anime` · `/top-anime/[filter]` | Bestenlisten (Jahr/Genre) |
 | `/vergleich/[slug]` | „Anime A vs. B" |
 | `/plattform` · `/plattform/[slug]` | Streaming-Anbieter („Wer streamt es?") |
-| `/streamen/[slug]` | Streaming-Landingpages |
-| `/aehnlich/[slug]` | Ähnliche Anime |
+| `/plattform/[slug]/[filter]` | Plattform-Listen (Dub, Sub, Kostenlos, Neu, Filme, Genre) — `noindex` unter 10 Titeln |
+| ~~`/streamen/[slug]`~~ · ~~`/aehnlich/[slug]`~~ | Entfernt (308 → `/anime/[slug]`, siehe `next.config.mjs`) |
 | `/news` · `/news/[slug]` | News-Liste & Artikel-Detail |
 | `/news/kategorie/[category]` | Kategorie-Hubs |
 
@@ -173,7 +173,9 @@ App-Router unter `frontend/src/app/`. Öffentliche Seiten liegen in der Route-Gr
 | `sitemap.ts` | `STATIC_PATHS` + Chunk-Logik der Sitemaps |
 | `anime.ts` | Anime-Helfer (Titel, Sprachen, `liveArticleFilters` …) |
 | `anilist.ts` · `import.ts` | AniList-GraphQL-Client + Import-Pipeline |
-| `streaming.ts` | Anbieter-Register (`STREAMING_PROVIDERS`, Slugs, Farben) |
+| `streaming.ts` | Anbieter-Register (`STREAMING_PROVIDERS`, Slugs, Farben, Region) + Offer-Helfer (`streamingOffersOf`, `streamingSummary`) |
+| `platformLists.ts` | Plattform-Listen: Filter-Definitionen, SQL über `anime_streaming_offers`, Zählung für Sitemap/Hub |
+| `similar.ts` | Ähnliche Anime (Empfehlungen → Relationen → Genre-Fallback) für die Anime-Seite |
 | `telegram.ts` | Telegram-Versand (Caption-Bau, Foto+Fallback) |
 | `hub.ts` | SEO-Hub-Aggregation (Top-Genres/Studios/Tags) |
 | `navigation.ts` · `pageContent.ts` · `settings.ts` | Loader für die CMS-Globals |
@@ -236,6 +238,7 @@ Ausführung im `otakupulse-enrich`-Container (Live-Code):
 | `Breadcrumbs.tsx` · `JsonLd.tsx` | Breadcrumbs + Structured Data |
 | `HubSections.tsx` · `SeoFooter.tsx` | SEO-Hub-Bausteine |
 | `MediaRow`/`ScrollRow`/`AnimeCard` | Crunchyroll-Stil-Carousels & Karten |
+| `StreamingBox` | „Wo kann man … streamen?"-Block der Anime-Seite (Angebote je Anbieter, Legacy-Fallback) |
 
 ---
 

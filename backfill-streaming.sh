@@ -11,8 +11,9 @@ cd "$F" || exit 1
 
 echo "===== $(date) Backfill-Start =====" >> "$LOG"
 
-echo "----- $(date) [1/3] JustWatch (--only-missing) -----" >> "$LOG"
-python3 -u src/scripts/justwatch-streaming.py --only-missing >> "$LOG" 2>&1
+# JustWatch voll (alle Titel, Offers autoritativ): ~11k Requests bei 8–10 req/s ≈ 30 min.
+echo "----- $(date) [1/3] JustWatch (voll, Offers) -----" >> "$LOG"
+python3 -u src/scripts/justwatch-streaming.py >> "$LOG" 2>&1
 
 echo "----- $(date) [2/3] Crunchyroll-Dub (voller Katalog, idempotent) -----" >> "$LOG"
 python3 -u src/scripts/crunchyroll-dub.py >> "$LOG" 2>&1

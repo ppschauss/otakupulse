@@ -67,9 +67,14 @@ Stammdaten stammen aus **AniList**, angereichert um echte **Dub-/Sub-Sprachen** 
 - Anime-Vergleich (`/vergleich/[a]-vs-[b]`)
 
 **Streaming & Sprachen**
-- Pro Titel: verfügbare **Streaming-Anbieter** (Crunchyroll, Netflix, Amazon Prime,
-  Disney+, Bilibili, HIDIVE, RTL+, Joyn, WOW …) + echte **Sprachfassungen** (Ger/Eng Dub & Sub)
-- „Wo streamen?"-Box auf jeder Anime-Seite; Plattform-Übersicht (`/plattform` + `/plattform/[slug]`)
+- Pro Titel **anbieter-genaue Angebote** (`streamingOffers`): Deep-Link, Abo/Werbung/Free,
+  Audio- und Untertitelsprachen **je Anbieter**, Staffel-/Episodenstand, Ablaufdatum, „Neu"-Marker
+  (Crunchyroll, Netflix, Prime Video, Disney+, Joyn, RTL+, WOW, Aniverse, ADN, Toggo …)
+- „Wo kann man … streamen?"-Block direkt auf der Anime-Seite (mit WatchAction-JSON-LD);
+  `/streamen/[slug]` und `/aehnlich/[slug]` sind per 308 in die Anime-Seite eingefaltet
+- Plattform-Übersicht (`/plattform` + `/plattform/[slug]`) und **Listen-Seiten**
+  `/plattform/[slug]/[filter]` (`deutscher-dub`, `deutscher-sub`, `kostenlos`, `neu`, `filme`, Genre) —
+  indexierbar nur ab 10 Titeln
 - Rollierender Verfügbarkeits-Abgleich, damit die Daten aktuell bleiben (siehe unten)
 
 **Redaktion**
@@ -228,23 +233,28 @@ Brauchen TLS-Impersonation (Cloudflare) bzw. eine **DE-IP**. Laufen außerhalb d
 
 ## Streaming & Sprachen
 
-Kern ist das normalisierte Feld **`streamingProviders`** auf dem Anime (kanonische Slugs;
-Register `lib/streaming.ts`). Es speist Filter, `/plattform`-Seiten und die
-„Wo streamen?"-Box. Der Import fasst dieses Feld **nie** an → Re-Import/Sync überschreiben
-die angereicherten Daten nicht.
+Kern ist das Array-Feld **`streamingOffers`** auf dem Anime — pro Anbieter ein Angebot mit
+Deep-Link, Monetarisierung (`flatrate`/`ads`/`free`), Audio-/Untertitelsprachen (`de,ja`),
+Staffel-/Episodenzahl beim Anbieter, `availableTo`, `firstSeenAt`/`lastSeenAt`. Quelle ist
+JustWatch DE (`justwatch-streaming.py`). Anbieter ohne Deep-Link werden **nicht** übernommen.
+Daraus abgeleitet: **`streamingProviders`** (Slugs, Filter-Index für Suche/Plattform-Seiten;
+Register `lib/streaming.ts`) und **additiv** `availableLanguages`. Der AniList-Import fasst
+diese Felder **nie** an. Solange ein Titel noch keine Offers hat, fällt die UI auf die
+Flags + AniList-Link zurück (`streamingOffersOf` → `legacy`).
 
-**Abdeckung (Stand):** ~4.000 Anime mit Anbietern, u. a. Crunchyroll ~2.740, Netflix ~910,
-Amazon Prime ~715, Bilibili ~305, Hulu ~216, RTL+ ~190, Joyn ~190, Disney+ ~150, HIDIVE ~110.
-Sprachfassungen: ~10.900 JP-Original, ~2.830 Ger-Sub, ~2.720 Eng-Sub, ~1.330 Eng-Dub,
-~1.270 Ger-Dub.
+**Seiten:** „Wo kann man … streamen?"-Block auf `/anime/[slug]` (Komponente `StreamingBox`,
+Title/Description datenabhängig), Listen `/plattform/[slug]/[filter]` (`lib/platformLists.ts`,
+SQL über `anime_streaming_offers`, `MIN_LIST_SIZE = 10` → sonst `noindex` + nicht in der Sitemap).
+`/streamen/[slug]` und `/aehnlich/[slug]` existieren nicht mehr (308 → `/anime/[slug]`,
+`next.config.mjs`); ihre Sitemap-Dateien antworten 404.
 
 **Rollierender Refresh** (`refresh-streaming.sh`, Cron alle 4 h): Feld
 **`streamingCheckedAt`** merkt sich pro Titel den letzten Abgleich. `justwatch-streaming.py
 --stale N` nimmt die N am längsten nicht geprüften Titel, gleicht sie **autoritativ** ab
-(Anbieter hinzufügen **und** entfernen, nur bei sicherem Titel-Match) und stempelt sie.
-So rotiert der ganze Katalog in wenigen Tagen durch, ohne die Quelle zu überlasten
-(ein großer `--only-missing`-Blast hatte JustWatch schon mit HTTP 403 geblockt — daher
-kleine Batches). Einmal-Backfill über `backfill-streaming.sh` (JustWatch + Dub-Scraper).
+(Offers exakt auf JustWatch-Stand, nur bei sicherem Titel-Match ≥ 0.90; `firstSeenAt`
+bleibt erhalten) und stempelt sie. Rate-Limit 4 Worker + 0,25 s (ein großer Blast hatte
+JustWatch schon mit HTTP 403 geblockt). Voll-Backfill (~11k Titel, ~30 min) über
+`backfill-streaming.sh`.
 
 ---
 
