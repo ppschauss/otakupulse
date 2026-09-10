@@ -30,6 +30,7 @@ import {
   animeBanner,
   localImage,
   joinNames,
+  animeIndexable,
 } from '@/lib/anime'
 import { importAnimeBySlug } from '@/lib/import'
 import { StreamingBox } from '@/components/StreamingBox'
@@ -99,7 +100,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     description: applyVarsMeta(anime.seoDescription, vars) || autoDesc.slice(0, 160),
     path: `/anime/${anime.slug}`,
     image: anime.coverImageUrl,
-    noindex: anime.noindex || undefined,
+    // Inhaltliche Indexregel (Stream ODER deutscher Text) — identisch zum Sitemap-keep.
+    noindex: !animeIndexable(anime) || undefined,
     canonical: anime.canonicalUrl || undefined,
   })
 }

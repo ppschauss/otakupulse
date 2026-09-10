@@ -5,6 +5,7 @@ import {
   GENRE_PREFIX, TAG_ANIME_PREFIX, TAG_ANIME_WHERE, hasContentUpdatedAt,
 } from '@/lib/sitemap'
 import { url } from '@/lib/site'
+import { animeIndexable } from '@/lib/anime'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,10 +37,14 @@ async function animeChunk(where: any, page: number): Promise<Entry[]> {
     limit: PER,
     page,
     depth: 0,
-    select: { slug: true, updatedAt: true, contentUpdatedAt: true } as any,
+    select: {
+      slug: true, updatedAt: true, contentUpdatedAt: true,
+      descriptionDe: true, format: true, noindex: true, streamingProviders: true, streamingOffers: true,
+    } as any,
   })
   return (res.docs as any[])
-    .filter((d) => d.slug)
+    // Gleiche Indexregel wie die Haupt-Sitemap und der Seiten-noindex.
+    .filter((d) => d.slug && animeIndexable(d))
     .map((d) => ({ loc: url(`/anime/${d.slug}`), lastmod: lastmodOf(d) }))
 }
 

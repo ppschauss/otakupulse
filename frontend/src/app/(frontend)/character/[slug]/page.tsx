@@ -57,8 +57,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       `${name}: Profil, Synchronsprecher und Anime-Auftritte.`,
     path: `/character/${slug}`,
     image: localImage(c),
-    // Dünn (kein/zu kurzer Beschreibungstext) → noindex; identisch zum Sitemap-keep.
-    noindex: c.noindex || textTooThin(c.descriptionDe, c.descriptionSource) || undefined,
+    // Dünn (kein/zu kurzer DEUTSCHER Text) → noindex; identisch zum Sitemap-keep. Der
+    // englische Quelltext zählt nicht als Inhalt (Sprach-Mismatch auf einer de-Seite).
+    noindex: c.noindex || textTooThin(c.descriptionDe) || undefined,
     canonical: c.canonicalUrl || undefined,
   })
 }

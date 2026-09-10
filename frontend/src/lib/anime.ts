@@ -140,6 +140,22 @@ export function textTooThin(...sources: (string | null | undefined)[]): boolean 
   return plainText(first).length < INDEX_MIN_CHARS
 }
 
+/**
+ * Indexregel für Anime-Seiten — EINE Quelle für Seiten-noindex und Sitemap-keep.
+ * Indexiert, wenn der Titel Streaming-Daten hat (das ist der Mehrwert gegenüber
+ * AniList/aniSearch) ODER einen eigenen deutschen Text ≥ INDEX_MIN_CHARS. Nur
+ * Quelltext (englisch) reicht nicht; Musikvideos ohne Stream sind immer dünn.
+ */
+export function animeIndexable(a: any): boolean {
+  if (a?.noindex) return false
+  const hasStream =
+    (Array.isArray(a?.streamingOffers) && a.streamingOffers.length > 0) ||
+    (Array.isArray(a?.streamingProviders) && a.streamingProviders.length > 0)
+  if (hasStream) return true
+  if (a?.format === 'MUSIC') return false
+  return !textTooThin(a?.descriptionDe)
+}
+
 // Natürliche Aufzählung: [a,b,c] → „a, b und c".
 export function joinNames(names: (string | null | undefined)[]): string {
   const a = names.filter((n): n is string => !!n)

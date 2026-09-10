@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { joinNames, formatDateDe } from './anime'
+import { joinNames, formatDateDe, animeIndexable } from './anime'
 import {
   displayTitle,
   displayName,
@@ -89,5 +89,22 @@ describe('formatDateDe', () => {
     expect(formatDateDe('2026-09-10T00:00:00.000Z')).toBe('10.09.2026')
     expect(formatDateDe(null)).toBe('')
     expect(formatDateDe('kaputt')).toBe('')
+  })
+})
+
+describe('animeIndexable', () => {
+  const de = 'x'.repeat(120)
+  it('indexiert mit Streaming immer (auch ohne Text)', () => {
+    expect(animeIndexable({ streamingOffers: [{ provider: 'netflix', url: 'https://n' }] })).toBe(true)
+    expect(animeIndexable({ streamingProviders: ['netflix'] })).toBe(true)
+  })
+  it('indexiert ohne Streaming nur mit deutschem Text ≥ 100 Zeichen', () => {
+    expect(animeIndexable({ descriptionDe: de })).toBe(true)
+    expect(animeIndexable({ descriptionSource: de })).toBe(false) // englischer Quelltext zählt nicht
+    expect(animeIndexable({ descriptionDe: 'kurz' })).toBe(false)
+  })
+  it('Musikvideos ohne Streaming nie; redaktionelles noindex gewinnt', () => {
+    expect(animeIndexable({ format: 'MUSIC', descriptionDe: de })).toBe(false)
+    expect(animeIndexable({ noindex: true, streamingProviders: ['netflix'] })).toBe(false)
   })
 })

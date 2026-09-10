@@ -2,7 +2,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { PROVIDER_SLUGS } from './streaming'
-import { liveArticleFilters, textTooThin } from './anime'
+import { animeIndexable, liveArticleFilters, textTooThin } from './anime'
 
 export const PER = 5000
 
@@ -27,22 +27,30 @@ const SYNCED_COLLECTIONS = new Set(['anime', 'characters', 'persons', 'studios',
 export const hasContentUpdatedAt = (collection: string) => SYNCED_COLLECTIONS.has(collection)
 
 export const TYPES: SitemapType[] = [
-  { key: 'anime', collection: 'anime', path: (s) => `/anime/${s}` },
-  // Charaktere/Personen: nur mit substanziellem Text in Index + Sitemap (sonst dünn → noindex).
+  // Anime: Streaming-Daten ODER deutscher Text (animeIndexable) — identisch zum Seiten-noindex.
+  {
+    key: 'anime',
+    collection: 'anime',
+    path: (s) => `/anime/${s}`,
+    select: { descriptionDe: true, format: true, noindex: true, streamingProviders: true, streamingOffers: true },
+    keep: animeIndexable,
+  },
+  // Charaktere/Personen: nur mit substanziellem DEUTSCHEM Text in Index + Sitemap — der
+  // englische AniList-Quelltext gilt nicht als Inhalt (Sprach-Mismatch auf einer de-Seite).
   // keep-Kriterium identisch zur noindex-Bedingung der jeweiligen Seite (via textTooThin).
   {
     key: 'characters',
     collection: 'characters',
     path: (s) => `/character/${s}`,
-    select: { descriptionDe: true, descriptionSource: true, noindex: true },
-    keep: (d) => !d.noindex && !textTooThin(d.descriptionDe, d.descriptionSource),
+    select: { descriptionDe: true, noindex: true },
+    keep: (d) => !d.noindex && !textTooThin(d.descriptionDe),
   },
   {
     key: 'persons',
     collection: 'persons',
     path: (s) => `/person/${s}`,
-    select: { bioDe: true, bioSource: true, noindex: true },
-    keep: (d) => !d.noindex && !textTooThin(d.bioDe, d.bioSource),
+    select: { bioDe: true, noindex: true },
+    keep: (d) => !d.noindex && !textTooThin(d.bioDe),
   },
   { key: 'studios', collection: 'studios', path: (s) => `/studio/${s}` },
   { key: 'genres', collection: 'genres', path: (s) => `/genre/${s}` },
