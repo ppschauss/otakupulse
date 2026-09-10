@@ -29,9 +29,12 @@ import {
   animeCover,
   animeBanner,
   localImage,
+  joinNames,
 } from '@/lib/anime'
 import { importAnimeBySlug } from '@/lib/import'
-import { streamingProvidersOf } from '@/lib/streaming'
+import { StreamingBox } from '@/components/StreamingBox'
+import { streamingSummary } from '@/lib/streaming'
+import { similarAnime } from '@/lib/similar'
 import { animeVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 
@@ -74,12 +77,26 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const anime = await findBySlug(slug)
   if (!anime) return {}
   const title = displayTitle(anime)
-  const desc = plainText(anime.descriptionDe || anime.descriptionSource).slice(0, 160)
   const vars = animeVars(anime)
+  const s = streamingSummary(anime)
+  // Title/Description datenabhängig: Mit Stream steht die Verfügbarkeit vorn
+  // (Suchintention „wo streamen"), ohne Stream die Datenbank-Infos. Ein
+  // redaktionelles seoTitle/seoDescription gewinnt weiterhin.
+  const langTag = s.legacy ? '' : s.hasDeDub ? ' (Deutscher Dub)' : s.hasDeSub ? ' (Ger Sub)' : ''
+  const autoTitle = s.hasStream
+    ? `${title} im Stream: ${joinNames(s.providerNames.slice(0, 3))}${langTag} | OtakuPulse`
+    : `${title} — Anime: Infos, Charaktere & Stream | OtakuPulse`
+  const plot = plainText(anime.descriptionDe || anime.descriptionSource).slice(0, 110)
+  const autoDesc = s.hasStream
+    ? `${title} läuft bei ${joinNames(s.providerNames)}${
+        s.hasDeDub && !s.legacy ? ' mit deutscher Synchro' : s.hasDeSub && !s.legacy ? ' mit deutschen Untertiteln' : ''
+      }${s.hasFree ? ', teils kostenlos' : ''}. ${plot ? plot + '…' : 'Handlung, Charaktere, Studio und Episoden.'}`
+    : plot
+      ? `${plot}… Handlung, Charaktere, Studio, Episoden und Streaming-Status zu ${title}.`
+      : `Alle Infos zu ${title}: Charaktere, Studio, Episoden und Streaming-Status.`
   return pageMeta({
-    title: applyVarsMeta(anime.seoTitle, vars) || `${title} — Anime · OtakuPulse`,
-    description:
-      applyVarsMeta(anime.seoDescription, vars) || desc || `Alle Infos zu ${title}: Charaktere, Studio, Episoden und mehr.`,
+    title: applyVarsMeta(anime.seoTitle, vars) || autoTitle,
+    description: applyVarsMeta(anime.seoDescription, vars) || autoDesc.slice(0, 160),
     path: `/anime/${anime.slug}`,
     image: anime.coverImageUrl,
     noindex: anime.noindex || undefined,
@@ -114,11 +131,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
   const relations = (Array.isArray(anime.relations) ? anime.relations : []).filter(
     (r: any) => r?.anime && typeof r.anime === 'object',
   )
-  const recommendations = (Array.isArray(anime.recommendations) ? anime.recommendations : []).filter(
-    (r: any) => typeof r === 'object',
-  )
   const season = anime.animeSeason && typeof anime.animeSeason === 'object' ? anime.animeSeason : null
-  const streaming = streamingProvidersOf(anime)
   const languages: string[] = (Array.isArray(anime.availableLanguages) ? anime.availableLanguages : [])
     .slice()
     .sort((a: string, b: string) => LANGUAGE_ORDER.indexOf(a) - LANGUAGE_ORDER.indexOf(b))
@@ -130,6 +143,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
     limit: 60,
     depth: 0,
   })
+  const similar = await similarAnime(payload, anime)
 
   return (
     <main>
@@ -240,38 +254,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
           </div>
         ) : null}
 
-        {/* Wo streamen? */}
-        {streaming.length ? (
-          <section className="mt-8">
-            <h2 className="mb-3 text-lg font-bold text-white">Wo streamen?</h2>
-            <div className="flex flex-wrap gap-2">
-              {streaming.map(({ provider, url }) => (
-                <a
-                  key={provider.slug}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-zinc-900/40 px-3.5 py-2 text-sm font-medium text-zinc-100 transition hover:border-accent/40 hover:text-white"
-                  style={provider.color ? { borderColor: `${provider.color}55` } : undefined}
-                >
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: provider.color || '#888' }} />
-                  {provider.name}
-                </a>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-zinc-500">
-              Verfügbarkeit & Sprachfassung können je nach Region variieren —{' '}
-              <Link href={`/streamen/${anime.slug}`} className="text-zinc-400 hover:text-accent">
-                wo läuft {title} im Stream?
-              </Link>
-              {' · '}
-              <Link href="/plattform" className="text-zinc-400 hover:text-accent">
-                alle Anbieter
-              </Link>
-              .
-            </p>
-          </section>
-        ) : null}
+        <StreamingBox anime={anime} title={title} />
 
         {/* Beschreibung */}
         {anime.descriptionDe || anime.descriptionSource ? (
@@ -435,21 +418,12 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
           </section>
         ) : null}
 
-        {/* Empfehlungen */}
-        {recommendations.length ? (
-          <div className="mt-10 pb-4">
-            <MediaRow title="Ähnliche Anime" href={`/aehnlich/${anime.slug}`} items={recommendations} />
-            <Link href={`/aehnlich/${anime.slug}`} className="mt-2 inline-block text-sm font-medium text-accent hover:underline">
-              Mehr Anime ähnlich wie {title} →
-            </Link>
-          </div>
-        ) : (
-          <div className="mt-10 pb-4">
-            <Link href={`/aehnlich/${anime.slug}`} className="text-sm font-medium text-accent hover:underline">
-              Anime ähnlich wie {title} entdecken →
-            </Link>
-          </div>
-        )}
+        {/* Ähnliche Anime — früher /aehnlich/<slug>, seit dem Merge Teil dieser Seite */}
+        {similar.length ? (
+          <section id="aehnlich" className="mt-10 scroll-mt-24 pb-4">
+            <MediaRow title={`Anime ähnlich wie ${title}`} items={similar} />
+          </section>
+        ) : null}
       </div>
 
       <SeoFooter data={anime.footerText} vars={animeVars(anime)} maxW="max-w-6xl" />
