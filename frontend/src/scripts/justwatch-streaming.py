@@ -20,9 +20,17 @@ Aufruf (HOST, `pip install curl_cffi` + docker):
   python3 src/scripts/justwatch-streaming.py --only-missing     # nur Titel ohne Offers
   python3 src/scripts/justwatch-streaming.py --stale 150        # rollierend: die 150 am längsten nicht geprüften
   python3 src/scripts/justwatch-streaming.py --slugs naruto,clannad [--dry-run]
+  python3 src/scripts/justwatch-streaming.py --purge-unmatched         # Backfill: Titel OHNE sicheren
+                                                                       # Match verlieren ihre alten,
+                                                                       # unbelegten Anbieter-Flags
 
-Match-Regel: Titel-Ähnlichkeit >= 0.90 gegen die JustWatch-Suche (DE). Ohne
-sicheren Match wird der Bestand NIE angetastet. Bei Match sind die Offers
+Match-Regel: Titel-Ähnlichkeit >= 0.90 gegen die JustWatch-Suche (DE) über
+deutschen, englischen, Romaji- und Original-Titel (Diakritika normalisiert),
+Objekttyp muss passen (Film ↔ MOVIE, sonst SHOW). Die Substring-Regel greift nur
+bei ähnlich langen Titeln — sonst matcht „Journey's End" (Kriegsfilm) auf
+„Frieren: Beyond Journey's End". Ohne sicheren Match wird der Bestand NIE angetastet (Ausnahme: `--purge-unmatched`,
+einmalig für den Backfill — die alte, lockere Heuristik hatte z. B. „Hyouge Mono"
+auf „Mono" gematcht; solche Flags sind wertlos). Bei Match sind die Offers
 IMMER autoritativ (Angebote sind der neue Wahrheitsbestand); first_seen_at
 bleibt über Läufe hinweg erhalten.
 
@@ -34,6 +42,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 
@@ -89,7 +98,7 @@ query($c:Country!,$l:Language!,$q:String!){
   popularTitles(country:$c,first:5,filter:{searchQuery:$q}){
     edges{node{
       objectType
-      content(country:$c,language:$l){ title originalTitle }
+      content(country:$c,language:$l){ title originalTitle originalReleaseYear }
       offers(country:$c,platform:WEB){
         monetizationType standardWebURL elementCount audioLanguages subtitleLanguages availableTo
         package{clearName}
@@ -119,7 +128,27 @@ def q(s):
 
 
 def norm(s):
-    return re.sub(r"[^a-z0-9]", "", s.lower()) if s else ""
+    """Kleinbuchstaben, ohne Diakritika (Sôsô → soso), nur a-z0-9."""
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+# JustWatch romanisiert mit Längungszeichen („Sôsô no Furîren"), AniList mit
+# Doppelvokalen („Sousou no Frieren"). Zweite Normalform: ô→ou, û→uu, â→aa, ê→ee, î→ii.
+_LONG_VOWELS = str.maketrans({"ô": "ou", "ō": "ou", "û": "uu", "ū": "uu", "â": "aa", "ā": "aa",
+                              "ê": "ee", "ē": "ee", "î": "ii", "ī": "ii",
+                              "Ô": "ou", "Ō": "ou", "Û": "uu", "Ū": "uu", "Â": "aa", "Ā": "aa",
+                              "Ê": "ee", "Ē": "ee", "Î": "ii", "Ī": "ii"})
+
+
+def norm_variants(s):
+    if not s:
+        return []
+    out = {norm(s), norm(s.translate(_LONG_VOWELS))}
+    return [v for v in out if v]
 
 
 def _arg(name, default=None):
@@ -138,12 +167,14 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None):
     if stale_limit:
         tail = f" ORDER BY a.streaming_checked_at ASC NULLS FIRST LIMIT {int(stale_limit)}"
     rows = json.loads(psql(
-        "SELECT COALESCE(json_agg(json_build_object('id',s.id,'slug',s.slug,'en',s.en,'ro',s.ro,'na',s.na)),'[]') "
-        "FROM (SELECT a.id, a.slug, a.title_english en, a.title_romaji ro, a.title_native na "
+        "SELECT COALESCE(json_agg(json_build_object('id',s.id,'slug',s.slug,'fmt',s.fmt,'year',s.yr,'de',s.de,'en',s.en,'ro',s.ro,'na',s.na)),'[]') "
+        "FROM (SELECT a.id, a.slug, a.format fmt, a.season_year yr, a.title_german de, a.title_english en, a.title_romaji ro, a.title_native na "
         f"FROM anime a{where}{tail}) s;"
     ).strip() or "[]")
     anime = {r["id"]: {"id": r["id"], "slug": r["slug"],
-                       "titles": [r.get("en") or "", r.get("ro") or "", r.get("na") or ""],
+                       "want": "MOVIE" if r.get("fmt") == "MOVIE" else "SHOW",
+                       "year": r.get("year"),
+                       "titles": [r.get("de") or "", r.get("en") or "", r.get("ro") or "", r.get("na") or ""],
                        "have": set(), "offers": {}}
              for r in rows}
     if not anime:
@@ -173,22 +204,34 @@ def api_post(session, payload):
     return r
 
 
-def best_match(data, our_titles):
-    our = [norm(t) for t in our_titles if t.strip()]
+def best_match(data, our_titles, want="SHOW", year=None):
+    our = [v for t in our_titles for v in norm_variants(t)]
     best, best_score = None, 0.0
     for edge in data.get("edges", []):
         node = edge.get("node") or {}
+        if node.get("objectType") != want:
+            continue  # Film vs. Serie darf nie verwechselt werden
         c = node.get("content") or {}
-        cand = [norm(c.get("title")), norm(c.get("originalTitle"))]
+        cand = norm_variants(c.get("title")) + norm_variants(c.get("originalTitle"))
         score = 0.0
         for t in our:
             for cn in cand:
-                if not cn:
-                    continue
                 ratio = SequenceMatcher(None, t, cn).ratio()
-                if len(t) >= 8 and (t in cn or cn in t):
+                # Substring nur bei ähnlicher Länge: „journeysend" steckt zwar in
+                # „frierenbeyondjourneysend", ist aber ein anderer Film.
+                short, long_ = sorted((t, cn), key=len)
+                if len(short) >= 8 and short in long_ and len(short) / len(long_) >= 0.6:
                     ratio = max(ratio, 0.95)
                 score = max(score, ratio)
+        # Jahr als Tie-Breaker: gleicher Titel, anderes Werk (Netflix-Realserie „One
+        # Piece" 2023 vs. Anime 1999). Nur wenn beide Jahre bekannt sind.
+        cy = c.get("originalReleaseYear")
+        if score > 0 and year and cy:
+            diff = abs(int(year) - int(cy))
+            if diff <= 1:
+                score = min(1.0, score + 0.03)
+            elif diff >= 5:
+                score -= 0.15
         if score > best_score:
             best, best_score = node, score
     return best if best and best_score >= 0.90 else None
@@ -213,16 +256,19 @@ def aggregate_offers(node):
         if not m or not slug:
             continue
         e = offers.setdefault((slug, m), {
-            "provider": slug, "monetization": m, "url": None, "audio": set(), "subs": set(),
+            "provider": slug, "monetization": m, "url": None, "is_channel": False, "audio": set(), "subs": set(),
             "seasons": None, "episodes": 0, "available_to": None,
         })
         url = o.get("standardWebURL")
-        if url and not e["url"]:
-            # Das erste Angebot mit Deep-Link ist das primäre: Link UND Ablaufdatum
-            # kommen von dort. (Ein Amazon-Channel derselben Marke, z. B. „RTL+ Max
-            # Amazon Channel", darf Sprachen ergänzen, aber nicht sein Enddatum
-            # auf den Direktanbieter übertragen.)
+        is_channel = "amazon channel" in ((o.get("package") or {}).get("clearName") or "").lower()
+        if url and (not e["url"] or (e["is_channel"] and not is_channel)):
+            # Primäres Angebot = erster Deep-Link, wobei der Direktanbieter einen
+            # Amazon-Channel derselben Marke ersetzt (crunchyroll.com statt
+            # watch.amazon.de). Link UND Ablaufdatum kommen vom primären Angebot;
+            # ein Channel darf Sprachen ergänzen, aber nicht sein Enddatum auf den
+            # Direktanbieter übertragen.
             e["url"] = url
+            e["is_channel"] = is_channel
             e["available_to"] = o.get("availableTo") or None
         e["audio"] |= set(o.get("audioLanguages") or [])
         e["subs"] |= set(o.get("subtitleLanguages") or [])
@@ -243,6 +289,7 @@ def aggregate_offers(node):
     for e in offers.values():
         if not e["url"]:
             continue  # ohne Deep-Link zeigen wir keinen Anbieter
+        e.pop("is_channel", None)
         e["audio"] = ",".join(sorted(e["audio"]))
         e["subs"] = ",".join(sorted(e["subs"]))
         if not is_show:
@@ -254,18 +301,28 @@ def aggregate_offers(node):
 
 
 def fetch_offers(session, a):
-    """None = API-Fehler, False = kein sicherer Match, sonst Offer-Liste."""
-    query = next((t for t in a["titles"] if t.strip()), "")
-    if not query:
+    """None = API-Fehler, False = kein sicherer Match, sonst Offer-Liste.
+
+    Sucht nacheinander mit deutschem, englischem und Romaji-Titel (dedupliziert),
+    bis ein sicherer Match kommt — die JustWatch-Suche findet „Frieren – Nach dem
+    Ende der Reise" nicht zuverlässig über den englischen Titel.
+    """
+    queries = []
+    for t in a["titles"][:3]:
+        t = (t or "").strip()
+        if t and t not in queries:
+            queries.append(t)
+    if not queries:
         return False
-    r = api_post(session, {"query": SEARCH_Q, "variables": {"c": "DE", "l": "de", "q": query}})
-    if r.status_code != 200:
-        return None
-    data = (r.json().get("data") or {}).get("popularTitles") or {}
-    node = best_match(data, a["titles"])
-    if node is None:
-        return False
-    return aggregate_offers(node)
+    for query in queries:
+        r = api_post(session, {"query": SEARCH_Q, "variables": {"c": "DE", "l": "de", "q": query}})
+        if r.status_code != 200:
+            return None
+        data = (r.json().get("data") or {}).get("popularTitles") or {}
+        node = best_match(data, a["titles"], a["want"], a.get("year"))
+        if node is not None:
+            return aggregate_offers(node)
+    return False
 
 
 def build_sql(a, offers, now_iso):
@@ -309,6 +366,7 @@ def build_sql(a, offers, now_iso):
 def main():
     recent, stale, slugs = _arg("--recent"), _arg("--stale"), _arg("--slugs")
     dry = "--dry-run" in sys.argv
+    purge = "--purge-unmatched" in sys.argv
     print("→ Lade Anime + vorhandene Anbieter/Offers …")
     anime = load_anime(recent_days=recent, stale_limit=stale, slugs=slugs.split(",") if slugs else None)
     if "--only-missing" in sys.argv:
@@ -335,6 +393,10 @@ def main():
             checked_ids.append(a["id"])
             if offers is False:
                 nomatch += 1
+                if purge and not dry and (a["have"] or a["offers"]):
+                    sql.append(f"DELETE FROM anime_streaming_offers WHERE _parent_id = {a['id']};")
+                    sql.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {a['id']};")
+                    changed_ids.append(a["id"])
                 continue
             stmts, changed = build_sql(a, offers, now_iso)
             if dry:
