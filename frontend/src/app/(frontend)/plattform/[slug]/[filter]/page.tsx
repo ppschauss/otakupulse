@@ -27,8 +27,10 @@ async function load(slug: string, filter: string) {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; filter: string }> }): Promise<Metadata> {
   const { slug, filter } = await params
   const ctx = await load(slug, filter)
-  // notFound() muss schon HIER fallen: wird die Metadata gestreamt, ist der
-  // 200-Status beim späteren notFound() in der Page bereits gesendet (Soft-404).
+  // notFound() schon hier. WICHTIG: Unter /plattform darf keine loading.tsx liegen —
+  // eine Suspense-Grenze über dem Segment streamt die Shell mit Status 200, bevor
+  // notFound() greift (Soft-404, auch für Googlebot). Die Skeletons wurden deshalb
+  // entfernt; ungültige Anbieter/Filter liefern so einen echten 404.
   if (!ctx) notFound()
   const { payload, provider, f } = ctx
   const { total } = await platformListPage(payload, provider.slug, f, 1, 1)
