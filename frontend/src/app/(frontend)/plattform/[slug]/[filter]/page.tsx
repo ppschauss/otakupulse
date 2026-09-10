@@ -27,7 +27,9 @@ async function load(slug: string, filter: string) {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; filter: string }> }): Promise<Metadata> {
   const { slug, filter } = await params
   const ctx = await load(slug, filter)
-  if (!ctx) return {}
+  // notFound() muss schon HIER fallen: wird die Metadata gestreamt, ist der
+  // 200-Status beim späteren notFound() in der Page bereits gesendet (Soft-404).
+  if (!ctx) notFound()
   const { payload, provider, f } = ctx
   const { total } = await platformListPage(payload, provider.slug, f, 1, 1)
   const month = new Date().toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'Europe/Berlin' })

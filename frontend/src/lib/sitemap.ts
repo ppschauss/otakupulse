@@ -42,6 +42,9 @@ export const TYPES: SitemapType[] = [
     key: 'characters',
     collection: 'characters',
     path: (s) => `/character/${s}`,
+    // where-Vorfilter, damit listChunkIds() keine leeren Chunks für 75k Charaktere ohne
+    // deutschen Text anlegt; die Längenprüfung macht weiterhin keep().
+    where: { descriptionDe: { exists: true } },
     select: { descriptionDe: true, noindex: true },
     keep: (d) => !d.noindex && !textTooThin(d.descriptionDe),
   },
@@ -49,6 +52,7 @@ export const TYPES: SitemapType[] = [
     key: 'persons',
     collection: 'persons',
     path: (s) => `/person/${s}`,
+    where: { bioDe: { exists: true } },
     select: { bioDe: true, noindex: true },
     keep: (d) => !d.noindex && !textTooThin(d.bioDe),
   },

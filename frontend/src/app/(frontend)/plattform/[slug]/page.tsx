@@ -25,7 +25,8 @@ const SORTS: Record<string, string> = {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const provider = providerBySlug(slug)
-  if (!provider) return {}
+  // notFound() schon in der Metadata, sonst Soft-404 (Status 200) bei gestreamter Antwort.
+  if (!provider) notFound()
   return pageMeta({
     title: `Anime auf ${provider.name} streamen — komplette Liste & Tipps | OtakuPulse`,
     description:
