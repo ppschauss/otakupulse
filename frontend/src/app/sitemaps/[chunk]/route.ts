@@ -90,7 +90,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ chunk: 
   const key = id.slice(0, dash)
   const page = Number(id.slice(dash + 1)) + 1
   const type = TYPES.find((t) => t.key === key)
-  if (!type || !Number.isFinite(page)) return render([])
+  // Unbekannter Typ (z. B. die entfernten streamen-/aehnlich-Sitemaps) → 404,
+  // damit die Search Console die Datei als verschwunden führt statt als leer.
+  if (!type || !Number.isFinite(page)) return new Response('Not found', { status: 404 })
 
   const payload = await getPayload({ config })
   const res = await payload.find({

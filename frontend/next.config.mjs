@@ -55,6 +55,19 @@ const nextConfig = {
       { protocol: 'https', hostname: 'upload.wikimedia.org' },
     ],
   },
+  // Merge 2026-09: /streamen/<slug> und /aehnlich/<slug> sind in die Anime-Seite
+  // eingefaltet (Streaming-Block bzw. Sektion „Ähnliche Anime"). Permanent →
+  // Next antwortet mit 308; Google behandelt das wie 301 und überträgt Signale.
+  // Die Sitemap-Dateien streamen-N.xml / aehnlich-N.xml antworten seitdem 404
+  // (siehe sitemaps/[chunk]/route.ts), damit die GSC sie als entfernt erkennt.
+  async redirects() {
+    return [
+      { source: '/streamen/:slug', destination: '/anime/:slug', permanent: true },
+      { source: '/aehnlich/:slug', destination: '/anime/:slug', permanent: true },
+      { source: '/streamen', destination: '/plattform', permanent: true },
+      { source: '/aehnlich', destination: '/anime', permanent: true },
+    ]
+  },
   async headers() {
     return [
       // Statische Security-Header für alle Routen. CSP + HSTS kommen host-abhängig

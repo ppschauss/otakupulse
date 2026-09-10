@@ -84,7 +84,7 @@ async function collectRecent(payload: any, days: number): Promise<string[]> {
   const cutoff = new Date(Date.now() - days * 86400_000).toISOString()
   const out = new Set<string>()
 
-  // Anime: /anime/<slug> + qualifizierte /streamen und /aehnlich
+  // Anime: /anime/<slug> (streamen/aehnlich sind seit dem Merge Teil der Anime-Seite)
   const animeTypes = TYPES.filter((t) => t.collection === 'anime')
   for (const type of animeTypes) {
     const base = resolveWhere(type.where)

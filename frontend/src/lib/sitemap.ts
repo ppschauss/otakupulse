@@ -50,10 +50,6 @@ export const TYPES: SitemapType[] = [
   { key: 'seasons', collection: 'anime-seasons', path: (s) => `/season/${s}` },
   // Geplante Artikel (publishDate in der Zukunft) erst zum Termin in die Sitemap.
   { key: 'articles', collection: 'articles', path: (s) => `/news/${s}`, where: () => ({ and: liveArticleFilters() }) },
-  // Intent-Seiten — nur inhaltsstarke (sonst noindex): Streaming nur mit Anbietern,
-  // „ähnlich" nur mit Genre (Genre-Fallback liefert dann genug ähnliche Titel).
-  { key: 'streamen', collection: 'anime', path: (s) => `/streamen/${s}`, where: { streamingProviders: { exists: true } } },
-  { key: 'aehnlich', collection: 'anime', path: (s) => `/aehnlich/${s}`, where: { genres: { exists: true } } },
 ]
 
 export const STATIC_PATHS = [
