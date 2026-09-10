@@ -25,6 +25,8 @@ export type StreamingProvider = {
   logo?: string
   /** Längerer Fließtext: Unternehmen + Beitrag zur Anime-Welt (DE, SEO). */
   about?: string
+  /** DE = in Deutschland nutzbarer Dienst (Listen-Seiten, Sitemap). INTL = nur informativ (Hulu, Bilibili …). */
+  region?: 'DE' | 'INTL'
 }
 
 /** Wikimedia-Commons-Logo (CC) als hotlinkbare URL. */
@@ -36,6 +38,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'crunchyroll',
     name: 'Crunchyroll',
     aliases: ['Crunchyroll', 'Crunchyroll Amazon Channel', 'Wakanim'],
+    region: 'DE',
     color: '#f47521',
     homepage: 'https://www.crunchyroll.com',
     logo: commons('Crunchyroll_Logo.svg'),
@@ -48,6 +51,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'netflix',
     name: 'Netflix',
     aliases: ['Netflix', 'Netflix basic with Ads'],
+    region: 'DE',
     color: '#e50914',
     homepage: 'https://www.netflix.com',
     logo: commons('Netflix_2015_logo.svg'),
@@ -59,6 +63,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'amazon-prime-video',
     name: 'Amazon Prime Video',
     aliases: ['Amazon Prime Video', 'Prime Video'],
+    region: 'DE',
     color: '#00a8e1',
     homepage: 'https://www.primevideo.com',
     logo: commons('Amazon_Prime_Video_logo_(2024).svg'),
@@ -70,6 +75,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'disney-plus',
     name: 'Disney+',
     aliases: ['Disney Plus', 'Disney+'],
+    region: 'DE',
     color: '#113ccf',
     homepage: 'https://www.disneyplus.com',
     logo: commons('Disney+_2024.svg'),
@@ -81,6 +87,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'wow',
     name: 'WOW',
     aliases: ['WOW', 'WOW Presents Plus', 'Sky Go', 'Sky'],
+    region: 'DE',
     color: '#00f5a0',
     homepage: 'https://www.wowtv.de',
     blurb: 'WOW (Sky) führt ausgewählte Anime-Serien und -Filme.',
@@ -91,6 +98,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'joyn',
     name: 'Joyn',
     aliases: ['Joyn', 'Joyn Plus', 'ProSieben', 'ProSiebenMAXX'],
+    region: 'DE',
     color: '#fa1e5a',
     homepage: 'https://www.joyn.de',
     logo: commons('Joyn_logo.svg'),
@@ -101,7 +109,8 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
   {
     slug: 'rtl-plus',
     name: 'RTL+',
-    aliases: ['RTL+', 'RTL Plus', 'RTLplus'],
+    aliases: ['RTL+', 'RTL Plus', 'RTLplus', 'RTL+ Max Amazon Channel'],
+    region: 'DE',
     color: '#e8000d',
     homepage: 'https://plus.rtl.de',
     logo: commons('RTL+_Logo_2021.svg'),
@@ -110,9 +119,41 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
       'RTL+ ist das Streaming-Angebot der RTL-Gruppe und hat sein Anime-Portfolio in den letzten Jahren spürbar ausgebaut — inklusive Simulcasts und deutscher Synchronfassungen. Damit positioniert sich RTL+ zunehmend als heimischer Anbieter für Anime-Fans in Deutschland.',
   },
   {
+    slug: 'aniverse',
+    name: 'Aniverse',
+    aliases: ['Aniverse', 'Aniverse Amazon Channel'],
+    region: 'DE',
+    color: '#ff2d55',
+    homepage: 'https://www.amazon.de/channels/aniverse',
+    blurb: 'Anime-Channel bei Amazon Prime Video — viele Klassiker mit deutscher Synchro.',
+    about:
+      'Aniverse ist ein zubuchbarer Anime-Channel innerhalb von Amazon Prime Video, hinter dem die deutschen Publisher KSM Anime, peppermint anime und Nipponart stehen. Der Katalog besteht überwiegend aus lizenzierten Serien und Filmen mit deutscher Synchronfassung — darunter viele Titel, die bei den großen Diensten fehlen.',
+  },
+  {
+    slug: 'adn',
+    name: 'ADN',
+    aliases: ['ADN', 'Animation Digital Network', 'Anime Digital Network', 'Anime Digital Network Amazon Channel'],
+    region: 'DE',
+    color: '#00c2ff',
+    homepage: 'https://animationdigitalnetwork.com/de',
+    blurb: 'Animation Digital Network — europäischer Anime-Dienst, seit 2024 auch in Deutschland.',
+    about:
+      'ADN (Animation Digital Network) ist ein auf Anime spezialisierter Streamingdienst aus Frankreich, der seit 2024 auch in Deutschland verfügbar ist — direkt und als Channel bei Amazon Prime Video. Der Fokus liegt auf Simulcasts und einem Katalog, der sich teilweise deutlich von Crunchyroll unterscheidet.',
+  },
+  {
+    slug: 'toggo',
+    name: 'Toggo',
+    aliases: ['Toggo', 'TOGGO'],
+    region: 'DE',
+    color: '#ffcc00',
+    homepage: 'https://www.toggo.de',
+    blurb: 'Kostenlose Mediathek von SUPER RTL — Kinder- und Familien-Anime mit deutscher Synchro.',
+  },
+  {
     slug: 'anime-on-demand',
     name: 'Anime on Demand',
     aliases: ['Anime on Demand', 'Anime-on-Demand', 'AoD'],
+    region: 'DE',
     color: '#ff5e00',
     homepage: 'https://www.anime-on-demand.de',
     logo: commons('Anime on Demand Logo.png'),
@@ -124,6 +165,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'paramount-plus',
     name: 'Paramount+',
     aliases: ['Paramount Plus', 'Paramount+', 'Paramount Plus Apple TV Channel'],
+    region: 'DE',
     color: '#0064ff',
     homepage: 'https://www.paramountplus.com',
     logo: commons('Paramount Plus.svg'),
@@ -135,6 +177,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'apple-tv',
     name: 'Apple TV',
     aliases: ['Apple TV Plus', 'Apple TV+', 'Apple TV'],
+    region: 'DE',
     color: '#000000',
     homepage: 'https://tv.apple.com',
     logo: commons('Apple_TV_Plus_Logo.svg'),
@@ -144,6 +187,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'magenta-tv',
     name: 'MagentaTV',
     aliases: ['Magenta TV', 'MagentaTV'],
+    region: 'DE',
     color: '#e20074',
     homepage: 'https://www.telekom.de/magenta-tv',
     blurb: 'MagentaTV der Telekom bündelt Anime über zubuchbare Kanäle und Mediatheken.',
@@ -152,20 +196,22 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     slug: 'hidive',
     name: 'HIDIVE',
     aliases: ['HIDIVE'],
+    region: 'INTL',
     color: '#00b4e3',
     homepage: 'https://www.hidive.com',
     blurb: 'Auf Anime spezialisierter Dienst mit Simulcasts und vielen älteren Titeln.',
     about:
       'HIDIVE ist ein auf Anime spezialisierter Streamingdienst aus dem Umfeld von Sentai Filmworks und punktet mit Simulcasts sowie einem tiefen Katalog älterer und nischiger Titel, die anderswo schwer zu finden sind.',
   },
-  { slug: 'hulu', name: 'Hulu', aliases: ['Hulu'], color: '#1ce783', homepage: 'https://www.hulu.com', logo: commons('Hulu_logo_(2018).svg'), blurb: 'US-Streamingdienst mit umfangreichem Anime-Lizenzkatalog.' },
-  { slug: 'bilibili', name: 'Bilibili', aliases: ['Bilibili TV', 'Bilibili'], color: '#00a1d6', homepage: 'https://www.bilibili.tv', blurb: 'Große chinesische Plattform für Anime und chinesische Animation (Donghua).' },
-  { slug: 'iqiyi', name: 'iQIYI', aliases: ['iQ', 'iQIYI', 'iQiyi'], color: '#00be06', homepage: 'https://www.iq.com', blurb: 'Chinesischer Streamingdienst mit Anime und Donghua, teils mit Simulcasts.' },
-  { slug: 'wetv', name: 'WeTV', aliases: ['WeTV'], color: '#ff6f00', homepage: 'https://wetv.vip', blurb: 'Internationaler Tencent-Dienst mit Anime und chinesischer Animation.' },
+  { slug: 'hulu', name: 'Hulu', aliases: ['Hulu'], region: 'INTL', color: '#1ce783', homepage: 'https://www.hulu.com', logo: commons('Hulu_logo_(2018).svg'), blurb: 'US-Streamingdienst mit umfangreichem Anime-Lizenzkatalog.' },
+  { slug: 'bilibili', name: 'Bilibili', aliases: ['Bilibili TV', 'Bilibili'], region: 'INTL', color: '#00a1d6', homepage: 'https://www.bilibili.tv', blurb: 'Große chinesische Plattform für Anime und chinesische Animation (Donghua).' },
+  { slug: 'iqiyi', name: 'iQIYI', aliases: ['iQ', 'iQIYI', 'iQiyi'], region: 'INTL', color: '#00be06', homepage: 'https://www.iq.com', blurb: 'Chinesischer Streamingdienst mit Anime und Donghua, teils mit Simulcasts.' },
+  { slug: 'wetv', name: 'WeTV', aliases: ['WeTV'], region: 'INTL', color: '#ff6f00', homepage: 'https://wetv.vip', blurb: 'Internationaler Tencent-Dienst mit Anime und chinesischer Animation.' },
   {
     slug: 'adult-swim',
     name: 'Adult Swim',
     aliases: ['Adult Swim', 'Toonami'],
+    region: 'INTL',
     color: '#000000',
     homepage: 'https://www.adultswim.com',
     logo: commons('Adult_Swim_2003_logo.svg'),
@@ -173,7 +219,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     about:
       'Adult Swim ist ein US-amerikanischer Programmblock, der mit „Toonami" maßgeblich dazu beitrug, Anime im englischsprachigen Raum populär zu machen, und inzwischen auch eigene Anime-Produktionen in Auftrag gibt.',
   },
-  { slug: 'tencent', name: 'Tencent Video', aliases: ['Tencent Video'], color: '#0052d9', homepage: 'https://v.qq.com', blurb: 'Chinesische Plattform mit großem Donghua- und Anime-Angebot.' },
+  { slug: 'tencent', name: 'Tencent Video', aliases: ['Tencent Video'], region: 'INTL', color: '#0052d9', homepage: 'https://v.qq.com', blurb: 'Chinesische Plattform mit großem Donghua- und Anime-Angebot.' },
 ]
 
 const BY_SLUG = new Map(STREAMING_PROVIDERS.map((p) => [p.slug, p]))
@@ -190,6 +236,8 @@ export const providerByName = (name?: string | null): StreamingProvider | undefi
 export const PROVIDER_SLUGS = STREAMING_PROVIDERS.map((p) => p.slug)
 /** Optionen für das Payload-Select-Feld `streamingProviders`. */
 export const PROVIDER_OPTIONS = STREAMING_PROVIDERS.map((p) => ({ label: p.name, value: p.slug }))
+/** Slugs der in Deutschland nutzbaren Anbieter — Basis für Listen-Seiten und Sitemap. */
+export const DE_PROVIDER_SLUGS = STREAMING_PROVIDERS.filter((p) => p.region === 'DE').map((p) => p.slug)
 
 /**
  * Anbieter eines Anime aus dem normalisierten Feld `streamingProviders` (Slugs),

@@ -4,6 +4,7 @@ import {
   providerByName,
   streamingProvidersOf,
   PROVIDER_SLUGS,
+  DE_PROVIDER_SLUGS,
 } from './streaming'
 
 describe('providerBySlug', () => {
@@ -52,5 +53,26 @@ describe('streamingProvidersOf', () => {
     const b = PROVIDER_SLUGS[1]
     const res = streamingProvidersOf({ streamingProviders: [a, b] })
     expect(res.map((r) => r.provider.slug)).toEqual([b, a])
+  })
+})
+
+describe('Register: DE-Anbieter', () => {
+  it('kennt Aniverse, ADN und Toggo mit Homepage', () => {
+    for (const s of ['aniverse', 'adn', 'toggo']) {
+      const p = providerBySlug(s)
+      expect(p?.homepage).toMatch(/^https:\/\//)
+      expect(p?.region).toBe('DE')
+    }
+  })
+  it('DE_PROVIDER_SLUGS enthält nur DE-Anbieter und keine US/Asien-Dienste', () => {
+    expect(DE_PROVIDER_SLUGS).toContain('crunchyroll')
+    expect(DE_PROVIDER_SLUGS).toContain('joyn')
+    expect(DE_PROVIDER_SLUGS).not.toContain('hulu')
+    expect(DE_PROVIDER_SLUGS).not.toContain('bilibili')
+  })
+  it('matcht JustWatch-Amazon-Channels auf die Marke', () => {
+    expect(providerByName('Aniverse Amazon Channel')?.slug).toBe('aniverse')
+    expect(providerByName('Anime Digital Network Amazon Channel')?.slug).toBe('adn')
+    expect(providerByName('RTL+ Max Amazon Channel')?.slug).toBe('rtl-plus')
   })
 })

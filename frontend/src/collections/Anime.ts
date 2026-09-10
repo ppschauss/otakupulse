@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
 import { externalIdFields, syncMetaFields } from '../fields/sync'
 import { seoFields } from '../fields/seo'
 import { footerTextField } from '../fields/footerText'
+import { PROVIDER_OPTIONS } from '../lib/streaming'
 
 export const Anime: CollectionConfig = {
   slug: 'anime',
@@ -89,26 +90,7 @@ export const Anime: CollectionConfig = {
       hasMany: true,
       index: true,
       admin: { description: 'Normalisierte Streaming-Anbieter (aus AniList-Links + JustWatch). Quelle für „Wer streamt es".' },
-      options: [
-        { label: 'Crunchyroll', value: 'crunchyroll' },
-        { label: 'Netflix', value: 'netflix' },
-        { label: 'Amazon Prime Video', value: 'amazon-prime-video' },
-        { label: 'Disney+', value: 'disney-plus' },
-        { label: 'WOW', value: 'wow' },
-        { label: 'Joyn', value: 'joyn' },
-        { label: 'RTL+', value: 'rtl-plus' },
-        { label: 'Anime on Demand', value: 'anime-on-demand' },
-        { label: 'Paramount+', value: 'paramount-plus' },
-        { label: 'Apple TV', value: 'apple-tv' },
-        { label: 'MagentaTV', value: 'magenta-tv' },
-        { label: 'HIDIVE', value: 'hidive' },
-        { label: 'Hulu', value: 'hulu' },
-        { label: 'Bilibili', value: 'bilibili' },
-        { label: 'iQIYI', value: 'iqiyi' },
-        { label: 'WeTV', value: 'wetv' },
-        { label: 'Adult Swim', value: 'adult-swim' },
-        { label: 'Tencent Video', value: 'tencent' },
-      ],
+      options: PROVIDER_OPTIONS,
     },
     {
       // Zeitstempel der letzten JustWatch-Prüfung. Steuert die rollierende
