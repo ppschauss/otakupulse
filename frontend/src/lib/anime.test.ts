@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { joinNames, formatDateDe } from './anime'
 import {
   displayTitle,
   displayName,
@@ -72,5 +73,21 @@ describe('plainText', () => {
     expect(plainText(null)).toBe('')
     expect(plainText(undefined)).toBe('')
     expect(plainText('')).toBe('')
+  })
+})
+
+describe('joinNames', () => {
+  it('zählt natürlich auf', () => {
+    expect(joinNames([])).toBe('')
+    expect(joinNames(['A'])).toBe('A')
+    expect(joinNames(['A', 'B'])).toBe('A und B')
+    expect(joinNames(['A', null, 'B', 'C'])).toBe('A, B und C')
+  })
+})
+describe('formatDateDe', () => {
+  it('formatiert ISO als dd.mm.yyyy, leer bei ungültig', () => {
+    expect(formatDateDe('2026-09-10T00:00:00.000Z')).toBe('10.09.2026')
+    expect(formatDateDe(null)).toBe('')
+    expect(formatDateDe('kaputt')).toBe('')
   })
 })

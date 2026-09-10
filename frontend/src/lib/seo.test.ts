@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { pageMeta } from './seo'
+import { pageMeta, watchActionsLd, animeLd } from './seo'
+import { streamingOffersOf } from './streaming'
 import { url } from './site'
 
 describe('pageMeta', () => {
@@ -43,5 +44,28 @@ describe('pageMeta', () => {
     expect(r.index).toBe(false)
     expect(r.follow).toBe(false)
     expect(r['max-image-preview']).toBeUndefined()
+  })
+})
+
+describe('watchActionsLd', () => {
+  it('erzeugt pro Angebot eine WatchAction mit Region DE und Offer-Kategorie', () => {
+    const views = streamingOffersOf({
+      streamingOffers: [
+        { provider: 'joyn', url: 'https://www.joyn.de/serien/x', monetization: 'ads', audio: 'de', subs: '' },
+        { provider: 'netflix', url: 'https://www.netflix.com/title/1', monetization: 'flatrate', audio: '', subs: '' },
+      ],
+    })
+    const actions = watchActionsLd(views)
+    expect(actions).toHaveLength(2)
+    expect(actions[0]['@type']).toBe('WatchAction')
+    expect(actions[0].target.urlTemplate).toBe('https://www.netflix.com/title/1')
+    expect(actions[0].expectsAcceptanceOf.category).toBe('subscription')
+    expect(actions[1].expectsAcceptanceOf.category).toBe('free')
+    expect(actions[1].expectsAcceptanceOf.eligibleRegion.name).toBe('DE')
+  })
+  it('animeLd hängt potentialAction nur mit Angeboten an', () => {
+    expect(animeLd({ slug: 'x', titleRomaji: 'X' }).potentialAction).toBeUndefined()
+    const withOffers = animeLd({ slug: 'x', titleRomaji: 'X', streamingOffers: [{ provider: 'netflix', url: 'https://n', monetization: 'flatrate' }] })
+    expect(withOffers.potentialAction).toHaveLength(1)
   })
 })

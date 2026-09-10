@@ -139,3 +139,21 @@ export function textTooThin(...sources: (string | null | undefined)[]): boolean 
   const first = sources.find((s) => s && s.trim())
   return plainText(first).length < INDEX_MIN_CHARS
 }
+
+// Natürliche Aufzählung: [a,b,c] → „a, b und c".
+export function joinNames(names: (string | null | undefined)[]): string {
+  const a = names.filter((n): n is string => !!n)
+  if (a.length === 0) return ''
+  if (a.length === 1) return a[0]
+  if (a.length === 2) return `${a[0]} und ${a[1]}`
+  return `${a.slice(0, -1).join(', ')} und ${a[a.length - 1]}`
+}
+
+// ISO-Datum → „10.09.2026" (leer bei fehlend/ungültig; für „Stand:"/„bis"-Angaben).
+export function formatDateDe(iso?: string | null): string {
+  if (!iso) return ''
+  const t = Date.parse(iso)
+  return Number.isFinite(t)
+    ? new Date(t).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Berlin' })
+    : ''
+}

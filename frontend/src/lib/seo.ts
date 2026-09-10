@@ -2,6 +2,7 @@
 import type { Metadata } from 'next'
 import { SITE_NAME, SITE_URL, url } from './site'
 import { displayTitle, plainText } from './anime'
+import { streamingOffersOf, type OfferView } from './streaming'
 
 /**
  * Robots-Direktiven für indexierbare Seiten.
@@ -108,10 +109,34 @@ export function breadcrumbLd(items: { name: string; path: string }[]) {
 
 const FORMAT_TO_TYPE: Record<string, string> = { MOVIE: 'Movie' }
 
+/**
+ * WatchAction pro Streaming-Angebot (Schema.org). Google nutzt das für die
+ * „Ansehen"-Box; für uns ist es der maschinenlesbare Beleg, dass die Seite
+ * echte, regionale Verfügbarkeit trägt — nicht nur Text.
+ */
+export function watchActionsLd(views: OfferView[]) {
+  return views.map(({ offer }) => ({
+    '@type': 'WatchAction',
+    target: {
+      '@type': 'EntryPoint',
+      urlTemplate: offer.url,
+      actionPlatform: ['http://schema.org/DesktopWebPlatform', 'http://schema.org/MobileWebPlatform'],
+      inLanguage: 'de',
+    },
+    expectsAcceptanceOf: {
+      '@type': 'Offer',
+      category: offer.monetization === 'flatrate' ? 'subscription' : 'free',
+      eligibleRegion: { '@type': 'Country', name: 'DE' },
+    },
+  }))
+}
+
 export function animeLd(anime: any) {
   const type = FORMAT_TO_TYPE[anime.format] || 'TVSeries'
   const studios = (Array.isArray(anime.studios) ? anime.studios : []).filter((s: any) => typeof s === 'object')
   const genres = (Array.isArray(anime.genres) ? anime.genres : []).filter((g: any) => typeof g === 'object')
+  // Nur belegte Angebote (Deep-Link) — Legacy-Flags ohne Nachweis bleiben draußen.
+  const offers = streamingOffersOf(anime).filter((v) => !v.offer.legacy)
   return {
     '@context': 'https://schema.org',
     '@type': type,
@@ -127,6 +152,7 @@ export function animeLd(anime: any) {
       typeof anime.averageScore === 'number' && anime.averageScore > 0
         ? { '@type': 'AggregateRating', ratingValue: anime.averageScore, bestRating: 100, ratingCount: anime.popularity || 1 }
         : undefined,
+    potentialAction: offers.length ? watchActionsLd(offers) : undefined,
   }
 }
 
