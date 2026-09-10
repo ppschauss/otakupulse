@@ -229,6 +229,9 @@ export interface Anime {
         | 'wow'
         | 'joyn'
         | 'rtl-plus'
+        | 'aniverse'
+        | 'adn'
+        | 'toggo'
         | 'anime-on-demand'
         | 'paramount-plus'
         | 'apple-tv'
@@ -246,6 +249,48 @@ export interface Anime {
    * Letzte JustWatch-Anbieter-Prüfung (rollierender Refresh).
    */
   streamingCheckedAt?: string | null;
+  /**
+   * Anbieter-genaue Angebote (JustWatch DE). Wird vom Sync gepflegt.
+   */
+  streamingOffers?:
+    | {
+        /**
+         * Slug aus lib/streaming.ts
+         */
+        provider: string;
+        monetization?: ('flatrate' | 'ads' | 'free') | null;
+        /**
+         * Deep-Link zum Titel beim Anbieter.
+         */
+        url: string;
+        /**
+         * Audiosprachen, kommagetrennt (de,ja).
+         */
+        audio?: string | null;
+        /**
+         * Untertitelsprachen, kommagetrennt.
+         */
+        subs?: string | null;
+        /**
+         * Staffeln beim Anbieter.
+         */
+        seasons?: number | null;
+        /**
+         * Episoden beim Anbieter (Summe).
+         */
+        episodes?: number | null;
+        /**
+         * Lizenz läuft aus am (falls bekannt).
+         */
+        availableTo?: string | null;
+        /**
+         * Erstmals gesehen (→ „Neu“).
+         */
+        firstSeenAt?: string | null;
+        lastSeenAt?: string | null;
+        id?: string | null;
+      }[]
+    | null;
   coverImageUrl?: string | null;
   bannerImageUrl?: string | null;
   /**
@@ -1105,6 +1150,21 @@ export interface AnimeSelect<T extends boolean = true> {
   descriptionDe?: T;
   streamingProviders?: T;
   streamingCheckedAt?: T;
+  streamingOffers?:
+    | T
+    | {
+        provider?: T;
+        monetization?: T;
+        url?: T;
+        audio?: T;
+        subs?: T;
+        seasons?: T;
+        episodes?: T;
+        availableTo?: T;
+        firstSeenAt?: T;
+        lastSeenAt?: T;
+        id?: T;
+      };
   coverImageUrl?: T;
   bannerImageUrl?: T;
   coverImageLocal?: T;

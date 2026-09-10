@@ -331,7 +331,12 @@ def build_sql(a, offers, now_iso):
     slugs = set()
     langs = set()
     for i, e in enumerate(offers, 1):
-        first = a["offers"].get((e["provider"], e["monetization"])) or now_iso
+        # first_seen_at bleibt über Läufe erhalten — AUCH wenn es NULL ist: Zeilen des
+        # Erst-Backfills tragen bewusst NULL („seit Beginn bekannt"), sonst wäre der
+        # komplette Katalog 30 Tage lang „Neu". Nur wirklich neue (provider, monet)-
+        # Paare bekommen den aktuellen Zeitstempel.
+        key = (e["provider"], e["monetization"])
+        first = a["offers"][key] if key in a["offers"] else now_iso
         slugs.add(e["provider"])
         for code in e["audio"].split(","):
             if code in AUDIO_TO_LANG:

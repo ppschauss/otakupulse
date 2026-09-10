@@ -59,6 +59,14 @@ export async function generateStaticParams() {
 }
 
 
+// Auf 160 Zeichen kürzen, aber an der Wortgrenze (kein „…Naruto Uzumaki ist ei").
+function truncateWords(s: string, max: number): string {
+  if (s.length <= max) return s
+  const cut = s.slice(0, max - 1)
+  const i = cut.lastIndexOf(' ')
+  return (i > max * 0.6 ? cut.slice(0, i) : cut).replace(/[,;:\s]+$/, '') + '…'
+}
+
 function Badge({ children }: { children: React.ReactNode }) {
   return (
     <span className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-zinc-300">
@@ -97,7 +105,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       : `Alle Infos zu ${title}: Charaktere, Studio, Episoden und Streaming-Status.`
   return pageMeta({
     title: applyVarsMeta(anime.seoTitle, vars) || autoTitle,
-    description: applyVarsMeta(anime.seoDescription, vars) || autoDesc.slice(0, 160),
+    description: applyVarsMeta(anime.seoDescription, vars) || truncateWords(autoDesc, 160),
     path: `/anime/${anime.slug}`,
     image: anime.coverImageUrl,
     // Inhaltliche Indexregel (Stream ODER deutscher Text) — identisch zum Sitemap-keep.
