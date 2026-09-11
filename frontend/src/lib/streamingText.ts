@@ -192,8 +192,12 @@ export function streamingGuide(anime: any): StreamingGuide {
     `Legal, in Deutschland, ohne Umwege: **${short}** gibt's bei ${joinNames(bold)}${standTxt}.`,
     `Wo läuft **${short}**? Die Antwort ist ${many ? 'erfreulich lang' : 'kurz'}: ${joinNames(bold)}${standTxt}.`,
   ])
-  const providerLines = groups.slice(0, 4).map((g, i) => providerSentence(anime, short, g, i))
-  // Bei nur einem Anbieter reicht der Detail-Satz; der Einstieg hat den Namen schon genannt.
+  // Anbieter-Sätze nur, wenn sie etwas Neues sagen: Legacy-Flags ohne Sprach-/
+  // Episodendaten würden bei einem einzelnen Anbieter nur den Einstieg wiederholen.
+  const providerLines = groups
+    .slice(0, 4)
+    .filter((g) => !(isLegacy(g) && groups.length === 1))
+    .map((g, i) => providerSentence(anime, short, g, i))
   paragraphs.push([intro, ...providerLines].join(' '))
 
   // Absatz 2 — Sprachfassung & Kosten (nur mit belegten Daten)
