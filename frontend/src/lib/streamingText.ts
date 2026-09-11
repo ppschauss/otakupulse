@@ -130,11 +130,13 @@ const vary = <T,>(anime: any, offset: number, variants: T[]): T => variants[seed
  * Titel fällt nur einmal (erste Nennung); danach wäre er in jedem Satz Ballast.
  */
 export function shortTitle(title: string): string {
-  const m = title.match(/^(.{3,}?)\s*(?:[:\-–—]\s|\s-)/)
-  if (!m) return title
+  // Satzzeichen am Ende („Your Name.") stören in Fragen und Überschriften.
+  const clean = title.replace(/[.!]+$/, '').trim()
+  const m = clean.match(/^(.{3,}?)\s*(?:[:\-–—]\s|\s-)/)
+  if (!m) return clean
   const base = m[1].trim()
-  if (title.length - base.length < 8) return title
-  const season = title.match(/\b(?:Season|Staffel|Part|Cour)\s*\d+\b/i)
+  if (clean.length - base.length < 8) return clean
+  const season = clean.match(/\b(?:Season|Staffel|Part|Cour)\s*\d+\b/i)
   return season ? `${base} ${season[0]}` : base
 }
 

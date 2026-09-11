@@ -43,6 +43,7 @@ describe('shortTitle', () => {
     expect(shortTitle('Re:ZERO -Starting Life in Another World- Season 4')).toBe('Re:ZERO Season 4')
     expect(shortTitle('Frieren: Beyond Journey’s End')).toBe('Frieren')
     expect(shortTitle('Naruto')).toBe('Naruto')
+    expect(shortTitle('Your Name.')).toBe('Your Name')
     expect(shortTitle('A Certain Magical Index II')).toBe('A Certain Magical Index II')
   })
 })
