@@ -29,13 +29,13 @@ import {
   animeCover,
   animeBanner,
   localImage,
-  joinNames,
   animeIndexable,
 } from '@/lib/anime'
 import { importAnimeBySlug } from '@/lib/import'
 import { StreamingBox } from '@/components/StreamingBox'
-import { streamingSummary } from '@/lib/streaming'
 import { similarAnime } from '@/lib/similar'
+import { streamingGuide, streamingMetaDescription, streamingMetaTitle } from '@/lib/streamingText'
+import { Faq } from '@/components/Faq'
 import { animeVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 
@@ -87,27 +87,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!anime) return {}
   const title = displayTitle(anime)
   const vars = animeVars(anime)
-  const s = streamingSummary(anime)
-  // Title/Description datenabhängig: Mit Stream steht die Verfügbarkeit vorn
-  // (Suchintention „wo streamen"), ohne Stream die Datenbank-Infos. Ein
-  // redaktionelles seoTitle/seoDescription gewinnt weiterhin.
-  const langTag = s.legacy ? '' : s.hasDeDub ? ' (Deutscher Dub)' : s.hasDeSub ? ' (Ger Sub)' : ''
-  // Google zeigt ~60 Zeichen: bei langen Titeln nur zwei Anbieter nennen.
-  const providerCount = title.length > 30 ? 2 : 3
-  const autoTitle = s.hasStream
-    ? `${title} im Stream: ${joinNames(s.providerNames.slice(0, providerCount))}${langTag} | OtakuPulse`
-    : `${title} — Anime: Infos, Charaktere & Stream | OtakuPulse`
-  const plot = plainText(anime.descriptionDe || anime.descriptionSource)
-  const streamLead = s.hasStream
-    ? `${title} läuft bei ${joinNames(s.providerNames)}${
-        s.hasDeDub && !s.legacy ? ' mit deutscher Synchro' : s.hasDeSub && !s.legacy ? ' mit deutschen Untertiteln' : ''
-      }${s.hasFree ? ', teils kostenlos' : ''}.`
-    : ''
-  // Genau eine Kürzung an der Wortgrenze — kein „…soll sich al… Handlung, …".
-  const autoDesc = truncateWords(
-    [streamLead, plot || `Alle Infos zu ${title}: Charaktere, Studio, Episoden und Streaming-Status.`].filter(Boolean).join(' '),
-    160,
-  )
+  // Title/Description datenabhängig (lib/streamingText): Mit Stream stehen Anbieter,
+  // Sprachfassung und Kosten vorn (Suchintention „x streamen"), ohne Stream die
+  // Datenbank-Infos. Ein redaktionelles seoTitle/seoDescription gewinnt weiterhin.
+  const autoTitle = streamingMetaTitle(anime)
+  const autoDesc = truncateWords(streamingMetaDescription(anime), 160)
   return pageMeta({
     title: applyVarsMeta(anime.seoTitle, vars) || autoTitle,
     description: applyVarsMeta(anime.seoDescription, vars) || autoDesc,
@@ -159,6 +143,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
     depth: 0,
   })
   const similar = await similarAnime(payload, anime)
+  const guide = streamingGuide(anime)
 
   return (
     <main>
@@ -181,7 +166,11 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
         <AdultGuard anime={anime} size="md" rounded="" />
       </div>
 
-      <div className="mx-auto max-w-5xl px-4">
+      {/* relative z-10: Der Inhalt ragt per -mt-20 in den Banner; dessen absolut
+          positionierte Bild-/Gradient-Ebenen würden sonst über den (nicht
+          positionierten) Titel malen — bei zweizeiligen Titeln war die obere
+          Zeile halb verdeckt. */}
+      <div className="relative z-10 mx-auto max-w-5xl px-4">
         <div className="-mt-20 flex flex-col gap-6 sm:flex-row sm:items-end">
           {/* Cover */}
           <div className="relative aspect-[2/3] w-36 shrink-0 sm:w-48">
@@ -276,6 +265,18 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
           <section className="mt-8 max-w-3xl">
             <h2 className="mb-2 text-lg font-bold text-white">Handlung</h2>
             <DescriptionText raw={anime.descriptionDe || anime.descriptionSource} className="leading-relaxed text-zinc-300" />
+          </section>
+        ) : null}
+
+        {/* Streaming-Guide: Fließtext aus den Angebotsdaten (nur mit Anbietern) */}
+        {guide ? (
+          <section className="mt-10 max-w-3xl">
+            <h2 className="mb-2 text-lg font-bold text-white">{guide.heading}</h2>
+            <div className="space-y-3 leading-relaxed text-zinc-300">
+              {guide.paragraphs.map((p, i) => (
+                <p key={i}>{p}</p>
+              ))}
+            </div>
           </section>
         ) : null}
 
@@ -432,6 +433,9 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
             </div>
           </section>
         ) : null}
+
+        {/* FAQ zum Streaming (FAQPage-JSON-LD über die Faq-Komponente) */}
+        {guide?.faq.length ? <Faq items={guide.faq} title={`Häufige Fragen zu ${title}`} /> : null}
 
         {/* Ähnliche Anime — früher /aehnlich/<slug>, seit dem Merge Teil dieser Seite */}
         {similar.length ? (
