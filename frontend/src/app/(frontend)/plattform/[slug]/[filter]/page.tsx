@@ -8,7 +8,9 @@ import { Pagination } from '@/components/Pagination'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { pageMeta } from '@/lib/seo'
 import { DE_PROVIDER_SLUGS, providerBySlug } from '@/lib/streaming'
-import { MIN_LIST_SIZE, platformListPage, resolveListFilter, STATIC_FILTER_KEYS, staticFilter } from '@/lib/platformLists'
+import { MIN_LIST_SIZE, platformListPage, platformListStats, resolveListFilter, STATIC_FILTER_KEYS, staticFilter } from '@/lib/platformLists'
+import { Faq } from '@/components/Faq'
+import { joinNames } from '@/lib/anime'
 import { formatDateDe } from '@/lib/anime'
 
 // Wie /plattform/[slug]: Pagination über searchParams → dynamisch.
@@ -58,9 +60,38 @@ export default async function PlatformListPage({
   if (!ctx) notFound()
   const { payload, provider, f } = ctx
   const page = Math.max(1, Number(sp.page) || 1)
-  const { docs, total } = await platformListPage(payload, provider.slug, f, page, PER_PAGE)
+  const [{ docs, total }, stats] = await Promise.all([
+    platformListPage(payload, provider.slug, f, page, PER_PAGE),
+    platformListStats(payload, provider.slug, f),
+  ])
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
   const siblings = STATIC_FILTER_KEYS.filter((k) => k !== f.key)
+  const stand = formatDateDe(stats.checkedAt)
+  // Zahlen-Intro: das, was Snippets und KI-Antworten zitieren.
+  const facts = [
+    f.key !== 'deutscher-dub' && stats.dub ? `${stats.dub} mit deutscher Synchro` : '',
+    f.key !== 'deutscher-sub' && stats.sub ? `${stats.sub} mit deutschen Untertiteln` : '',
+    f.key !== 'kostenlos' && stats.free ? `${stats.free} kostenlos (mit Werbung)` : '',
+    f.key !== 'neu' && stats.fresh ? `${stats.fresh} neu in den letzten 30 Tagen` : '',
+  ].filter(Boolean)
+  const faq = [
+    {
+      q: `Welche ${f.kind === 'genre' ? `${f.label}-Anime` : 'Anime'} gibt es ${f.key === 'kostenlos' ? 'kostenlos ' : ''}auf ${provider.name}${f.key === 'deutscher-dub' ? ' mit deutscher Synchro' : f.key === 'deutscher-sub' ? ' mit deutschen Untertiteln' : ''}?`,
+      a: `${total} Titel${stand ? ` (Stand: ${stand})` : ''}${stats.top.length ? `, darunter ${joinNames(stats.top)}` : ''}. Die komplette Liste steht auf dieser Seite, sortiert nach Beliebtheit.`,
+    },
+    {
+      q: `Wie viele dieser Anime laufen auf ${provider.name} mit deutscher Synchro?`,
+      a: stats.dub ? `${stats.dub} von ${total} Titeln sind auf ${provider.name} mit deutscher Synchronfassung (Ger Dub) verfügbar${stats.sub ? `, ${stats.sub} mit deutschen Untertiteln` : ''}.` : `Für diese Auswahl ist auf ${provider.name} aktuell keine deutsche Synchronfassung gelistet – die Titel laufen im Original mit Untertiteln.`,
+    },
+    {
+      q: `Kann man diese Anime auf ${provider.name} kostenlos streamen?`,
+      a: stats.free ? `${stats.free} der ${total} Titel laufen auf ${provider.name} kostenlos mit Werbung, ohne Abo.` : `Nein – auf ${provider.name} sind diese Titel nur im Abo verfügbar.`,
+    },
+    {
+      q: 'Wie aktuell ist diese Liste?',
+      a: `Wir gleichen die Verfügbarkeit regelmäßig mit dem Katalog von ${provider.name} ab${stand ? `; letzter Abgleich: ${stand}` : ''}. Nur Titel mit direktem Link zum Stream werden aufgenommen.`,
+    },
+  ]
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
@@ -77,7 +108,9 @@ export default async function PlatformListPage({
       </p>
       <h1 className="mt-1 text-3xl font-extrabold text-white">{f.title(provider.name)}</h1>
       <p className="mt-3 max-w-3xl leading-relaxed text-zinc-300">
-        {f.intro(provider.name, total)} Stand: {formatDateDe(new Date().toISOString())}.
+        {f.intro(provider.name, total)}
+        {facts.length ? ` Davon ${joinNames(facts)}.` : ''}
+        {stand ? ` Stand: ${stand}.` : ''}
       </p>
 
       <div className="mt-5 flex flex-wrap gap-2 text-sm">
@@ -111,6 +144,8 @@ export default async function PlatformListPage({
       )}
 
       <Pagination basePath={`/plattform/${provider.slug}/${f.key}`} page={page} totalPages={totalPages} />
+
+      {total >= MIN_LIST_SIZE ? <Faq items={faq} title={`Häufige Fragen: ${f.title(provider.name)}`} /> : null}
 
       <section className="mt-10 rounded-xl border border-white/10 bg-zinc-900/40 p-4 text-sm leading-relaxed text-zinc-400">
         <strong className="text-zinc-300">So entsteht diese Liste:</strong> Wir gleichen den Katalog von {provider.name}{' '}

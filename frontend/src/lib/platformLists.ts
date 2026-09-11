@@ -152,6 +152,47 @@ export async function platformListPage(payload: any, providerSlug: string, f: Li
   return { docs: order.map((id) => byId.get(id)).filter(Boolean) as any[], total: cnt.rows[0]?.n ?? 0 }
 }
 
+export type ListStats = { total: number; dub: number; sub: number; free: number; fresh: number; top: string[]; checkedAt: string | null }
+
+/**
+ * Kennzahlen einer Liste für Intro/FAQ („87 Anime, davon 60 mit deutscher Synchro,
+ * 12 kostenlos, 5 neu in 30 Tagen") + die fünf beliebtesten Titel + letzter Abgleich.
+ * Zahlen statt Prosa: das ist, was KI-Antworten und Snippets zitieren.
+ */
+export async function platformListStats(payload: any, providerSlug: string, f: ListFilter): Promise<ListStats> {
+  const c = filterCondition(f)
+  const p = pool(payload)
+  const base = `FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
+                WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND ${c.sql} AND a.is_hentai IS NOT TRUE`
+  const [agg, top] = await Promise.all([
+    p.query(
+      `SELECT count(DISTINCT a.id)::int AS total,
+              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%')::int AS dub,
+              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.subs,'') || ',') LIKE '%,de,%')::int AS sub,
+              count(DISTINCT a.id) FILTER (WHERE o.monetization IN ('ads','free'))::int AS free,
+              count(DISTINCT a.id) FILTER (WHERE o.first_seen_at >= now() - interval '${NEW_DAYS} days')::int AS fresh,
+              max(o.last_seen_at) AS checked
+       ${base}`,
+      [providerSlug, ...c.params],
+    ),
+    p.query(
+      `SELECT COALESCE(NULLIF(a.title_german,''), NULLIF(a.title_english,''), a.title_romaji) AS t
+       ${base} GROUP BY a.id ORDER BY max(a.popularity) DESC NULLS LAST LIMIT 5`,
+      [providerSlug, ...c.params],
+    ),
+  ])
+  const r = agg.rows[0] || {}
+  return {
+    total: r.total ?? 0,
+    dub: r.dub ?? 0,
+    sub: r.sub ?? 0,
+    free: r.free ?? 0,
+    fresh: r.fresh ?? 0,
+    top: top.rows.map((x: any) => x.t).filter(Boolean),
+    checkedAt: r.checked ? new Date(r.checked).toISOString() : null,
+  }
+}
+
 /** Alle indexwürdigen Listen-URLs (Sitemap + Hub-Chips). */
 export async function platformListPaths(payload: any): Promise<string[]> {
   const counts = await platformListCounts(payload)

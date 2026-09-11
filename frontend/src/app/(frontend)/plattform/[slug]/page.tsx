@@ -67,6 +67,7 @@ export default async function PlatformDetail({
   let deDub = 0
   let topGenres: { name: string; slug: string; n: number }[] = []
   let lists: { key: string; label: string; n: number }[] = []
+  let n = { dub: 0, free: 0, fresh: 0 }
   if (isFirst) {
     const pool = (payload.db as any).pool
     const [dub, genres] = await Promise.all([
@@ -97,6 +98,11 @@ export default async function PlatformDetail({
       payload.find({ collection: 'genres', limit: 100, depth: 0, select: { slug: true, name: true } as any }),
     ])
     const genreName = new Map((allGenres.docs as any[]).map((g) => [g.slug, g.name]))
+    n = {
+      dub: counts.get(`${provider.slug}/deutscher-dub`) ?? 0,
+      free: counts.get(`${provider.slug}/kostenlos`) ?? 0,
+      fresh: counts.get(`${provider.slug}/neu`) ?? 0,
+    }
     lists = [...counts.entries()]
       .filter(([k, n]) => k.startsWith(`${provider.slug}/`) && n >= MIN_LIST_SIZE)
       .map(([k, n]) => {
@@ -119,6 +125,18 @@ export default async function PlatformDetail({
       a: deDub > 0
         ? `Bei mindestens ${deDub.toLocaleString('de-DE')} dieser Titel ist eine deutsche Synchronfassung bekannt. Ob ein konkreter Titel deutschen Dub oder nur Untertitel bietet, steht auf der jeweiligen Anime-Detailseite — die genaue Sprachfassung prüfst du am besten direkt bei ${provider.name}.`
         : `Ob ein Titel deutschen Dub oder Sub hat, hängt vom jeweiligen Anime ab. Auf der Detailseite jedes Anime findest du die verfügbaren Sprachfassungen — die genaue Fassung prüfst du am besten direkt bei ${provider.name}.`,
+    },
+    {
+      q: `Kann man Anime auf ${provider.name} kostenlos streamen?`,
+      a: n.free > 0
+        ? `Ja: ${n.free.toLocaleString('de-DE')} Anime laufen auf ${provider.name} kostenlos mit Werbung, ohne Abo – die Liste dazu: „Kostenlose Anime auf ${provider.name}".`
+        : `Nein, ${provider.name} bietet Anime ausschließlich im Abo an; ein werbefinanziertes Gratis-Angebot gibt es dort nicht.`,
+    },
+    {
+      q: `Welche Anime sind neu auf ${provider.name}?`,
+      a: n.fresh > 0
+        ? `In den letzten 30 Tagen sind ${n.fresh.toLocaleString('de-DE')} Anime neu in den ${provider.name}-Katalog gekommen – siehe die Liste „Neu auf ${provider.name}".`
+        : `In den letzten 30 Tagen haben wir keine Neuzugänge im ${provider.name}-Katalog erfasst.`,
     },
     {
       q: `Ist diese Liste vollständig?`,

@@ -1,7 +1,7 @@
 // Hilfen für Metadaten (Open Graph / Twitter / canonical) und JSON-LD.
 import type { Metadata } from 'next'
-import { SITE_NAME, SITE_URL, url } from './site'
-import { displayTitle, plainText } from './anime'
+import { DISCORD_INVITE, SITE_NAME, SITE_URL, TELEGRAM_CHANNEL, X_URL, url } from './site'
+import { animeCover, displayTitle, plainText } from './anime'
 import { streamingOffersOf, type OfferView } from './streaming'
 
 /**
@@ -90,7 +90,9 @@ export function organizationLd() {
     '@type': 'Organization',
     name: SITE_NAME,
     url: SITE_URL,
-    description: 'Deutschsprachige Anime-Datenbank',
+    description: 'Deutschsprachige Anime-Datenbank mit anbieter-genauer Streaming-Verfügbarkeit (Dub/Sub) für Deutschland.',
+    // Entity-Verknüpfung: dieselbe Organisation auf den Community-Kanälen (Knowledge Graph / KI-Grounding).
+    sameAs: [DISCORD_INVITE, X_URL, TELEGRAM_CHANNEL],
   }
 }
 
@@ -137,13 +139,29 @@ export function animeLd(anime: any) {
   const genres = (Array.isArray(anime.genres) ? anime.genres : []).filter((g: any) => typeof g === 'object')
   // Nur belegte Angebote (Deep-Link) — Legacy-Flags ohne Nachweis bleiben draußen.
   const offers = streamingOffersOf(anime).filter((v) => !v.offer.legacy)
+  // Entity-Verknüpfung: derselbe Titel bei AniList/MyAnimeList — Suchmaschinen und
+  // KI-Modelle gleichen darüber ab, dass „Naruto auf OtakuPulse" dieselbe Entität ist.
+  const sameAs = [
+    anime.anilistId ? `https://anilist.co/anime/${anime.anilistId}` : '',
+    anime.malId ? `https://myanimelist.net/anime/${anime.malId}` : '',
+  ].filter(Boolean)
+  // Frische-Signal: letzte inhaltliche Änderung ODER letzter Streaming-Abgleich (was später ist).
+  const modified = [anime.contentUpdatedAt, anime.streamingCheckedAt, anime.updatedAt]
+    .filter(Boolean)
+    .map((d: string) => Date.parse(d))
+    .filter((t: number) => Number.isFinite(t))
+  const cover = animeCover(anime)
   return {
     '@context': 'https://schema.org',
     '@type': type,
     name: displayTitle(anime),
     alternateName: [anime.titleRomaji, anime.titleEnglish, anime.titleNative].filter(Boolean),
     url: url(`/anime/${anime.slug}`),
-    image: anime.coverImageUrl || undefined,
+    // Eigenes (gespiegeltes) Bild statt AniList-CDN — für Bildersuche/Discover und ohne Fremdabhängigkeit.
+    image: cover ? (cover.startsWith('http') ? cover : url(cover)) : undefined,
+    sameAs: sameAs.length ? sameAs : undefined,
+    dateModified: modified.length ? new Date(Math.max(...modified)).toISOString() : undefined,
+    inLanguage: 'de',
     description: plainText(anime.descriptionDe || anime.descriptionSource).slice(0, 400) || undefined,
     genre: genres.map((g: any) => g.name),
     numberOfEpisodes: anime.episodes || undefined,

@@ -12,7 +12,6 @@ import { Faq } from '@/components/Faq'
 import { JsonLd } from '@/components/JsonLd'
 import { RowSkeleton, HeroSkeleton, BoxSkeleton } from '@/components/Skeletons'
 import { pageMetaFor } from '@/lib/pageContent'
-import { organizationLd } from '@/lib/seo'
 import { SITE_NAME, SITE_URL, DISCORD_INVITE } from '@/lib/site'
 import { PageSeoFooter } from '@/components/SeoFooter'
 
@@ -192,7 +191,6 @@ export default function HomePage() {
           },
         }}
       />
-      <JsonLd data={organizationLd()} />
     </main>
     <PageSeoFooter pageKey="home" maxW="max-w-7xl" />
     </>
