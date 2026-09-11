@@ -10,6 +10,11 @@
  *   --weekly-preview   Wochenvorschau (alle Episoden der Woche, nach Tag). Montags.
  *   --weekly-recap     Wochenrückblick (was lief, Highlights). Sonntags abends.
  *   --genre-spotlight  Rotierendes Genre-Ranking („Die besten X-Anime"). Wöchentlich.
+ *   --platform-new     „Neu auf <Anbieter> im <Monat>" — je DE-Anbieter die Titel, die in
+ *                      den letzten 30 Tagen neu in den Katalog kamen (streamingOffers.
+ *                      first_seen_at). Wöchentlich; ein Artikel pro Anbieter und Monat.
+ *   --platform-leaving „Diese Anime verlassen <Anbieter>" — Titel mit Ablaufdatum in den
+ *                      nächsten 30 Tagen (streamingOffers.available_to). Wöchentlich.
  *
  * Dedup über feste Slugs (simulcast-heute-<datum>, episode-<anime>-<n>, …) —
  * ein zweiter Lauf am selben Tag erstellt nichts doppelt. Hentai ist überall
@@ -23,7 +28,7 @@ import { getPayload, type Payload } from 'payload'
 import config from '../payload.config'
 import Anthropic from '@anthropic-ai/sdk'
 import { displayTitle, animeBanner } from '../lib/anime'
-import { providerBySlug } from '../lib/streaming'
+import { DE_PROVIDER_SLUGS, providerBySlug } from '../lib/streaming'
 import { toLexical, stripMarkers, type Valid } from '../lib/articleBody'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -514,6 +519,100 @@ async function runGenreSpotlight(payload: Payload, authorId: any, ymd: string): 
 }
 
 // ---------------------------------------------------------------------------
+// Modus: --platform-new / --platform-leaving  (aus den Streaming-Offers)
+// ---------------------------------------------------------------------------
+const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+const LANG = (audio: string, subs: string) => {
+  const a = (audio || '').split(','), su = (subs || '').split(',')
+  if (a.includes('de')) return 'Deutscher Dub'
+  if (su.includes('de')) return 'Deutscher Sub'
+  return 'Japanisch (OmU)'
+}
+const COST: Record<string, string> = { flatrate: 'Abo', ads: 'kostenlos (Werbung)', free: 'kostenlos' }
+
+type OfferRow = { id: number; slug: string; t: string; score: number | null; banner: string | null; cover: string | null; audio: string; subs: string; monet: string; at: string | null }
+
+async function offerRows(payload: Payload, providerSlug: string, cond: string): Promise<OfferRow[]> {
+  const res = await (payload.db as any).pool.query(
+    `SELECT a.id, a.slug, COALESCE(NULLIF(a.title_german,''), NULLIF(a.title_english,''), a.title_romaji) AS t,
+            a.average_score AS score, a.banner_image_local AS banner, a.cover_image_local AS cover,
+            o.audio, o.subs, o.monetization AS monet, ${cond.includes('available_to') ? 'o.available_to' : 'o.first_seen_at'} AS at
+     FROM anime_streaming_offers o JOIN anime a ON a.id = o._parent_id
+     WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE AND ${cond}
+     ORDER BY a.popularity DESC NULLS LAST LIMIT 40`,
+    [providerSlug],
+  )
+  // je Anime nur ein Angebot (bestes = erstes)
+  const seen = new Set<number>()
+  return (res.rows as OfferRow[]).filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)))
+}
+
+const platformPages = (): Map<string, string> => {
+  const m = new Map(PAGES)
+  for (const s of DE_PROVIDER_SLUGS) m.set(`plattform-${s}`, `/plattform/${s}`)
+  return m
+}
+
+async function runPlatformNew(payload: Payload, authorId: any, ymd: string): Promise<void> {
+  const [y, m] = ymd.split('-').map(Number)
+  for (const ps of DE_PROVIDER_SLUGS) {
+    const p = providerBySlug(ps)!
+    const rows = await offerRows(payload, ps, `o.first_seen_at >= now() - interval '30 days'`)
+    if (rows.length < 5) continue
+    const slug = `neu-auf-${ps}-${y}-${String(m).padStart(2, '0')}`
+    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]] | ${LANG(r.audio, r.subs)} | ${COST[r.monet] || r.monet} | ${r.score ? `${r.score}/100` : '—'} |`)
+    await createArticle(payload, authorId, {
+      slug,
+      category: 'guide',
+      coverImageUrl: rows[0].banner || undefined,
+      relatedAnime: rows.map((r) => r.id),
+      valid: { anime: new Set(rows.map((r) => r.slug)), genre: new Set(), studio: new Set(), tag: new Set(), page: platformPages() },
+      fallbackTitle: `Neu auf ${p.name} im ${MONTHS[m - 1]} ${y}: ${rows.length} Anime`,
+      prompt: [
+        `Schreibe das Intro (2–3 Absätze, 120–180 Wörter) für unsere Liste „Neu auf ${p.name} im ${MONTHS[m - 1]} ${y}".`,
+        `${rows.length} Anime sind in den letzten 30 Tagen neu in den ${p.name}-Katalog (Deutschland) gekommen.`,
+        `Anbieter-Baustein (wörtlich einbauen): [[page:plattform-${ps}|${p.name}]]`,
+        `Die drei beliebtesten Neuzugänge (Bausteine wörtlich einbauen):`,
+        ...rows.slice(0, 3).map((r) => `- [[anime:${r.slug}|${r.t}]] (${LANG(r.audio, r.subs)}, ${COST[r.monet] || r.monet})`),
+        `Verweise darauf, dass die komplette Liste unten steht und wir die Verfügbarkeit laufend prüfen.`,
+        `headline: Muss "${p.name}" und "neu" enthalten, z. B. "Neu auf ${p.name}: …".`,
+      ].join('\n'),
+      appendix: [`## Alle Neuzugänge auf ${p.name} (letzte 30 Tage)`, '', '| Anime | Sprachfassung | Kosten | Score |', '|---|---|---|---|', ...lines].join('\n'),
+    })
+  }
+}
+
+async function runPlatformLeaving(payload: Payload, authorId: any, ymd: string): Promise<void> {
+  const [y, m] = ymd.split('-').map(Number)
+  for (const ps of DE_PROVIDER_SLUGS) {
+    const p = providerBySlug(ps)!
+    const rows = await offerRows(payload, ps, `o.available_to IS NOT NULL AND o.available_to BETWEEN now() AND now() + interval '30 days'`)
+    if (rows.length < 3) continue
+    const slug = `verlaesst-${ps}-${y}-${String(m).padStart(2, '0')}`
+    const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Berlin' }) : '—')
+    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]] | ${fmt(r.at)} | ${LANG(r.audio, r.subs)} | ${r.score ? `${r.score}/100` : '—'} |`)
+    await createArticle(payload, authorId, {
+      slug,
+      category: 'guide',
+      coverImageUrl: rows[0].banner || undefined,
+      relatedAnime: rows.map((r) => r.id),
+      valid: { anime: new Set(rows.map((r) => r.slug)), genre: new Set(), studio: new Set(), tag: new Set(), page: platformPages() },
+      fallbackTitle: `Diese ${rows.length} Anime verlassen ${p.name} bald`,
+      prompt: [
+        `Schreibe das Intro (2–3 Absätze, 120–180 Wörter) für unsere Liste „Diese Anime verlassen ${p.name} im ${MONTHS[m - 1]} ${y}".`,
+        `Bei ${rows.length} Anime läuft die Lizenz bei ${p.name} (Deutschland) in den nächsten 30 Tagen aus — wer sie noch sehen will, sollte sich beeilen.`,
+        `Anbieter-Baustein (wörtlich einbauen): [[page:plattform-${ps}|${p.name}]]`,
+        `Die drei beliebtesten Titel mit Datum (Bausteine wörtlich einbauen):`,
+        ...rows.slice(0, 3).map((r) => `- [[anime:${r.slug}|${r.t}]] (bis ${fmt(r.at)})`),
+        `Verweise auf die vollständige Liste unten. Erfinde keine Gründe für den Lizenzablauf.`,
+        `headline: Muss "${p.name}" und "verlassen" oder "verschwinden" enthalten.`,
+      ].join('\n'),
+      appendix: [`## Alle Titel, die ${p.name} bis Ende ${MONTHS[m - 1]} verlassen`, '', '| Anime | verfügbar bis | Sprachfassung | Score |', '|---|---|---|---|', ...lines].join('\n'),
+    })
+  }
+}
+
+// ---------------------------------------------------------------------------
 async function main() {
   const payload = await getPayload({ config })
   const authorId = await ensureAuthor(payload)
@@ -523,8 +622,10 @@ async function main() {
   else if (process.argv.includes('--weekly-preview')) await runWeeklyPreview(payload, authorId, ymd)
   else if (process.argv.includes('--weekly-recap')) await runWeeklyRecap(payload, authorId, ymd)
   else if (process.argv.includes('--genre-spotlight')) await runGenreSpotlight(payload, authorId, ymd)
+  else if (process.argv.includes('--platform-new')) await runPlatformNew(payload, authorId, ymd)
+  else if (process.argv.includes('--platform-leaving')) await runPlatformLeaving(payload, authorId, ymd)
   else {
-    console.error('✗ Modus fehlt: --daily | --weekly-preview | --weekly-recap | --genre-spotlight')
+    console.error('✗ Modus fehlt: --daily | --weekly-preview | --weekly-recap | --genre-spotlight | --platform-new | --platform-leaving')
     process.exit(1)
   }
 
