@@ -120,8 +120,12 @@ first/last_seen. Leitet `streamingProviders` ab (autoritativ bei Match) und erg�
 (Schwelle 0.90) — ohne Match bleibt der Bestand unangetastet. Nur FLATRATE/FREE/ADS, nur
 Angebote mit Deep-Link. Aufrufe: ohne Flag = alle Titel (Backfill), `--recent N`,
 `--only-missing`, `--stale N` (Cron), `--slugs a,b` + `--dry-run` zum Testen.
-Rate-Limit: 4 Worker + 0,25 s pro Request. Neue Anbieter im Mapping müssen auch in
-`lib/streaming.ts` stehen (Enum `streamingProviders` → `db-push.ts` vor dem ersten Lauf).
+Rate-Limit: 1 Worker + 1,2 s pro Request, Instanz-Sperre (nie zwei Läufe parallel). JustWatch sperrt
+die IP für ~1 h, sobald zu viel Volumen kommt — große Läufe deshalb NUR in Batches (`--stale 150`
+stündlich, siehe `backfill-offers-batches.sh` im Scratch-Ordner) und mit `--initial` beim Erst-Backfill
+(kein `first_seen_at`, sonst ist der ganze Katalog 30 Tage „Neu"). Kauf/Leih (BUY/RENT) wird miterfasst,
+zählt aber nicht als Streaming. Neue Anbieter im Mapping müssen auch in `lib/streaming.ts` stehen
+(Enum `streamingProviders` → `db-push.ts` vor dem ersten Lauf).
 
 ## Wikipedia-Dub-Sync (`wikipedia-dub.py`)
 

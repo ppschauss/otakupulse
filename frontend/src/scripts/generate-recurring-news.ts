@@ -599,7 +599,7 @@ async function runPlatformLeaving(payload: Payload, authorId: any, ymd: string):
       valid: { anime: new Set(rows.map((r) => r.slug)), genre: new Set(), studio: new Set(), tag: new Set(), page: platformPages() },
       fallbackTitle: `Diese ${rows.length} Anime verlassen ${p.name} bald`,
       prompt: [
-        `Schreibe das Intro (2–3 Absätze, 120–180 Wörter) für unsere Liste „Diese Anime verlassen ${p.name} im ${MONTHS[m - 1]} ${y}".`,
+        `Schreibe das Intro (2–3 Absätze, 120–180 Wörter) für unsere Liste „Diese Anime verlassen ${p.name} bald" (Stand ${MONTHS[m - 1]} ${y}).`,
         `Bei ${rows.length} Anime läuft die Lizenz bei ${p.name} (Deutschland) in den nächsten 30 Tagen aus — wer sie noch sehen will, sollte sich beeilen.`,
         `Anbieter-Baustein (wörtlich einbauen): [[page:plattform-${ps}|${p.name}]]`,
         `Die drei beliebtesten Titel mit Datum (Bausteine wörtlich einbauen):`,
@@ -607,7 +607,7 @@ async function runPlatformLeaving(payload: Payload, authorId: any, ymd: string):
         `Verweise auf die vollständige Liste unten. Erfinde keine Gründe für den Lizenzablauf.`,
         `headline: Muss "${p.name}" und "verlassen" oder "verschwinden" enthalten.`,
       ].join('\n'),
-      appendix: [`## Alle Titel, die ${p.name} bis Ende ${MONTHS[m - 1]} verlassen`, '', '| Anime | verfügbar bis | Sprachfassung | Score |', '|---|---|---|---|', ...lines].join('\n'),
+      appendix: [`## Alle Titel, die ${p.name} in den nächsten 30 Tagen verlassen`, '', '| Anime | verfügbar bis | Sprachfassung | Score |', '|---|---|---|---|', ...lines].join('\n'),
     })
   }
 }

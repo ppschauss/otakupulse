@@ -248,6 +248,14 @@ SQL über `anime_streaming_offers`, `MIN_LIST_SIZE = 10` → sonst `noindex` + n
 `/streamen/[slug]` und `/aehnlich/[slug]` existieren nicht mehr (308 → `/anime/[slug]`,
 `next.config.mjs`); ihre Sitemap-Dateien antworten 404.
 
+**GEO/SEO-Bausteine:** `/llms.txt` (Markdown-Karte für KI-Agenten), `/ueber-uns` (Methodik/E-E-A-T),
+Schema mit `sameAs` (AniList/MAL, Community-Kanäle), `dateModified` und WatchAction, `robots.txt` erlaubt
+Such-/Zitier-Agenten (OAI-SearchBot, PerplexityBot, Claude-SearchBot …; Training bleibt untersagt).
+Interne Links auf die Listen-Seiten: Anime-Seite („Mehr Streaming-Listen"), Genre-Seiten, Footer.
+News-Formate aus den Offers: `generate-recurring-news.ts --platform-new` / `--platform-leaving`.
+Detailrouten haben bewusst KEINE `loading.tsx` mehr — eine Suspense-Grenze über dem Segment macht
+`notFound()` zum Soft-404 (Status 200); nur `/suche` behält ihr Skeleton.
+
 **Rollierender Refresh** (`refresh-streaming.sh`, Cron alle 4 h): Feld
 **`streamingCheckedAt`** merkt sich pro Titel den letzten Abgleich. `justwatch-streaming.py
 --stale N` nimmt die N am längsten nicht geprüften Titel, gleicht sie **autoritativ** ab
