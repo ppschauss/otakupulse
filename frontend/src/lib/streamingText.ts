@@ -132,27 +132,28 @@ export function shortTitle(title: string): string {
   return season ? `${base} ${season[0]}` : base
 }
 
-/** Zusatzsatz je Anbieter — Anbieter fett, Fakten aus den Offers (Abo/kostenlos, Dub/Sub, Staffeln/Folgen, Ablauf). */
-function providerSentence(anime: any, title: string, g: Group, idx: number): string {
-  const isMovie = anime?.format === 'MOVIE'
-  const subj = idx === 0 ? title : isMovie ? 'der Film' : 'die Serie'
-  const lang = langPhrase(g)
-  const cost = costPhrase(g)
-  const scope = scopePhrase(g)
-  const to = g.offers[0].availableTo ? formatDateDe(g.offers[0].availableTo) : ''
-  // Zwei „mit" hintereinander (kostenlos mit Werbung, mit deutscher Synchro) per Komma trennen.
-  const details = cost && lang ? (cost.includes('mit') && lang.startsWith('mit') ? `${cost}, ${lang}` : `${cost} ${lang}`) : cost || lang
-  return `Bei **${g.provider.name}** läuft ${subj}${details ? ` ${details}` : ''}${scope ? ` (${scope})` : ''}${to ? ` – verfügbar bis **${to}**` : ''}.`
-}
-
 export type OverviewRow = { label: string; value: string }
+/** Textsektion (A–F der Vorlage): Überschrift, Absätze mit **fett**-Markern, optional Unterabschnitte je Anbieter. */
+export type GuideSection = {
+  id: string
+  heading: string
+  paragraphs: string[]
+  subsections?: { heading: string; paragraph: string }[]
+  /** Abschluss-Satz mit Link: „{before}<a>{linkText}</a>{after}" */
+  ctaSentence?: { before: string; linkText: string; after: string; url: string }
+}
 export type StreamingGuideData = {
   heading: string
   intro: string
+  /** Sektion A — steht zwischen Intro und Anbieter-Übersicht. */
+  howTo: GuideSection
   overviewHeading: string
   overview: OverviewRow[]
   cta: { url: string; provider: string; text: string; title: string; lead: string }
-  details: string | null
+  /** Sektionen B–E — nach dem CTA. */
+  sections: GuideSection[]
+  /** Sektion F — vor der FAQ. */
+  summary: GuideSection
   faqHeading: string
   faq: FaqItem[]
 }
@@ -181,6 +182,7 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
   const running = anime?.status === 'RELEASING'
   const year = yearOf(anime)
   const release = year ? (anime?.season ? `${seasonLabel(anime.season)} ${year}` : `${year}`) : ''
+  const studio = studioName(anime)
   const serie = isMovie ? 'den Film' : 'die Serie'
   const anime_ = isMovie ? 'den Film' : 'den Anime'
   // Sprache: aus Offers (je Anbieter) oder im Legacy-Fall aus den globalen Flags.
@@ -228,9 +230,108 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
     title: `${title} online streamen bei ${first.provider.name}`,
   }
 
-  // --- Zusatzabsatz: harte Fakten je Anbieter (nur mit belegten Offers)
-  const detailLines = s.legacy ? [] : groups.slice(0, 4).map((g, i) => providerSentence(anime, title, g, i))
-  const details = detailLines.length ? `Im Detail: ${detailLines.join(' ')}` : null
+  // --- Sektionen A–F (Vorlage; bedingte Teile nur mit Daten)
+  const subOnly = subAt.filter((n) => !dubAt.includes(n))
+  const aboAt = groups.filter((g) => !isFree(g)).map((g) => g.provider.name)
+  const b = (names: string[]) => joinNames(names.map((n) => `**${n}**`))
+  const expiringGroups = groups.filter((g) => g.offers[0].availableTo)
+  const maxSeasons = Math.max(0, ...groups.map((g) => g.offers[0].seasons || 0))
+
+  // A · „{Titel} streamen: So findest du den richtigen Stream"
+  const howTo: GuideSection = {
+    id: 'stream-finden',
+    heading: `${title} streamen: So findest du den richtigen Stream`,
+    paragraphs: [
+      `Du möchtest **${title} streamen**, weißt aber nicht, welcher Dienst den Anime im Programm hat? Kein Problem: Aktuell kannst du **${title} online schauen** bei ${bold}. ${
+        many
+          ? 'Welcher Anbieter für dich der richtige ist, hängt davon ab, ob du lieber auf Deutsch oder im Originalton schaust, ob du ein Abo hast oder gratis streamen willst – die Unterschiede findest du weiter unten.'
+          : `Damit gibt es in Deutschland genau eine legale Anlaufstelle, um **${title} im Stream** zu sehen.`
+      }`,
+      `Die Verfügbarkeit von **${title}** prüfen wir regelmäßig gegen die Anbieter-Kataloge${stand ? ` (letzter Abgleich: **${stand}**)` : ''}. Alle Links auf dieser Seite führen direkt zum Titel beim jeweiligen Dienst – kein Umweg über die Suche, kein Raten, ob der Anime noch im Sortiment ist.`,
+    ],
+  }
+
+  const sections: GuideSection[] = []
+
+  // B · Sprache
+  sections.push({
+    id: 'deutsch',
+    heading: `${title} auf Deutsch streamen – Ger Dub & Ger Sub`,
+    paragraphs: [
+      dubAt.length
+        ? `Für alle, die **${title} auf Deutsch streamen** wollen: Die deutsche Synchronfassung (**Ger Dub**) läuft bei ${b(dubAt)}.${
+            subOnly.length ? ` Wer den japanischen Originalton bevorzugt, findet **${title} mit deutschen Untertiteln** (Ger Sub) bei ${b(subOnly)}.` : ''
+          } So kannst du frei entscheiden, ob du ${title} synchronisiert oder im Original mit Untertiteln schaust.`
+        : subAt.length
+          ? `Eine deutsche Synchronfassung von **${title}** gibt es im Stream bislang nicht. Bei ${b(subAt)} läuft der Anime im japanischen Originalton mit **deutschen Untertiteln (Ger Sub)** – für viele Fans ohnehin die erste Wahl, weil die Original-Sprecher erhalten bleiben. Sobald ein Anbieter einen **Ger Dub** ergänzt, tragen wir das hier ein.`
+          : `Welche Sprachfassungen für **${title}** verfügbar sind, prüfst du am besten direkt bei ${bold} – die meisten Dienste bieten wahlweise Ger Dub oder den japanischen Originalton mit deutschen Untertiteln.`,
+    ],
+  })
+
+  // C · Kosten
+  const costParas: string[] = []
+  if (s.legacy) {
+    costParas.push(`Ob du **${title} kostenlos streamen** kannst oder ein Abo brauchst, hängt vom Anbieter ab: ${bold} ${many ? 'zeigen' : 'zeigt'} den Anime aktuell im Programm – die genauen Konditionen prüfst du am besten direkt beim Dienst.`)
+  } else if (freeAt.length) {
+    costParas.push(`Ja, du kannst **${title} kostenlos streamen**: Bei ${b(freeAt)} läuft der Anime werbefinanziert und ohne Abo – legal und in Deutschland.${aboAt.length ? ` Wer ohne Werbung schauen möchte, bekommt **${title} im Abo** bei ${b(aboAt)}.` : ''}`)
+  } else {
+    costParas.push(`Einen kostenlosen Stream gibt es für **${title}** derzeit nicht – der Anime läuft ausschließlich im Abo bei ${bold}. Viele Dienste bieten allerdings einen Probemonat an, mit dem du **${title} gratis testen** kannst.`)
+  }
+  if (stores.length) {
+    costParas.push(`Alternativ kannst du **${title} kaufen oder leihen**: Bei ${b(stores.map((st) => st.provider.name))} ist der Anime als digitaler Einzelkauf${stores.some((st) => st.rent) ? ' oder zur Leihe' : ''} erhältlich – praktisch, wenn du kein Abo abschließen willst.`)
+  }
+  sections.push({ id: 'kostenlos', heading: `${title} kostenlos streamen? Abo, Gratis-Stream & Kauf im Vergleich`, paragraphs: costParas })
+
+  // D · Folgen, Staffeln & Simulcast
+  const releaseTxt = release ? ` aus dem **${release}**` : ''
+  const studioTxt = studio ? ` von **${studio}**` : ''
+  sections.push({
+    id: 'folgen',
+    heading: `${title} online schauen: Folgen, Staffeln & Simulcast`,
+    paragraphs: [
+      isMovie
+        ? `**${title}** ist ein Anime-Film${releaseTxt}${studioTxt}. Du kannst den **Film online streamen** bei ${bold} – in voller Länge und ${dubAt.length ? 'wahlweise mit deutscher Synchro oder ' : ''}im japanischen Original.`
+        : `**${title}**${anime?.episodes ? ` umfasst **${anime.episodes} Folgen**${maxSeasons > 1 ? ` in ${maxSeasons} Staffeln` : ''} und` : ''} stammt${releaseTxt || ' aus Japan'}${studioTxt}.${
+            running
+              ? ` Die Serie läuft aktuell im **Simulcast** – neue Folgen erscheinen zeitnah zur Japan-Ausstrahlung bei ${bold}; die Sendetermine findest du in unserem Simulcast-Kalender.`
+              : anime?.status === 'NOT_YET_RELEASED'
+                ? ` Die Serie ist angekündigt; sobald sie startet, findest du hier, wer den Simulcast zeigt.`
+                : ` Die Serie ist abgeschlossen, du kannst **${title} komplett streamen** und alle Folgen am Stück schauen.`
+          }${
+            expiringGroups.length
+              ? ` Beachte: Bei ${b(expiringGroups.map((g) => g.provider.name))} ist ${title} nur noch bis **${formatDateDe(expiringGroups[0].offers[0].availableTo)}** verfügbar.`
+              : ''
+          }`,
+    ],
+  })
+
+  // E · ein Absatz je Anbieter (max. 4)
+  const providerPara = (g: Group) => {
+    const profile = g.provider.blurb ? g.provider.blurb.replace(/\.$/, '') : `Streaming-Anbieter für Anime in Deutschland`
+    const facts = s.legacy
+      ? ''
+      : [costPhrase(g), langPhrase(g), scopePhrase(g)].filter(Boolean).join(', ')
+    return `**${g.provider.name}** – ${profile}. Für **${title}** bedeutet das: ${facts || `der Anime ist dort im Programm`}. Wenn du ohnehin ein ${g.provider.name}-Abo hast, ist das der schnellste Weg, **${title} zu streamen**.`
+  }
+  const top = groups.slice(0, 4)
+  sections.push({
+    id: 'anbieter',
+    heading: `Warum ${title} bei ${first.provider.name} streamen?`,
+    paragraphs: [providerPara(top[0])],
+    subsections: top.slice(1).map((g) => ({ heading: g.provider.name, paragraph: providerPara(g) })),
+  })
+
+  // F · Fazit
+  const summary: GuideSection = {
+    id: 'fazit',
+    heading: `Fazit: Wer streamt ${title}?`,
+    paragraphs: [
+      `Kurz zusammengefasst: **${title} streamen** kannst du in Deutschland bei ${bold}${
+        dubAt.length ? ' – auf Deutsch (Ger Dub)' : subAt.length ? ' – im Original mit deutschen Untertiteln' : ''
+      }${freeAt.length ? `, bei ${joinNames(freeAt)} sogar kostenlos` : ''}. Die Lizenzlage kann sich ändern; wir halten diese Seite aktuell${stand ? ` (Stand: ${stand})` : ''}.`,
+    ],
+    ctaSentence: { before: 'Jetzt ', linkText: `${title} bei ${first.provider.name} streamen`, after: ' und direkt loslegen.', url: first.offers[0].url },
+  }
 
   // --- FAQ (Vorlage + Zusatzsätze mit Daten)
   const faqHeading = `FAQ zur Anbieter-Verfügbarkeit: Wer streamt ${title}?`
@@ -287,5 +388,5 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
     }${stand ? ` Letzter Abgleich: ${stand}.` : ''}`,
   })
 
-  return { heading, intro, overviewHeading, overview, cta, details, faqHeading, faq }
+  return { heading, intro, howTo, overviewHeading, overview, cta, sections, summary, faqHeading, faq }
 }

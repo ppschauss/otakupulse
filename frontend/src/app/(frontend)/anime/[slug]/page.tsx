@@ -34,7 +34,7 @@ import {
 import { importAnimeBySlug } from '@/lib/import'
 import { StreamingBox } from '@/components/StreamingBox'
 import { similarAnime } from '@/lib/similar'
-import { streamingGuide, streamingMetaDescription, streamingMetaTitle } from '@/lib/streamingText'
+import { streamingGuide, streamingMetaDescription, streamingMetaTitle, type GuideSection } from '@/lib/streamingText'
 import { Faq } from '@/components/Faq'
 import { RichLine } from '@/components/RichLine'
 import { animeVars } from '@/lib/entityVars'
@@ -66,6 +66,44 @@ function truncateWords(s: string, max: number): string {
   const cut = s.slice(0, max - 1)
   const i = cut.lastIndexOf(' ')
   return (i > max * 0.6 ? cut.slice(0, i) : cut).replace(/[,;:\s]+$/, '') + '…'
+}
+
+// Textsektion des Streaming-Guides (Vorlage A–F): h3 + Absätze, optional Unterabschnitte je Anbieter + Link-Satz.
+function GuideBlock({ section }: { section: GuideSection }) {
+  return (
+    <div id={section.id} className="mt-8">
+      <h3 className="mb-2 text-base font-bold text-white">{section.heading}</h3>
+      <div className="space-y-3 leading-relaxed text-zinc-300">
+        {section.paragraphs.map((p, i) => (
+          <p key={i}>
+            <RichLine text={p} />
+          </p>
+        ))}
+        {section.subsections?.map((sub) => (
+          <div key={sub.heading}>
+            <h4 className="mb-1 mt-4 text-sm font-bold text-zinc-200">{sub.heading}</h4>
+            <p>
+              <RichLine text={sub.paragraph} />
+            </p>
+          </div>
+        ))}
+        {section.ctaSentence ? (
+          <p>
+            {section.ctaSentence.before}
+            <a
+              href={section.ctaSentence.url}
+              target="_blank"
+              rel="nofollow noopener noreferrer"
+              className="font-semibold text-accent underline-offset-2 hover:underline"
+            >
+              {section.ctaSentence.linkText}
+            </a>
+            {section.ctaSentence.after}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 function Badge({ children }: { children: React.ReactNode }) {
@@ -276,6 +314,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
             <p className="leading-relaxed text-zinc-300">
               <RichLine text={guide.intro} />
             </p>
+            <GuideBlock section={guide.howTo} />
             <h3 className="mt-6 mb-2 text-base font-bold text-white">{guide.overviewHeading}</h3>
             <ul className="divide-y divide-white/10 rounded-xl border border-white/10 bg-zinc-900/40 text-sm">
               {guide.overview.map((row) => (
@@ -297,11 +336,10 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
                 {guide.cta.text}
               </a>
             </p>
-            {guide.details ? (
-              <p className="mt-4 leading-relaxed text-zinc-300">
-                <RichLine text={guide.details} />
-              </p>
-            ) : null}
+            {guide.sections.map((sec) => (
+              <GuideBlock key={sec.id} section={sec} />
+            ))}
+            <GuideBlock section={guide.summary} />
           </section>
         ) : null}
 
