@@ -299,7 +299,9 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
                 : ` Die Serie ist abgeschlossen, du kannst **${title} komplett streamen** und alle Folgen am Stück schauen.`
           }${
             expiringGroups.length
-              ? ` Beachte: Bei ${b(expiringGroups.map((g) => g.provider.name))} ist ${title} nur noch bis **${formatDateDe(expiringGroups[0].offers[0].availableTo)}** verfügbar.`
+              ? ` Beachte: ${expiringGroups
+                  .map((g, i) => `${i === 0 ? `Bei **${g.provider.name}** ist ${title} nur noch` : `bei **${g.provider.name}**`} bis **${formatDateDe(g.offers[0].availableTo)}**${i === 0 ? ' verfügbar' : ''}`)
+                  .join(', ')}.`
               : ''
           }`,
     ],

@@ -75,7 +75,9 @@ describe('streamingGuide (Vorlagen-Wortlaut + Datenzusätze)', () => {
     expect(g.sections[1].paragraphs[1]).toContain('**Naruto kaufen oder leihen**: Bei **Amazon Video**')
     expect(g.sections[2].paragraphs[0]).toContain('umfasst **220 Folgen** in 5 Staffeln und stammt aus dem **Herbst 2002** von **Pierrot**')
     expect(g.sections[2].paragraphs[0]).toContain('**Naruto komplett streamen**')
-    expect(g.sections[2].paragraphs[0]).toContain('nur noch bis **31.10.2026** verfügbar')
+    expect(g.sections[2].paragraphs[0]).toContain('Bei **Amazon Prime Video** ist Naruto nur noch bis **31.10.2026** verfügbar.')
+    const two = streamingGuide({ ...naruto, streamingOffers: [...naruto.streamingOffers, { provider: 'aniverse', url: 'https://an', monetization: 'flatrate', audio: 'de', subs: 'de', availableTo: '2026-12-31' }] })!
+    expect(two.sections[2].paragraphs[0]).toContain('Bei **Amazon Prime Video** ist Naruto nur noch bis **31.10.2026** verfügbar, bei **Aniverse** bis **31.12.2026**.')
     expect(g.sections[3].heading).toBe('Warum Naruto bei Crunchyroll streamen?')
     expect(g.sections[3].paragraphs[0]).toContain('**Crunchyroll** – Der größte Anime-Streamingdienst weltweit')
     expect(g.sections[3].paragraphs[0]).toContain('im Abo, im Original mit deutschen Untertiteln, 5 Staffeln mit 173 Folgen')
