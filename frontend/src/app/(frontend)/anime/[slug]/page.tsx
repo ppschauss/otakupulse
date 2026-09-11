@@ -36,6 +36,7 @@ import { StreamingBox } from '@/components/StreamingBox'
 import { similarAnime } from '@/lib/similar'
 import { streamingGuide, streamingMetaDescription, streamingMetaTitle } from '@/lib/streamingText'
 import { Faq } from '@/components/Faq'
+import { RichLine } from '@/components/RichLine'
 import { animeVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 
@@ -274,7 +275,9 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
             <h2 className="mb-2 text-lg font-bold text-white">{guide.heading}</h2>
             <div className="space-y-3 leading-relaxed text-zinc-300">
               {guide.paragraphs.map((p, i) => (
-                <p key={i}>{p}</p>
+                <p key={i}>
+                  <RichLine text={p} />
+                </p>
               ))}
             </div>
           </section>

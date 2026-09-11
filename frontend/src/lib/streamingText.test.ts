@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { streamingMetaDescription, streamingMetaTitle, streamingGuide } from './streamingText'
+import { streamingMetaDescription, streamingMetaTitle, streamingGuide, shortTitle } from './streamingText'
 
 const naruto = {
   id: 7,
@@ -38,6 +38,15 @@ describe('streamingMetaDescription / Title', () => {
   })
 })
 
+describe('shortTitle', () => {
+  it('kürzt Untertitel und behält die Season', () => {
+    expect(shortTitle('Re:ZERO -Starting Life in Another World- Season 4')).toBe('Re:ZERO Season 4')
+    expect(shortTitle('Frieren: Beyond Journey’s End')).toBe('Frieren')
+    expect(shortTitle('Naruto')).toBe('Naruto')
+    expect(shortTitle('A Certain Magical Index II')).toBe('A Certain Magical Index II')
+  })
+})
+
 describe('streamingGuide', () => {
   it('null ohne Anbieter', () => {
     expect(streamingGuide({ id: 1, titleEnglish: 'X' })).toBeNull()
@@ -46,13 +55,13 @@ describe('streamingGuide', () => {
     const g = streamingGuide(naruto)!
     const text = g.paragraphs.join(' ')
     expect(g.paragraphs).toHaveLength(3)
-    expect(text).toContain('Crunchyroll')
-    expect(text).toContain('mit deutscher Synchro')
-    expect(text).toContain('nur noch bis 31.10.2026')
+    expect(text).toContain('**Crunchyroll**')
+    expect(text).toMatch(/deutsche(r|n) Synchro/)
+    expect(text).toContain('31.10.2026')
     expect(text).toContain('5 Staffeln mit 173 Folgen')
-    expect(text).toContain('die Serie')
-    expect(text).toContain('Kostenlos streamen lässt sich Naruto bei Joyn')
-    expect(text).toContain('von Pierrot aus dem Herbst 2002')
+    expect(text).toMatch(/Joyn/)
+    expect(text).toContain('**Pierrot**')
+    expect(text).toMatch(/Herbst 2002/)
     const qs = g.faq.map((f) => f.q)
     expect(qs).toContain('Wo kann man Naruto streamen?')
     expect(qs).toContain('Gibt es Naruto mit deutscher Synchro?')
@@ -60,6 +69,7 @@ describe('streamingGuide', () => {
     expect(g.faq.find((f) => f.q === 'Läuft Naruto auf Netflix?')!.a).toMatch(/^Nein/)
     expect(g.faq.find((f) => f.q === 'Läuft Naruto auf Crunchyroll?')!.a).toMatch(/^Ja/)
     expect(g.faq.find((f) => f.q === 'Kann man Naruto kostenlos streamen?')!.a).toMatch(/^Ja, bei Joyn/)
+    expect(g.faq.map((f) => f.a).join(' ')).not.toContain('**')
   })
   it('Legacy: nur Anbieter-Absatz + Einordnung, keine Sprach-FAQ', () => {
     const g = streamingGuide({ id: 3, titleEnglish: 'Z', streamingProviders: ['netflix'], format: 'TV', episodes: 12 })!
@@ -67,9 +77,10 @@ describe('streamingGuide', () => {
     expect(g.paragraphs.join(' ')).not.toContain('Synchro')
     expect(g.faq.map((f) => f.q)).not.toContain('Gibt es Z mit deutscher Synchro?')
   })
-  it('variiert Formulierungen über die ID', () => {
-    const a = streamingGuide({ ...naruto, id: 1 })!.heading
-    const b = streamingGuide({ ...naruto, id: 2 })!.heading
-    expect(a).not.toBe(b)
+  it('variiert Einstieg und Überschrift über die ID', () => {
+    const a = streamingGuide({ ...naruto, id: 1 })!
+    const b = streamingGuide({ ...naruto, id: 2 })!
+    expect(a.heading).not.toBe(b.heading)
+    expect(a.paragraphs[0].slice(0, 20)).not.toBe(b.paragraphs[0].slice(0, 20))
   })
 })
