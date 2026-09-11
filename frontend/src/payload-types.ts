@@ -242,6 +242,11 @@ export interface Anime {
         | 'iqiyi'
         | 'wetv'
         | 'adult-swim'
+        | 'amazon-video'
+        | 'google-play'
+        | 'rakuten-tv'
+        | 'microsoft-store'
+        | 'sky-store'
         | 'tencent'
       )[]
     | null;
@@ -258,7 +263,7 @@ export interface Anime {
          * Slug aus lib/streaming.ts
          */
         provider: string;
-        monetization?: ('flatrate' | 'ads' | 'free') | null;
+        monetization?: ('flatrate' | 'ads' | 'free' | 'buy' | 'rent') | null;
         /**
          * Deep-Link zum Titel beim Anbieter.
          */
