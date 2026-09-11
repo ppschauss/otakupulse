@@ -23,6 +23,8 @@ describe('streamingMetaDescription / Title', () => {
   it('nennt Anbieter, Sprache, Kostenlos, Genre, Format, Jahr und Folgen', () => {
     const d = streamingMetaDescription(naruto)
     expect(d).toBe('Naruto jetzt auf Crunchyroll, Amazon Prime Video und Joyn streamen – Deutscher Dub & Sub, teils kostenlos. Action/Adventure-Anime (TV-Serie, 2002, 220 Folgen).')
+    const many = { ...naruto, streamingOffers: [...naruto.streamingOffers, { provider: 'netflix', url: 'https://n', monetization: 'flatrate', audio: '', subs: '' }, { provider: 'disney-plus', url: 'https://d', monetization: 'flatrate', audio: '', subs: '' }] }
+    expect(streamingMetaDescription(many)).toContain('Crunchyroll, Netflix, Amazon Prime Video und 2 weiteren Anbietern streamen')
     expect(streamingMetaTitle(naruto)).toBe('Naruto streamen auf Crunchyroll, Amazon Prime Video und Joyn (Deutscher Dub) | OtakuPulse')
   })
   it('ohne Stream: Datenbank-Infos statt Anbieter', () => {
@@ -48,6 +50,7 @@ describe('streamingGuide', () => {
     expect(text).toContain('mit deutscher Synchro')
     expect(text).toContain('nur noch bis 31.10.2026')
     expect(text).toContain('5 Staffeln mit 173 Folgen')
+    expect(text).toContain('die Serie')
     expect(text).toContain('Kostenlos streamen lässt sich Naruto bei Joyn')
     expect(text).toContain('von Pierrot aus dem Herbst 2002')
     const qs = g.faq.map((f) => f.q)

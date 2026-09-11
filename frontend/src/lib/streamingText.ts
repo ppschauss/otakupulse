@@ -97,7 +97,10 @@ export function streamingMetaDescription(anime: any): string {
           ? ' – mit deutschen Untertiteln'
           : ' – im Original mit Untertiteln'
   const free = s.hasFree ? ', teils kostenlos' : ''
-  return `${title} jetzt auf ${joinNames(s.providerNames)} streamen${lang}${free}. ${kind}.`
+  // Max. drei Anbieter namentlich, sonst passen Genre/Jahr nicht mehr in 160 Zeichen.
+  const n = s.providerNames.length
+  const providers = n > 4 ? `${s.providerNames.slice(0, 3).join(', ')} und ${n - 3} weiteren Anbietern` : joinNames(s.providerNames)
+  return `${title} jetzt auf ${providers} streamen${lang}${free}. ${kind}.`
 }
 
 /** „{Anime} streamen auf {Anbieter} (Deutscher Dub) | OtakuPulse" */
@@ -117,6 +120,9 @@ export type StreamingGuide = { heading: string; paragraphs: string[]; faq: FaqIt
 
 /** Satz je Anbieter: „Bei Crunchyroll läuft X im Abo mit deutscher Synchro (5 Staffeln mit 173 Folgen)." */
 function providerSentence(anime: any, title: string, g: Group, idx: number): string {
+  // Ab dem zweiten Anbieter-Satz „die Serie"/„der Film" statt des (oft langen) Titels.
+  const subject = idx === 0 ? title : anime?.format === 'MOVIE' ? 'der Film' : 'die Serie'
+  const object = idx === 0 ? title : anime?.format === 'MOVIE' ? 'den Film' : 'die Serie'
   const lang = langPhrase(g)
   const cost = costPhrase(g)
   const scope = scopePhrase(g)
@@ -125,9 +131,9 @@ function providerSentence(anime: any, title: string, g: Group, idx: number): str
   const tail = scope ? ` (${scope})` : ''
   const expiry = to ? ` – allerdings nur noch bis ${to}` : ''
   const forms = [
-    `Bei ${g.provider.name} läuft ${title}${details ? ` ${details}` : ''}${tail}${expiry}.`,
-    `${g.provider.name} hat ${title}${details ? ` ${details}` : ''} im Programm${tail}${expiry}.`,
-    `Auf ${g.provider.name} kannst du ${title}${details ? ` ${details}` : ''} schauen${tail}${expiry}.`,
+    `Bei ${g.provider.name} läuft ${subject}${details ? ` ${details}` : ''}${tail}${expiry}.`,
+    `${g.provider.name} hat ${object}${details ? ` ${details}` : ''} im Programm${tail}${expiry}.`,
+    `Auf ${g.provider.name} kannst du ${object}${details ? ` ${details}` : ''} schauen${tail}${expiry}.`,
   ]
   return forms[(Math.abs(Number(anime?.id) || 0) + idx) % forms.length]
 }
