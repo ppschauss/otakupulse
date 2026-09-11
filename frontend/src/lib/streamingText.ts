@@ -252,7 +252,7 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
   }
   faq.push({
     q: `Wer zeigt den Simulcast von ${title}?`,
-    a: `Für die Ausstrahlung im Simulcast von ${title} – also die Veröffentlichung zeitnah zur Erstausstrahlung in Japan – ist ${joinNames(names)} eine der zentralen Anlaufstellen. Die Episoden stehen dort meist wenige Stunden nach der Japan-Premiere mit Untertiteln bereit.${
+    a: `Für die Ausstrahlung im Simulcast von ${title} – also die Veröffentlichung zeitnah zur Erstausstrahlung in Japan – ${many ? `sind ${plain} zentrale Anlaufstellen` : `ist ${plain} eine der zentralen Anlaufstellen`}. Die Episoden stehen dort meist wenige Stunden nach der Japan-Premiere mit Untertiteln bereit.${
       running
         ? ` Aktuell laufen neue Folgen – die Sendetermine stehen in unserem Simulcast-Kalender.`
         : anime?.status === 'NOT_YET_RELEASED'
