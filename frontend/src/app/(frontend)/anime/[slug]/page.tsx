@@ -92,20 +92,25 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // (Suchintention „wo streamen"), ohne Stream die Datenbank-Infos. Ein
   // redaktionelles seoTitle/seoDescription gewinnt weiterhin.
   const langTag = s.legacy ? '' : s.hasDeDub ? ' (Deutscher Dub)' : s.hasDeSub ? ' (Ger Sub)' : ''
+  // Google zeigt ~60 Zeichen: bei langen Titeln nur zwei Anbieter nennen.
+  const providerCount = title.length > 30 ? 2 : 3
   const autoTitle = s.hasStream
-    ? `${title} im Stream: ${joinNames(s.providerNames.slice(0, 3))}${langTag} | OtakuPulse`
+    ? `${title} im Stream: ${joinNames(s.providerNames.slice(0, providerCount))}${langTag} | OtakuPulse`
     : `${title} — Anime: Infos, Charaktere & Stream | OtakuPulse`
-  const plot = plainText(anime.descriptionDe || anime.descriptionSource).slice(0, 110)
-  const autoDesc = s.hasStream
+  const plot = plainText(anime.descriptionDe || anime.descriptionSource)
+  const streamLead = s.hasStream
     ? `${title} läuft bei ${joinNames(s.providerNames)}${
         s.hasDeDub && !s.legacy ? ' mit deutscher Synchro' : s.hasDeSub && !s.legacy ? ' mit deutschen Untertiteln' : ''
-      }${s.hasFree ? ', teils kostenlos' : ''}. ${plot ? plot + '…' : 'Handlung, Charaktere, Studio und Episoden.'}`
-    : plot
-      ? `${plot}… Handlung, Charaktere, Studio, Episoden und Streaming-Status zu ${title}.`
-      : `Alle Infos zu ${title}: Charaktere, Studio, Episoden und Streaming-Status.`
+      }${s.hasFree ? ', teils kostenlos' : ''}.`
+    : ''
+  // Genau eine Kürzung an der Wortgrenze — kein „…soll sich al… Handlung, …".
+  const autoDesc = truncateWords(
+    [streamLead, plot || `Alle Infos zu ${title}: Charaktere, Studio, Episoden und Streaming-Status.`].filter(Boolean).join(' '),
+    160,
+  )
   return pageMeta({
     title: applyVarsMeta(anime.seoTitle, vars) || autoTitle,
-    description: applyVarsMeta(anime.seoDescription, vars) || truncateWords(autoDesc, 160),
+    description: applyVarsMeta(anime.seoDescription, vars) || autoDesc,
     path: `/anime/${anime.slug}`,
     image: anime.coverImageUrl,
     // Inhaltliche Indexregel (Stream ODER deutscher Text) — identisch zum Sitemap-keep.
