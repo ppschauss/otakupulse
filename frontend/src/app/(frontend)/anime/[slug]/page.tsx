@@ -138,7 +138,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: applyVarsMeta(anime.seoTitle, vars) || autoTitle,
     description: applyVarsMeta(anime.seoDescription, vars) || autoDesc,
     path: `/anime/${anime.slug}`,
-    image: anime.coverImageUrl,
+    // og:image: eigenes (gespiegeltes) Cover statt AniList-CDN — absolute URL für Share-Vorschauen.
+    image: animeCover(anime) ? (animeCover(anime)!.startsWith('http') ? animeCover(anime)! : url(animeCover(anime)!)) : anime.coverImageUrl,
     // Inhaltliche Indexregel (Stream ODER deutscher Text) — identisch zum Sitemap-keep.
     noindex: !animeIndexable(anime) || undefined,
     canonical: anime.canonicalUrl || undefined,
