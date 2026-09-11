@@ -37,6 +37,9 @@ import { similarAnime } from '@/lib/similar'
 import { streamingGuide, streamingMetaDescription, streamingMetaTitle, type GuideSection } from '@/lib/streamingText'
 import { Faq } from '@/components/Faq'
 import { RichLine } from '@/components/RichLine'
+import { ListLinks } from '@/components/ListLinks'
+import { cachedPlatformListCounts, listLinksForProvider } from '@/lib/platformLists'
+import { groupOffersByProvider, streamingOffersOf } from '@/lib/streaming'
 import { animeVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 
@@ -150,7 +153,14 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
 
   // On-Demand-Fallback: Slug noch nicht in der DB → live von AniList importieren.
   if (!anime) {
-    const importedSlug = await importAnimeBySlug(payload, slug)
+    // Fehler der AniList-API (Rate-Limit, „temporarily disabled") dürfen nie zum 500
+    // werden — für Crawler und Nutzer ist ein unbekannter Slug schlicht ein 404.
+    let importedSlug: string | null = null
+    try {
+      importedSlug = await importAnimeBySlug(payload, slug)
+    } catch (err) {
+      console.warn(`[anime/${slug}] On-Demand-Import fehlgeschlagen:`, (err as Error)?.message || err)
+    }
     if (!importedSlug) notFound()
     // Fuzzy-Treffer landete unter anderem Slug → auf die kanonische URL umleiten.
     if (importedSlug !== slug) redirect(`/anime/${importedSlug}`)
@@ -183,6 +193,22 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
   })
   const similar = await similarAnime(payload, anime)
   const guide = streamingGuide(anime)
+  // Interne Links: Listen der Anbieter dieses Titels — Dub/Sub/Kostenlos/Neu plus die
+  // Genre-Kombis des Titels („Action-Anime auf Crunchyroll"). Nur indexierbare Listen.
+  let listLinks: { href: string; label: string; n: number }[] = []
+  const providerSlugs = groupOffersByProvider(streamingOffersOf(anime)).map((g) => g.provider.slug)
+  if (providerSlugs.length) {
+    const counts = await cachedPlatformListCounts(payload)
+    const genreNames = new Map<string, string>(genres.map((g: any) => [g.slug as string, g.name as string]))
+    const genreSlugs = new Set<string>(genres.map((g: any) => g.slug as string))
+    listLinks = providerSlugs
+      .slice(0, 3)
+      .flatMap((slug) => listLinksForProvider(counts, slug, genreNames).filter((l) => {
+        const f = l.href.split('/')[3]
+        return ['deutscher-dub', 'deutscher-sub', 'kostenlos', 'neu', 'filme'].includes(f) || genreSlugs.has(f)
+      }))
+      .slice(0, 8)
+  }
 
   return (
     <main>
@@ -496,6 +522,8 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
             </div>
           </section>
         ) : null}
+
+        <ListLinks title="Mehr Streaming-Listen" links={listLinks} />
 
         {/* FAQ zum Streaming (FAQPage-JSON-LD über die Faq-Komponente) */}
         {guide?.faq.length ? <Faq items={guide.faq} title={guide.faqHeading} /> : null}

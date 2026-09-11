@@ -151,7 +151,10 @@ export default async function PlatformListPage({
         <strong className="text-zinc-300">So entsteht diese Liste:</strong> Wir gleichen den Katalog von {provider.name}{' '}
         regelmäßig ab und übernehmen nur Titel mit direktem Link zum Stream. Sprachfassung, Staffel-Stand und
         Ablaufdatum stehen auf der jeweiligen Anime-Seite. Kataloge ändern sich laufend — maßgeblich ist immer das
-        aktuelle Angebot bei {provider.name}.
+        aktuelle Angebot bei {provider.name}.{' '}
+        <Link href="/ueber-uns" className="text-zinc-300 underline-offset-2 hover:text-accent hover:underline">
+          So prüfen wir die Verfügbarkeit →
+        </Link>
       </section>
     </main>
   )

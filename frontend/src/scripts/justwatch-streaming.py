@@ -22,6 +22,8 @@ Aufruf (HOST, `pip install curl_cffi` + docker):
   python3 src/scripts/justwatch-streaming.py --only-missing     # nur Titel ohne Offers
   python3 src/scripts/justwatch-streaming.py --stale 150        # rollierend: die 150 am längsten nicht geprüften
   python3 src/scripts/justwatch-streaming.py --slugs naruto,clannad [--dry-run]
+  python3 src/scripts/justwatch-streaming.py --initial                 # Erst-Backfill: kein first_seen_at
+                                                                       # für Titel ohne bisherige Offers
   python3 src/scripts/justwatch-streaming.py --purge-unmatched         # Backfill: Titel OHNE sicheren
                                                                        # Match verlieren ihre alten,
                                                                        # unbelegten Anbieter-Flags
@@ -417,7 +419,7 @@ def fetch_offers(session, a):
     return False
 
 
-def build_sql(a, offers, now_iso):
+def build_sql(a, offers, now_iso, initial=False):
     aid = a["id"]
     stmts = [f"DELETE FROM anime_streaming_offers WHERE _parent_id = {aid};"]
     slugs = set()
@@ -429,7 +431,10 @@ def build_sql(a, offers, now_iso):
         # komplette Katalog 30 Tage lang „Neu". Nur wirklich neue (provider, monet)-
         # Paare bekommen den aktuellen Zeitstempel.
         key = (e["provider"], e["monetization"])
-        first = a["offers"][key] if key in a["offers"] else now_iso
+        # --initial (Erst-Backfill): Titel, die noch nie Offers hatten, bekommen KEIN
+        # first_seen_at — sonst wäre der ganze Katalog 30 Tage lang „Neu auf …".
+        # Danach (Cron ohne Flag) gilt: neues (Anbieter, Monetarisierung)-Paar = jetzt.
+        first = a["offers"][key] if key in a["offers"] else (None if (initial and not a["offers"]) else now_iso)
         if streaming:  # Filter-Index und Sprachen nur aus echten Streaming-Angeboten
             slugs.add(e["provider"])
             for code in e["audio"].split(","):
@@ -487,6 +492,7 @@ def main():
     recent, stale, slugs = _arg("--recent"), _arg("--stale"), _arg("--slugs")
     dry = "--dry-run" in sys.argv
     purge = "--purge-unmatched" in sys.argv
+    initial = "--initial" in sys.argv
     print("→ Lade Anime + vorhandene Anbieter/Offers …")
     anime = load_anime(recent_days=recent, stale_limit=stale, slugs=slugs.split(",") if slugs else None)
     if "--only-missing" in sys.argv:
@@ -540,7 +546,7 @@ def main():
                         changed_ids.append(a["id"])
                         stats["changed"] += 1
                 else:
-                    stmts, changed = build_sql(a, offers, now_iso)
+                    stmts, changed = build_sql(a, offers, now_iso, initial)
                     if dry:
                         print(f"  {a['slug']}: " + (", ".join(
                             f"{o['provider']}/{o['monetization']} a={o['audio']} s={o['subs']} S{o['seasons']} E{o['episodes']} {o['url'][:60]}"

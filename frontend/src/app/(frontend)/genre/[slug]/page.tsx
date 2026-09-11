@@ -10,6 +10,8 @@ import { Faq } from '@/components/Faq'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { Chip } from '@/components/Chip'
 import { SeoFooter } from '@/components/SeoFooter'
+import { ListLinks } from '@/components/ListLinks'
+import { cachedPlatformListCounts, listLinksForGenre } from '@/lib/platformLists'
 import { pageMeta } from '@/lib/seo'
 import { genreBlurb } from '@/lib/genre-info'
 import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
@@ -124,6 +126,7 @@ export default async function GenreDetail({
 
   const genre = await getGenre(slug)
   if (!genre) notFound()
+  const genreListLinks = listLinksForGenre(await cachedPlatformListCounts(await getPayload({ config })), genre.slug, genre.name)
 
   const payload = await getPayload({ config })
   const result = await payload.find({
@@ -279,6 +282,8 @@ export default async function GenreDetail({
               </div>
             </section>
           ) : null}
+
+          <ListLinks title={`${genre.name}-Anime streamen`} links={genreListLinks} />
 
           {/* FAQ */}
           <Faq

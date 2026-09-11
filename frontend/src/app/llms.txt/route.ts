@@ -44,7 +44,8 @@ ${lists.join('\n')}
 
 ## Kontakt & Kanäle
 
-- [Über das Projekt / Impressum](${SITE_URL}/impressum)
+- [Über uns & Methodik: So prüfen wir die Verfügbarkeit](${SITE_URL}/ueber-uns)
+- [Impressum](${SITE_URL}/impressum)
 - [Kontakt](${SITE_URL}/kontakt)
 - Discord: ${DISCORD_INVITE} · X: ${X_URL} · Telegram: ${TELEGRAM_CHANNEL}
 

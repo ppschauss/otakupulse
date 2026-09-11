@@ -22,7 +22,10 @@ export async function AnimeRowAsync({
   where = {},
   sort = '-popularity',
   genreSlug,
-  display = 20,
+  // 12 statt 20: Die Startseite lag bei ~930 KB HTML (7 Reihen × 20 Karten, jede Karte
+  // doppelt — im HTML und im RSC-Payload). 12 Karten reichen für die scrollbare Reihe,
+  // der „mehr →"-Link führt zur vollen Liste. Spart ~40 % Seitengewicht.
+  display = 12,
   rotate = true,
 }: {
   title: string

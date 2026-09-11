@@ -205,3 +205,59 @@ export async function platformListPaths(payload: any): Promise<string[]> {
   }
   return out.sort()
 }
+
+// --- Interne Verlinkung: nur auf indexierbare Listen (≥ MIN_LIST_SIZE) ------------
+
+let countsCache: { at: number; value: Map<string, number> } | null = null
+const COUNTS_TTL_MS = 10 * 60_000
+
+/** platformListCounts mit 10-Minuten-Cache — wird auf jeder Anime-/Genre-Seite und im Footer gebraucht. */
+export async function cachedPlatformListCounts(payload: any): Promise<Map<string, number>> {
+  if (countsCache && Date.now() - countsCache.at < COUNTS_TTL_MS) return countsCache.value
+  const value = await platformListCounts(payload)
+  countsCache = { at: Date.now(), value }
+  return value
+}
+
+export type ListLink = { href: string; label: string; n: number }
+
+/** Listen eines Anbieters (statische Filter + Genres), die indexierbar sind. */
+export function listLinksForProvider(counts: Map<string, number>, providerSlug: string, genreNames: Map<string, string>): ListLink[] {
+  const p = providerBySlug(providerSlug)
+  if (!p || !DE_PROVIDER_SLUGS.includes(providerSlug)) return []
+  const out: ListLink[] = []
+  for (const [key, n] of counts) {
+    const [prov, filter] = key.split('/')
+    if (prov !== providerSlug || n < MIN_LIST_SIZE) continue
+    const sf = staticFilter(filter)
+    const label = sf ? sf.title(p.name) : genreNames.has(filter) ? `${genreNames.get(filter)}-Anime auf ${p.name}` : ''
+    if (label) out.push({ href: `/plattform/${prov}/${filter}`, label, n })
+  }
+  return out.sort((a, b) => b.n - a.n)
+}
+
+/** Alle Anbieter-Listen zu einem Genre („Fantasy-Anime auf Crunchyroll"), indexierbar, nach Größe. */
+export function listLinksForGenre(counts: Map<string, number>, genreSlug: string, genreName: string): ListLink[] {
+  const out: ListLink[] = []
+  for (const [key, n] of counts) {
+    const [prov, filter] = key.split('/')
+    if (filter !== genreSlug || n < MIN_LIST_SIZE) continue
+    const p = providerBySlug(prov)
+    if (!p || !DE_PROVIDER_SLUGS.includes(prov)) continue
+    out.push({ href: `/plattform/${prov}/${genreSlug}`, label: `${genreName}-Anime auf ${p.name}`, n })
+  }
+  return out.sort((a, b) => b.n - a.n)
+}
+
+/** Die größten Dub-/Gratis-Listen site-weit (Footer). */
+export function topListLinks(counts: Map<string, number>, limit = 6): ListLink[] {
+  const out: ListLink[] = []
+  for (const [key, n] of counts) {
+    const [prov, filter] = key.split('/')
+    if (!['deutscher-dub', 'kostenlos'].includes(filter) || n < MIN_LIST_SIZE) continue
+    const p = providerBySlug(prov)
+    if (!p || !DE_PROVIDER_SLUGS.includes(prov)) continue
+    out.push({ href: `/plattform/${prov}/${filter}`, label: staticFilter(filter)!.title(p.name), n })
+  }
+  return out.sort((a, b) => b.n - a.n).slice(0, limit)
+}
