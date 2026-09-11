@@ -118,7 +118,7 @@ export const Anime: CollectionConfig = {
           type: 'row',
           fields: [
             { name: 'provider', type: 'text', required: true, index: true, admin: { description: 'Slug aus lib/streaming.ts' } },
-            { name: 'monetization', type: 'select', options: ['flatrate', 'ads', 'free'], index: true },
+            { name: 'monetization', type: 'select', options: ['flatrate', 'ads', 'free', 'buy', 'rent'], index: true },
           ],
         },
         { name: 'url', type: 'text', required: true, admin: { description: 'Deep-Link zum Titel beim Anbieter.' } },

@@ -116,7 +116,7 @@ export async function platformListCounts(payload: any): Promise<Map<string, numb
     const res = await p.query(
       `SELECT o.provider, count(DISTINCT a.id)::int AS n
        FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
-       WHERE ${c.sql} AND a.is_hentai IS NOT TRUE GROUP BY o.provider`,
+       WHERE ${c.sql} AND o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE GROUP BY o.provider`,
     )
     for (const r of res.rows) out.set(`${r.provider}/${f.key}`, r.n)
   }
@@ -125,7 +125,7 @@ export async function platformListCounts(payload: any): Promise<Map<string, numb
      FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
      JOIN anime_rels ar ON ar.parent_id = a.id AND ar.genres_id IS NOT NULL
      JOIN genres g ON g.id = ar.genres_id
-     WHERE a.is_hentai IS NOT TRUE GROUP BY o.provider, g.slug`,
+     WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE GROUP BY o.provider, g.slug`,
   )
   for (const r of g.rows) out.set(`${r.provider}/${r.slug}`, r.n)
   return out
@@ -136,7 +136,7 @@ export async function platformListPage(payload: any, providerSlug: string, f: Li
   const c = filterCondition(f)
   const p = pool(payload)
   const base = `FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
-                WHERE o.provider = $1 AND ${c.sql} AND a.is_hentai IS NOT TRUE`
+                WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND ${c.sql} AND a.is_hentai IS NOT TRUE`
   const [cnt, ids] = await Promise.all([
     p.query(`SELECT count(DISTINCT a.id)::int AS n ${base}`, [providerSlug, ...c.params]),
     p.query(

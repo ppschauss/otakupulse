@@ -12,6 +12,7 @@
 import { displayTitle, formatDateDe, formatLabel, joinNames, seasonLabel } from './anime'
 import {
   groupOffersByProvider,
+  purchaseOffersOf,
   streamingOffersOf,
   streamingSummary,
   type StreamingOffer,
@@ -146,7 +147,8 @@ function providerSentence(anime: any, short: string, g: Group, idx: number): str
   const cost = costPhrase(g)
   const scope = scopePhrase(g)
   const to = g.offers[0].availableTo ? formatDateDe(g.offers[0].availableTo) : ''
-  const details = [cost, lang].filter(Boolean).join(' ')
+  // Zwei „mit" hintereinander (kostenlos mit Werbung, mit deutscher Synchro) per Komma trennen.
+  const details = cost && lang ? (cost.includes('mit') && lang.startsWith('mit') ? `${cost}, ${lang}` : `${cost} ${lang}`) : cost || lang
   const tail = scope ? ` – ${scope}` : ''
   const expiry = to ? vary(anime, idx + 3, [` Aber Achtung: nur noch bis **${to}**, danach ist der Titel dort weg.`, ` Kleiner Haken: Die Lizenz läuft am **${to}** aus.`]) : ''
   const forms = [
@@ -160,65 +162,135 @@ function providerSentence(anime: any, short: string, g: Group, idx: number): str
   return pool[seed(anime, idx * 7) % pool.length]
 }
 
+export type OverviewRow = { label: string; value: string }
+export type StreamingGuideData = {
+  heading: string
+  intro: string
+  overview: OverviewRow[]
+  cta: { url: string; provider: string; text: string; title: string }
+  paragraphs: string[]
+  faq: FaqItem[]
+}
+
 /**
- * Guide für Titel mit Anbietern: Überschrift, 2–3 Absätze (mit **fett**-Markern,
- * siehe components/RichLine), FAQ. null ohne Anbieter.
+ * Guide für Titel mit Anbietern (Muster: Intro → Anbieter-Übersicht → CTA →
+ * Fließtext → FAQ). Texte mit **fett**-Markern (components/RichLine), FAQ-Antworten
+ * ohne Marker (gehen 1:1 ins FAQPage-JSON-LD). null ohne Anbieter.
  */
-export function streamingGuide(anime: any): StreamingGuide {
+export function streamingGuide(anime: any): StreamingGuideData | null {
   const views = streamingOffersOf(anime)
-  if (!views.length) return null
+  const groups = groupOffersByProvider(views)
+  if (!groups.length) return null
   const title = displayTitle(anime)
   const short = shortTitle(title)
-  const groups = groupOffersByProvider(views)
   const s = streamingSummary(anime)
   const names = groups.map((g) => g.provider.name)
   const bold = names.map((n) => `**${n}**`)
   const stand = formatDateDe(s.checkedAt)
   const standTxt = stand ? ` (Stand: ${stand})` : ''
   const year = yearOf(anime)
+  const when = year ? (anime?.season ? `${seasonLabel(anime.season)} ${year}` : `${year}`) : ''
   const gen = genres(anime)
+  const genreTxt = gen.length ? joinNames(gen.slice(0, 3)) : ''
   const studio = studioName(anime)
   const isMovie = anime?.format === 'MOVIE'
   const running = anime?.status === 'RELEASING'
   const many = groups.length > 1
+  const dubAt = groups.filter(hasDe).map((g) => g.provider.name)
+  const subAt = groups.filter(hasDeSub).map((g) => g.provider.name)
+  // Anbieter, die NUR Untertitel haben (für „alternativ bei …"); Dub-Anbieter mit Sub → „wahlweise".
+  const subOnly = subAt.filter((n) => !dubAt.includes(n))
+  const dubWithSub = dubAt.some((n) => subAt.includes(n))
+  const freeAt = groups.filter(isFree).map((g) => g.provider.name)
+  const stores = purchaseOffersOf(anime)
+  const first = groups[0]
+  const thing = isMovie ? 'der Film' : 'die Serie'
+  const thingAcc = isMovie ? 'den Film' : 'die Serie'
 
-  const paragraphs: string[] = []
-
-  // Absatz 1 — Einstieg (bewusst nicht immer mit dem Titel) + Anbieter-Sätze
-  const intro = vary(anime, 0, [
-    `Gute Nachrichten für alle, die **${short}** auf der Watchlist haben: In Deutschland ${many ? 'laufen gleich mehrere Anbieter mit' : 'gibt es einen legalen Weg'} – ${joinNames(bold)}${standTxt}.`,
-    `Kurz und schmerzlos: ${joinNames(bold)} ${many ? 'haben' : 'hat'} **${short}** im Programm${standTxt}.`,
-    `Du willst **${short}** sehen, ohne dich durch Kataloge zu wühlen? Hier läuft ${isMovie ? 'der Film' : 'die Serie'} in Deutschland: ${joinNames(bold)}${standTxt}.`,
-    `Legal, in Deutschland, ohne Umwege: **${short}** gibt's bei ${joinNames(bold)}${standTxt}.`,
-    `Wo läuft **${short}**? Die Antwort ist ${many ? 'erfreulich lang' : 'kurz'}: ${joinNames(bold)}${standTxt}.`,
+  // --- Überschrift (immer „Wer streamt …" — die Suchphrase)
+  const heading = vary(anime, 8, [
+    `Wer streamt ${short}? Alle Anbieter & Optionen`,
+    `Wer streamt ${short}? Anbieter, Sprachen, Kosten`,
+    `Wer streamt ${short} in Deutschland?`,
   ])
-  // Anbieter-Sätze nur, wenn sie etwas Neues sagen: Legacy-Flags ohne Sprach-/
-  // Episodendaten würden bei einem einzelnen Anbieter nur den Einstieg wiederholen.
+
+  // --- Intro
+  const langLead = s.legacy
+    ? ''
+    : dubAt.length
+      ? ` Dort kannst du direkt einschalten und **${short} auf Deutsch streamen** – oder im japanischen Original mit Untertiteln.`
+      : subAt.length
+        ? ` Dort läuft ${thing} **im japanischen Original mit deutschen Untertiteln** – eine Synchro gibt es bislang nicht.`
+        : ` Dort läuft ${thing} im Original mit Untertiteln.`
+  const intro = vary(anime, 0, [
+    `Auf der Suche nach dem passenden Stream für **${short}**? Hier ist die Antwort: ${when ? `Seit dem ${when} ` : ''}${many ? `führen ${joinNames(bold)} ${thingAcc}` : `führt ${bold[0]} ${thingAcc}`} im Sortiment${standTxt}.${langLead}`,
+    `Gute Nachrichten für alle, die **${short}** auf der Watchlist haben: ${many ? `Gleich ${groups.length} Anbieter haben ${thingAcc} in Deutschland im Programm – ${joinNames(bold)}` : `${bold[0]} hat ${thingAcc} in Deutschland im Programm`}${standTxt}.${langLead}`,
+    `Kurz und schmerzlos: **${short}** läuft bei ${joinNames(bold)}${standTxt}.${when ? ` ${isMovie ? 'Der Film' : 'Die Serie'} stammt aus dem ${when}${studio ? ` (${studio})` : ''}.` : ''}${langLead}`,
+    `Legal, in Deutschland, ohne Umwege: **${short}** gibt's bei ${joinNames(bold)}${standTxt}.${langLead}`,
+  ])
+
+  // --- Übersicht
+  const overview: OverviewRow[] = [{ label: many ? 'Streaming-Anbieter' : 'Streaming-Anbieter', value: names.join(', ') }]
+  if (!s.legacy) {
+    const audio: string[] = []
+    if (dubAt.length) audio.push(`Deutsch (${dubAt.join(', ')})`)
+    if (groups.some((g) => g.offers.some((o) => o.audio.includes('en')))) audio.push('Englisch')
+    audio.push('Japanisch')
+    overview.push({ label: 'Audio-Spuren', value: audio.join(' · ') })
+    const subs: string[] = []
+    if (subAt.length) subs.push(`Deutsch (${subAt.join(', ')})`)
+    if (groups.some((g) => g.offers.some((o) => o.subs.includes('en')))) subs.push('Englisch')
+    if (subs.length) overview.push({ label: 'Untertitel', value: subs.join(' · ') })
+    const cost: string[] = []
+    const aboAt = groups.filter((g) => !isFree(g)).map((g) => g.provider.name)
+    if (aboAt.length) cost.push(`Abo (${aboAt.join(', ')})`)
+    if (freeAt.length) cost.push(`kostenlos mit Werbung (${freeAt.join(', ')})`)
+    overview.push({ label: 'Kosten', value: cost.join(' · ') })
+  }
+  if (stores.length) {
+    overview.push({ label: 'Kaufen / Leihen', value: stores.map((st) => `${st.provider.name} (${[st.buy ? 'Kauf' : '', st.rent ? 'Leihe' : ''].filter(Boolean).join('/')})`).join(' · ') })
+  }
+  const release = [when, formatLabel(anime?.format), !isMovie && anime?.episodes ? `${anime.episodes} Folgen` : ''].filter(Boolean).join(' · ')
+  if (release) overview.push({ label: 'Release', value: release })
+  if (studio) overview.push({ label: 'Studio', value: studio })
+  overview.push({ label: 'Status', value: running ? 'läuft aktuell (Simulcast)' : anime?.status === 'NOT_YET_RELEASED' ? 'angekündigt' : 'abgeschlossen' })
+
+  // --- CTA
+  const cta = {
+    url: first.offers[0].url,
+    provider: first.provider.name,
+    text: vary(anime, 5, [
+      `Zu ${first.provider.name} wechseln und ${short} streamen`,
+      `${short} jetzt bei ${first.provider.name} schauen`,
+      `Direkt zu ${short} auf ${first.provider.name}`,
+    ]),
+    title: `${title} online streamen bei ${first.provider.name}`,
+  }
+
+  // --- Fließtext: Anbieter-Details + Sprache/Kosten
+  const paragraphs: string[] = []
   const providerLines = groups
     .slice(0, 4)
     .filter((g) => !(isLegacy(g) && groups.length === 1))
     .map((g, i) => providerSentence(anime, short, g, i))
-  paragraphs.push([intro, ...providerLines].join(' '))
-
-  // Absatz 2 — Sprachfassung & Kosten (nur mit belegten Daten)
+  if (providerLines.length) {
+    paragraphs.push(
+      vary(anime, 9, [`Im Detail:`, `So sieht das Angebot im Einzelnen aus:`, `Die Anbieter im Überblick:`]) + ' ' + providerLines.join(' '),
+    )
+  }
   if (!s.legacy) {
-    const dubAt = groups.filter(hasDe).map((g) => g.provider.name)
-    const subOnly = groups.filter((g) => !hasDe(g) && hasDeSub(g)).map((g) => g.provider.name)
-    const freeAt = groups.filter(isFree).map((g) => g.provider.name)
     const parts: string[] = []
     if (dubAt.length) {
       parts.push(vary(anime, 1, [
-        `**Ger Dub oder Ger Sub?** Beides geht: Mit deutscher Synchro läuft ${short} bei ${joinNames(dubAt.map((n) => `**${n}**`))}${subOnly.length ? `, im Originalton mit deutschen Untertiteln bei ${joinNames(subOnly)}` : ''}.`,
-        `Kein Mitlesen nötig: ${joinNames(dubAt.map((n) => `**${n}**`))} ${dubAt.length > 1 ? 'haben' : 'hat'} ${short} **mit deutscher Synchro**${subOnly.length ? ` – wer lieber OmU schaut, wird bei ${joinNames(subOnly)} glücklich` : ''}.`,
-        `Für Dub-Fans: Die **deutsche Synchronfassung** gibt es bei ${joinNames(dubAt.map((n) => `**${n}**`))}${subOnly.length ? `; ${joinNames(subOnly)} ${subOnly.length > 1 ? 'setzen' : 'setzt'} auf Original mit deutschen Untertiteln` : ''}.`,
+        `**Ger Dub oder Ger Sub?** ${dubWithSub ? 'Beides, sogar beim selben Anbieter' : 'Beides geht'}: Mit deutscher Synchro läuft ${short} bei ${joinNames(dubAt.map((n) => `**${n}**`))}${dubWithSub ? ' – dort wahlweise auch im Original mit deutschen Untertiteln' : ''}${subOnly.length ? `${dubWithSub ? ';' : ','} nur mit Untertiteln bei ${joinNames(subOnly)}` : ''}.`,
+        `Kein Mitlesen nötig: ${joinNames(dubAt.map((n) => `**${n}**`))} ${dubAt.length > 1 ? 'haben' : 'hat'} ${short} **mit deutscher Synchro**${dubWithSub ? ' (und für OmU-Fans auch mit deutschen Untertiteln)' : ''}${subOnly.length ? ` – wer lieber OmU schaut, wird bei ${joinNames(subOnly)} glücklich` : ''}.`,
+        `Für Dub-Fans: Die **deutsche Synchronfassung** gibt es bei ${joinNames(dubAt.map((n) => `**${n}**`))}${dubWithSub ? ', auf Wunsch auch als Original mit deutschen Untertiteln' : ''}${subOnly.length ? `; nur Untertitel bei ${joinNames(subOnly)}` : ''}.`,
       ]))
-    } else if (groups.some(hasDeSub)) {
+    } else if (subAt.length) {
       parts.push(vary(anime, 1, [
         `Eine deutsche Synchro gibt es (noch) nicht – ${short} läuft **im japanischen Original mit deutschen Untertiteln**. Für OmU-Fans ohnehin die erste Wahl.`,
         `**Ger Sub statt Ger Dub:** Aktuell ist ${short} nur im Original mit deutschen Untertiteln im Stream. Sobald ein Anbieter eine Synchro nachschiebt, steht es hier.`,
       ]))
-    } else {
-      parts.push(`Eine deutsche Fassung ist bislang nicht gelistet – ${short} läuft **im Original mit Untertiteln**.`)
     }
     if (freeAt.length) {
       parts.push(vary(anime, 2, [
@@ -231,74 +303,77 @@ export function streamingGuide(anime: any): StreamingGuide {
         `Kostenlos gibt's ${short} momentan nirgends; ohne Abo läuft hier nichts.`,
       ]))
     }
+    if (stores.length) parts.push(`Wer lieber besitzt statt abonniert: ${joinNames(stores.map((st) => st.provider.name))} ${stores.length > 1 ? 'bieten' : 'bietet'} ${short} zum Kauf${stores.some((st) => st.rent) ? ' oder zur Leihe' : ''} an.`)
     paragraphs.push(parts.join(' '))
   }
+  const closer = [
+    running
+      ? vary(anime, 4, [
+          `**Simulcast-Alarm:** ${short} läuft aktuell – neue Folgen kommen frisch aus Japan, die Termine stehen im Kalender.`,
+          `Und: ${short} läuft gerade – jede Woche eine neue Folge im Simulcast, den Sendeplan findest du im Kalender.`,
+        ])
+      : !isMovie && anime?.episodes
+        ? vary(anime, 4, [
+            `${anime.episodes} Folgen am Stück – ${anime.episodes > 26 ? 'genug Stoff für einen ausgedehnten Binge' : 'perfekt für ein Wochenende'}.`,
+            `Die Serie ist abgeschlossen: alle ${anime.episodes} Folgen liegen bereit, kein Warten auf die nächste Woche.`,
+          ])
+        : '',
+    vary(anime, 6, [
+      `Lizenzen wandern – wir gleichen die Verfügbarkeit regelmäßig ab.`,
+      `Sollte sich an der Verfügbarkeit etwas ändern, steht es hier zuerst.`,
+    ]),
+  ].filter(Boolean)
+  paragraphs.push(closer.join(' '))
 
-  // Absatz 3 — Einordnung & Aufforderung (Studio, Season, Genre, Folgen, Simulcast)
-  const genreTxt = gen.length ? joinNames(gen.slice(0, 3)) : ''
-  const when = year ? (anime?.season ? `${seasonLabel(anime.season)} ${year}` : `${year}`) : ''
-  const origin = vary(anime, 3, [
-    `Zur Einordnung: ${short} ${isMovie ? 'ist ein Anime-Film' : 'ist eine Serie'}${studio ? ` von **${studio}**` : ''}${when ? ` (${when})` : ''}${genreTxt ? ` – ${genreTxt}` : ''}${!isMovie && anime?.episodes ? `, ${anime.episodes} Folgen` : ''}.`,
-    `${studio ? `**${studio}**` : 'Das Studio'} liefert hier ${genreTxt ? `${genreTxt}` : 'Anime'}${when ? ` aus dem ${when}` : ''}${!isMovie && anime?.episodes ? ` – ${anime.episodes} Folgen, ${anime.episodes > 26 ? 'also genug Stoff für einen ausgedehnten Binge' : 'perfekt für ein Wochenende'}` : ''}.`,
-    `Falls du noch überlegst: ${genreTxt ? `${genreTxt}` : 'Anime'}${studio ? ` aus dem Hause **${studio}**` : ''}${when ? `, ${when}` : ''}${!isMovie && anime?.episodes ? `, ${anime.episodes} Folgen` : ''} – ${short} ist ${anime?.averageScore >= 80 ? 'zu Recht ein Community-Liebling' : 'einen Blick wert'}.`,
-  ])
-  const simulcast = running
-    ? vary(anime, 4, [
-        ` **Simulcast-Alarm:** Die Serie läuft aktuell, neue Folgen kommen frisch aus Japan – die Termine stehen in unserem Kalender.`,
-        ` Und: ${short} läuft gerade – jede Woche eine neue Folge im Simulcast, den Sendeplan findest du im Kalender.`,
-      ])
-    : ''
-  const cta = vary(anime, 5, [
-    ` Also: Watchlist auf, **${names[0]}** an – der Link oben führt direkt zum Titel.`,
-    ` Ein Klick auf **${names[0]}** und es geht los, ohne Suchen im Katalog.`,
-    ` Bei **${names[0]}** jetzt ${short} schauen – die Karte oben bringt dich direkt hin.`,
-  ])
-  const note = vary(anime, 6, [
-    ` Lizenzen wandern – wir gleichen die Verfügbarkeit regelmäßig ab.`,
-    ` Sollte sich an der Verfügbarkeit etwas ändern, steht es hier zuerst.`,
-  ])
-  paragraphs.push(origin + simulcast + cta + note)
-
-  // FAQ (Antworten bewusst ohne Marker: gehen 1:1 ins FAQPage-JSON-LD)
+  // --- FAQ: dieselben Fragen wie im Muster, aber mit Daten beantwortet
   const faq: FaqItem[] = []
   faq.push({
-    q: `Wo kann man ${short} streamen?`,
-    a: `${short} läuft in Deutschland bei ${joinNames(names)}${standTxt}. Die Karten auf dieser Seite führen direkt zum Titel beim jeweiligen Anbieter.`,
+    q: `Wer hat ${short} aktuell im Angebot?`,
+    a: `${isMovie ? 'Der Film' : 'Der Anime'} ist derzeit bei ${joinNames(names)} gelistet${standTxt}. Die Karten oben führen direkt zum Titel beim jeweiligen Anbieter.`,
   })
   if (!s.legacy) {
-    const dubAt = groups.filter(hasDe).map((g) => g.provider.name)
     faq.push({
-      q: `Gibt es ${short} mit deutscher Synchro?`,
+      q: `Wer streamt ${short} auf Deutsch?`,
       a: dubAt.length
-        ? `Ja – mit Ger Dub läuft ${short} bei ${joinNames(dubAt)}.`
-        : `Noch nicht. Aktuell gibt es ${short} nur im Original mit Untertiteln; sobald ein Anbieter eine deutsche Synchro listet, erscheint sie hier.`,
-    })
-    const freeAt = groups.filter(isFree).map((g) => g.provider.name)
-    faq.push({
-      q: `Kann man ${short} kostenlos streamen?`,
-      a: freeAt.length
-        ? `Ja, bei ${joinNames(freeAt)} läuft ${short} kostenlos (werbefinanziert, ohne Abo).`
-        : `Nein, ${short} gibt es momentan nur im Abo – bei ${joinNames(names)}.`,
+        ? `Die deutsche Synchronfassung steht bei ${joinNames(dubAt)} zum Abruf bereit${dubWithSub ? ' – dort wahlweise auch im Original mit deutschen Untertiteln' : ''}.${subOnly.length ? ` Nur mit deutschen Untertiteln läuft ${short} bei ${joinNames(subOnly)}.` : ''}`
+        : subAt.length
+          ? `Eine deutsche Synchro gibt es bislang nicht; ${joinNames(subAt)} ${subAt.length > 1 ? 'zeigen' : 'zeigt'} ${short} im japanischen Original mit deutschen Untertiteln. Sobald ein Anbieter einen Dub listet, erscheint er hier.`
+          : `Derzeit ist ${short} nur im Original mit Untertiteln im Stream – noch ohne deutsche Fassung.`,
     })
   }
-  // „Läuft X auf Netflix/Crunchyroll?" — die zwei meistgesuchten Dienste, jeweils Ja/Nein.
-  for (const big of ['Netflix', 'Crunchyroll']) {
-    const g = groups.find((x) => x.provider.name === big)
-    if (g) {
-      faq.push({ q: `Läuft ${short} auf ${big}?`, a: `Ja. ${providerSentence(anime, short, g, 0).replace(/\*\*/g, '')}` })
-    } else if (faq.length < 5) {
-      faq.push({ q: `Läuft ${short} auf ${big}?`, a: `Nein, bei ${big} ist ${short} derzeit nicht im Programm. Stattdessen läuft der Titel bei ${joinNames(names)}.` })
-    }
-  }
-  if (!isMovie && anime?.episodes) {
-    faq.push({ q: `Wie viele Folgen hat ${short}?`, a: `${short} umfasst ${anime.episodes} Folgen${running ? ' – die Serie läuft noch, es kommen wöchentlich neue dazu' : ''}.` })
-  }
+  faq.push({
+    q: `Wer zeigt den Simulcast von ${short}?`,
+    a: running
+      ? `${short} läuft aktuell im Simulcast: ${joinNames(names)} ${many ? 'zeigen' : 'zeigt'} neue Folgen zeitnah zur Japan-Ausstrahlung, meist mit Untertiteln wenige Stunden nach der Premiere. Die Sendetermine stehen in unserem Kalender.`
+      : anime?.status === 'NOT_YET_RELEASED'
+        ? `${short} ist angekündigt, aber noch nicht gestartet. Welcher Anbieter den Simulcast übernimmt, tragen wir ein, sobald es offiziell ist.`
+        : `${short} ist abgeschlossen – einen laufenden Simulcast gibt es nicht mehr. Alle Folgen sind bei ${joinNames(names)} komplett abrufbar.`,
+  })
+  const bigs = ['Netflix', 'Crunchyroll', 'Amazon Prime Video']
+  const yes = bigs.filter((b) => names.includes(b))
+  const no = bigs.filter((b) => !names.includes(b))
+  faq.push({
+    q: `Streamen auch Netflix, Crunchyroll oder Amazon Prime Video ${short}?`,
+    a: [
+      yes.length ? `Ja: ${joinNames(yes)} ${yes.length > 1 ? 'haben' : 'hat'} ${short} im Programm.` : '',
+      no.length ? `Bei ${joinNames(no)} ist ${short} derzeit nicht gelistet.` : '',
+      `Streaming-Rechte werden je Land vergeben – wir zeigen hier ausschließlich den Stand für Deutschland${standTxt}.`,
+    ].filter(Boolean).join(' '),
+  })
+  faq.push({
+    q: `Kann man ${short} auch ohne Abo streamen, kaufen oder leihen?`,
+    a: [
+      freeAt.length ? `Ohne Abo geht es bei ${joinNames(freeAt)} – dort läuft ${short} kostenlos mit Werbung.` : `Einen kostenlosen Stream gibt es für ${short} derzeit nicht.`,
+      stores.length
+        ? `Als Einzelkauf${stores.some((st) => st.rent) ? ' oder Leihe' : ''} ist ${short} bei ${joinNames(stores.map((st) => st.provider.name))} erhältlich.`
+        : `Ein Kauf- oder Leihangebot ist aktuell nicht gelistet.`,
+    ].join(' '),
+  })
+  const expiring = groups.filter((g) => g.offers[0].availableTo).map((g) => `${g.provider.name} (bis ${formatDateDe(g.offers[0].availableTo)})`)
+  faq.push({
+    q: `Warum ändert sich manchmal, wer ${short} streamt?`,
+    a: `Streaming-Rechte werden für bestimmte Zeiträume verhandelt; laufen Lizenzverträge aus oder werden verlängert, wandert ein Titel zwischen den Anbietern.${expiring.length ? ` Für ${short} ist aktuell ein Enddatum bekannt: ${joinNames(expiring)}.` : ''} Wir gleichen die Verfügbarkeit für diesen Titel regelmäßig mit den Anbieter-Katalogen ab${stand ? ` – zuletzt am ${stand}` : ''}.`,
+  })
 
-  const heading = vary(anime, 8, [
-    `${short} streamen: Anbieter, Sprachen & Kosten`,
-    `Wo kann ich ${short} streamen?`,
-    `${short} online schauen – alle Anbieter im Überblick`,
-    `${short} legal streamen: So geht's`,
-  ])
-  return { heading, paragraphs, faq: faq.slice(0, 6) }
+  return { heading, intro, overview, cta, paragraphs, faq }
 }

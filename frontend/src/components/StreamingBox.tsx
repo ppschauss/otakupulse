@@ -3,6 +3,7 @@ import { formatDateDe, joinNames } from '@/lib/anime'
 import {
   MONETIZATION_LABELS,
   groupOffersByProvider,
+  purchaseOffersOf,
   streamingOffersOf,
   streamingSummary,
   type StreamingOffer,
@@ -21,6 +22,7 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
   const groups = groupOffersByProvider(views)
   const s = streamingSummary(anime)
   const stand = formatDateDe(s.checkedAt)
+  const stores = purchaseOffersOf(anime)
 
   return (
     <section id="stream" className="mt-8 scroll-mt-24">
@@ -96,6 +98,21 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
           </Link>
         </p>
       )}
+      {/* Kauf/Leih (VoD-Stores) — kein Stream, aber die Antwort auf „kaufen oder leihen?" */}
+      {stores.length ? (
+        <p className="mt-3 text-xs text-zinc-500">
+          Kaufen oder leihen:{' '}
+          {stores.map((st, i) => (
+            <span key={st.provider.slug}>
+              {i > 0 ? ' · ' : ''}
+              <a href={st.url} target="_blank" rel="nofollow noopener noreferrer" className="text-zinc-400 hover:text-accent">
+                {st.provider.name}
+              </a>
+              <span className="text-zinc-600"> ({[st.buy ? 'Kauf' : '', st.rent ? 'Leihe' : ''].filter(Boolean).join('/')})</span>
+            </span>
+          ))}
+        </p>
+      ) : null}
     </section>
   )
 }

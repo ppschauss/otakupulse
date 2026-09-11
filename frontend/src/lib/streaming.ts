@@ -27,6 +27,8 @@ export type StreamingProvider = {
   about?: string
   /** DE = in Deutschland nutzbarer Dienst (Listen-Seiten, Sitemap). INTL = nur informativ (Hulu, Bilibili …). */
   region?: 'DE' | 'INTL'
+  /** Kauf-/Leih-Store (Amazon Video, Apple TV, Google Play …): kein Streaming-Abo → keine Listen, kein Filter-Index. */
+  store?: boolean
 }
 
 /** Wikimedia-Commons-Logo (CC) als hotlinkbare URL. */
@@ -178,6 +180,7 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     name: 'Apple TV',
     aliases: ['Apple TV Plus', 'Apple TV+', 'Apple TV'],
     region: 'DE',
+    store: true,
     color: '#000000',
     homepage: 'https://tv.apple.com',
     logo: commons('Apple_TV_Plus_Logo.svg'),
@@ -219,6 +222,12 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
     about:
       'Adult Swim ist ein US-amerikanischer Programmblock, der mit „Toonami" maßgeblich dazu beitrug, Anime im englischsprachigen Raum populär zu machen, und inzwischen auch eigene Anime-Produktionen in Auftrag gibt.',
   },
+  // --- Kauf/Leih (VoD-Stores). JustWatch-Monetarisierung BUY/RENT. Nur informativ. ---
+  { slug: 'amazon-video', name: 'Amazon Video', aliases: ['Amazon Video', 'Amazon Prime Video Store'], region: 'DE', store: true, color: '#00a8e1', homepage: 'https://www.amazon.de/gp/video/storefront', blurb: 'Einzelkauf und Leihe bei Amazon Video.' },
+  { slug: 'google-play', name: 'Google Play', aliases: ['Google Play Movies', 'Google Play'], region: 'DE', store: true, color: '#34a853', homepage: 'https://play.google.com/store/movies', blurb: 'Kaufen oder leihen im Google Play Store.' },
+  { slug: 'rakuten-tv', name: 'Rakuten TV', aliases: ['Rakuten TV'], region: 'DE', store: true, color: '#bf0000', homepage: 'https://www.rakuten.tv/de', blurb: 'Kaufen oder leihen bei Rakuten TV.' },
+  { slug: 'microsoft-store', name: 'Microsoft Store', aliases: ['Microsoft Store'], region: 'DE', store: true, color: '#0078d4', homepage: 'https://www.microsoft.com/de-de/store/movies-and-tv', blurb: 'Kaufen oder leihen im Microsoft Store.' },
+  { slug: 'sky-store', name: 'Sky Store', aliases: ['Sky Store'], region: 'DE', store: true, color: '#0072c9', homepage: 'https://store.sky.de', blurb: 'Kaufen oder leihen im Sky Store.' },
   { slug: 'tencent', name: 'Tencent Video', aliases: ['Tencent Video'], region: 'INTL', color: '#0052d9', homepage: 'https://v.qq.com', blurb: 'Chinesische Plattform mit großem Donghua- und Anime-Angebot.' },
 ]
 
@@ -237,7 +246,7 @@ export const PROVIDER_SLUGS = STREAMING_PROVIDERS.map((p) => p.slug)
 /** Optionen für das Payload-Select-Feld `streamingProviders`. */
 export const PROVIDER_OPTIONS = STREAMING_PROVIDERS.map((p) => ({ label: p.name, value: p.slug }))
 /** Slugs der in Deutschland nutzbaren Anbieter — Basis für Listen-Seiten und Sitemap. */
-export const DE_PROVIDER_SLUGS = STREAMING_PROVIDERS.filter((p) => p.region === 'DE').map((p) => p.slug)
+export const DE_PROVIDER_SLUGS = STREAMING_PROVIDERS.filter((p) => p.region === 'DE' && !p.store).map((p) => p.slug)
 
 /**
  * Anbieter eines Anime aus dem normalisierten Feld `streamingProviders` (Slugs),
@@ -260,13 +269,19 @@ export function streamingProvidersOf(anime: any): { provider: StreamingProvider;
 
 // --- Anbieter-genaue Angebote (streamingOffers) -------------------------------
 
-export type Monetization = 'flatrate' | 'ads' | 'free'
+export type Monetization = 'flatrate' | 'ads' | 'free' | 'buy' | 'rent'
 
 export const MONETIZATION_LABELS: Record<Monetization, string> = {
   flatrate: 'Im Abo',
   ads: 'Kostenlos (mit Werbung)',
   free: 'Kostenlos',
+  buy: 'Kaufen',
+  rent: 'Leihen',
 }
+
+/** Streaming (Abo/Werbung/Free) vs. Kauf/Leih — nur Streaming zählt als „läuft bei". */
+export const STREAM_MONETIZATIONS: readonly Monetization[] = ['flatrate', 'ads', 'free']
+export const isStreamingOffer = (o: StreamingOffer) => o.monetization === null || STREAM_MONETIZATIONS.includes(o.monetization)
 
 export type StreamingOffer = {
   provider: string
@@ -292,7 +307,7 @@ export const splitCsv = (s?: string | null): string[] =>
     .map((x) => x.trim())
     .filter(Boolean)
 
-const MONETIZATIONS: readonly string[] = ['flatrate', 'ads', 'free']
+const MONETIZATIONS: readonly string[] = ['flatrate', 'ads', 'free', 'buy', 'rent']
 const providerRank = (slug: string) => PROVIDER_SLUGS.indexOf(slug)
 
 /**
@@ -324,7 +339,14 @@ export function streamingOffersOf(anime: any): OfferView[] {
     })
   }
   if (views.length) {
-    return views.sort((a, b) => providerRank(a.provider.slug) - providerRank(b.provider.slug))
+    views.sort((a, b) => providerRank(a.provider.slug) - providerRank(b.provider.slug))
+    // Kauf/Leih allein ist kein Stream: dann zusätzlich Legacy-Flags (falls vorhanden) davor.
+    if (views.some((v) => isStreamingOffer(v.offer))) return views
+    const legacy = streamingProvidersOf(anime).map(({ provider, url }) => ({
+      provider,
+      offer: { provider: provider.slug, url, monetization: null as Monetization | null, audio: [] as string[], subs: [] as string[], legacy: true },
+    }))
+    return [...legacy, ...views]
   }
   return streamingProvidersOf(anime).map(({ provider, url }) => ({
     provider,
@@ -332,13 +354,30 @@ export function streamingOffersOf(anime: any): OfferView[] {
   }))
 }
 
-/** Angebote nach Anbieter bündeln (z. B. Crunchyroll Abo + Crunchyroll Free). */
+/** Streaming-Angebote nach Anbieter bündeln (z. B. Crunchyroll Abo + Crunchyroll Free). Kauf/Leih bleibt draußen. */
 export function groupOffersByProvider(views: OfferView[]): { provider: StreamingProvider; offers: StreamingOffer[] }[] {
   const out: { provider: StreamingProvider; offers: StreamingOffer[] }[] = []
   for (const v of views) {
+    if (!isStreamingOffer(v.offer)) continue
     const g = out.find((x) => x.provider.slug === v.provider.slug)
     if (g) g.offers.push(v.offer)
     else out.push({ provider: v.provider, offers: [v.offer] })
+  }
+  return out
+}
+
+/** Kauf-/Leih-Angebote (Amazon Video, Apple TV …) je Store: [{ provider, buy, rent, url }]. */
+export function purchaseOffersOf(anime: any): { provider: StreamingProvider; buy: boolean; rent: boolean; url: string }[] {
+  const out: { provider: StreamingProvider; buy: boolean; rent: boolean; url: string }[] = []
+  for (const v of streamingOffersOf(anime)) {
+    if (isStreamingOffer(v.offer)) continue
+    let g = out.find((x) => x.provider.slug === v.provider.slug)
+    if (!g) {
+      g = { provider: v.provider, buy: false, rent: false, url: v.offer.url }
+      out.push(g)
+    }
+    if (v.offer.monetization === 'buy') g.buy = true
+    if (v.offer.monetization === 'rent') g.rent = true
   }
   return out
 }
@@ -359,7 +398,7 @@ const NEW_WINDOW_MS = 30 * 86400_000
 
 /** Kompakte Kennzahlen für Title/Description/Intro-Satz der Anime-Seite. */
 export function streamingSummary(anime: any, now: Date = new Date()): StreamingSummary {
-  const views = streamingOffersOf(anime)
+  const views = streamingOffersOf(anime).filter((v) => isStreamingOffer(v.offer))
   const legacy = views.length > 0 && views.every((v) => v.offer.legacy)
   const langs: string[] = Array.isArray(anime?.availableLanguages) ? anime.availableLanguages : []
   const hasDeDub = legacy ? langs.includes('de-dub') : views.some((v) => v.offer.audio.includes('de'))

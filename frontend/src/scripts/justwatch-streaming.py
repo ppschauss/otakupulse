@@ -9,8 +9,10 @@ first/last_seen. Daraus werden abgeleitet:
   - `anime_streaming_providers` (Filter-Index, Slugs)            — autoritativ auf gematchten Titeln
   - `anime_available_languages` (de-dub/de-sub/en-dub/en-sub/ja) — NUR ADDITIV
     (Crunchyroll-/Wikipedia-Skripte bleiben Quelle für ihre Sprachen)
-Nur Streaming-Angebote (FLATRATE/FREE/ADS), kein Kauf/Verleih. Anbieter ohne
-Mapping (Bibliotheken wie filmfriend, Shops) werden ignoriert. Anbieter ohne
+Streaming-Angebote (FLATRATE/FREE/ADS) UND Kauf/Leih (BUY/RENT bei Amazon Video,
+Apple TV, Google Play …) — letztere nur informativ: `streamingProviders` und
+Sprachen werden ausschließlich aus Streaming-Angeboten abgeleitet. Anbieter ohne
+Mapping (Bibliotheken wie filmfriend, DVD-Shops) werden ignoriert. Anbieter ohne
 Deep-Link werden nicht übernommen — lieber „nicht gelistet" als ein Link auf
 eine Startseite, der die Verfügbarkeit nur behauptet.
 
@@ -63,7 +65,8 @@ GQL = "https://apis.justwatch.com/graphql"
 IMPERSONATE = "chrome124"
 MAX_WORKERS = 1
 REQUEST_PAUSE = 1.2
-MONETIZATION = {"FLATRATE": "flatrate", "ADS": "ads", "FREE": "free"}
+MONETIZATION = {"FLATRATE": "flatrate", "ADS": "ads", "FREE": "free", "BUY": "buy", "RENT": "rent"}
+STREAMING = {"flatrate", "ads", "free"}  # Kauf/Leih zählt nicht als „läuft bei"
 
 # JustWatch-`clearName` (lower) -> Provider-Slug (muss zu lib/streaming.ts passen).
 CLEARNAME_TO_SLUG = {
@@ -94,6 +97,13 @@ CLEARNAME_TO_SLUG = {
     "magenta tv": "magenta-tv",
     "magentatv": "magenta-tv",
     "hidive": "hidive",
+    # Kauf/Leih-Stores (BUY/RENT) — nur informativ, kein Streaming-Index
+    "amazon video": "amazon-video",
+    "apple tv": "apple-tv",
+    "google play movies": "google-play",
+    "rakuten tv": "rakuten-tv",
+    "microsoft store": "microsoft-store",
+    "sky store": "sky-store",
 }
 
 # Sprachcodes aus Offers -> availableLanguages-Enum (additiv).
@@ -413,19 +423,21 @@ def build_sql(a, offers, now_iso):
     slugs = set()
     langs = set()
     for i, e in enumerate(offers, 1):
+        streaming = e["monetization"] in STREAMING
         # first_seen_at bleibt über Läufe erhalten — AUCH wenn es NULL ist: Zeilen des
         # Erst-Backfills tragen bewusst NULL („seit Beginn bekannt"), sonst wäre der
         # komplette Katalog 30 Tage lang „Neu". Nur wirklich neue (provider, monet)-
         # Paare bekommen den aktuellen Zeitstempel.
         key = (e["provider"], e["monetization"])
         first = a["offers"][key] if key in a["offers"] else now_iso
-        slugs.add(e["provider"])
-        for code in e["audio"].split(","):
-            if code in AUDIO_TO_LANG:
-                langs.add(AUDIO_TO_LANG[code])
-        for code in e["subs"].split(","):
-            if code in SUB_TO_LANG:
-                langs.add(SUB_TO_LANG[code])
+        if streaming:  # Filter-Index und Sprachen nur aus echten Streaming-Angeboten
+            slugs.add(e["provider"])
+            for code in e["audio"].split(","):
+                if code in AUDIO_TO_LANG:
+                    langs.add(AUDIO_TO_LANG[code])
+            for code in e["subs"].split(","):
+                if code in SUB_TO_LANG:
+                    langs.add(SUB_TO_LANG[code])
         stmts.append(
             "INSERT INTO anime_streaming_offers "
             "(_order,_parent_id,id,provider,monetization,url,audio,subs,seasons,episodes,available_to,first_seen_at,last_seen_at) VALUES ("

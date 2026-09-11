@@ -48,39 +48,53 @@ describe('shortTitle', () => {
 })
 
 describe('streamingGuide', () => {
-  it('null ohne Anbieter', () => {
+  it('null ohne Anbieter (Kauf/Leih allein zählt nicht)', () => {
     expect(streamingGuide({ id: 1, titleEnglish: 'X' })).toBeNull()
+    expect(streamingGuide({ id: 1, titleEnglish: 'X', streamingOffers: [{ provider: 'amazon-video', url: 'https://a', monetization: 'buy', audio: '', subs: '' }] })).toBeNull()
   })
-  it('liefert Absätze mit Anbieter-, Sprach- und Kostenaussagen sowie FAQ', () => {
-    const g = streamingGuide(naruto)!
+  it('liefert Intro, Übersicht, CTA, Absätze und FAQ mit Datenaussagen', () => {
+    const g = streamingGuide({ ...naruto, streamingOffers: [...naruto.streamingOffers, { provider: 'amazon-video', url: 'https://av', monetization: 'buy', audio: '', subs: '' }, { provider: 'amazon-video', url: 'https://av', monetization: 'rent', audio: '', subs: '' }] })!
+    expect(g.heading).toMatch(/^Wer streamt Naruto/)
+    expect(g.intro).toContain('**Naruto**')
+    expect(g.overview.map((r) => r.label)).toEqual(['Streaming-Anbieter', 'Audio-Spuren', 'Untertitel', 'Kosten', 'Kaufen / Leihen', 'Release', 'Studio', 'Status'])
+    expect(g.overview[0].value).toBe('Crunchyroll, Amazon Prime Video, Joyn')
+    expect(g.overview[1].value).toContain('Deutsch (Amazon Prime Video, Joyn)')
+    expect(g.overview[4].value).toBe('Amazon Video (Kauf/Leihe)')
+    expect(g.cta.url).toBe('https://cr/x')
+    expect(g.cta.provider).toBe('Crunchyroll')
     const text = g.paragraphs.join(' ')
-    expect(g.paragraphs).toHaveLength(3)
     expect(text).toContain('**Crunchyroll**')
-    expect(text).toMatch(/deutsche(r|n) Synchro/)
     expect(text).toContain('31.10.2026')
     expect(text).toContain('5 Staffeln mit 173 Folgen')
-    expect(text).toMatch(/Joyn/)
-    expect(text).toContain('**Pierrot**')
-    expect(text).toMatch(/Herbst 2002/)
+    expect(g.overview.find((r) => r.label === 'Studio')!.value).toBe('Pierrot')
     const qs = g.faq.map((f) => f.q)
-    expect(qs).toContain('Wo kann man Naruto streamen?')
-    expect(qs).toContain('Gibt es Naruto mit deutscher Synchro?')
-    expect(qs).toContain('Läuft Naruto auf Netflix?')
-    expect(g.faq.find((f) => f.q === 'Läuft Naruto auf Netflix?')!.a).toMatch(/^Nein/)
-    expect(g.faq.find((f) => f.q === 'Läuft Naruto auf Crunchyroll?')!.a).toMatch(/^Ja/)
-    expect(g.faq.find((f) => f.q === 'Kann man Naruto kostenlos streamen?')!.a).toMatch(/^Ja, bei Joyn/)
+    expect(qs).toEqual([
+      'Wer hat Naruto aktuell im Angebot?',
+      'Wer streamt Naruto auf Deutsch?',
+      'Wer zeigt den Simulcast von Naruto?',
+      'Streamen auch Netflix, Crunchyroll oder Amazon Prime Video Naruto?',
+      'Kann man Naruto auch ohne Abo streamen, kaufen oder leihen?',
+      'Warum ändert sich manchmal, wer Naruto streamt?',
+    ])
+    expect(g.faq[1].a).toContain('Amazon Prime Video und Joyn')
+    expect(g.faq[2].a).toMatch(/abgeschlossen/)
+    expect(g.faq[3].a).toContain('Ja: Crunchyroll und Amazon Prime Video')
+    expect(g.faq[3].a).toContain('Bei Netflix ist Naruto derzeit nicht gelistet')
+    expect(g.faq[4].a).toContain('Joyn')
+    expect(g.faq[4].a).toContain('Amazon Video')
+    expect(g.faq[5].a).toContain('Amazon Prime Video (bis 31.10.2026)')
     expect(g.faq.map((f) => f.a).join(' ')).not.toContain('**')
   })
-  it('Legacy: nur Anbieter-Absatz + Einordnung, keine Sprach-FAQ', () => {
-    const g = streamingGuide({ id: 3, titleEnglish: 'Z', streamingProviders: ['netflix'], format: 'TV', episodes: 12 })!
-    expect(g.paragraphs).toHaveLength(2)
-    expect(g.paragraphs.join(' ')).not.toContain('Synchro')
-    expect(g.faq.map((f) => f.q)).not.toContain('Gibt es Z mit deutscher Synchro?')
+  it('Legacy: Übersicht ohne Sprach-/Kostenzeilen, keine Sprach-FAQ', () => {
+    const g = streamingGuide({ id: 3, titleEnglish: 'Z', streamingProviders: ['netflix'], format: 'TV', episodes: 12, status: 'RELEASING' })!
+    expect(g.overview.map((r) => r.label)).toEqual(['Streaming-Anbieter', 'Release', 'Status'])
+    expect(g.faq.map((f) => f.q)).not.toContain('Wer streamt Z auf Deutsch?')
+    expect(g.faq.find((f) => f.q.startsWith('Wer zeigt den Simulcast'))!.a).toContain('läuft aktuell im Simulcast')
   })
   it('variiert Einstieg und Überschrift über die ID', () => {
     const a = streamingGuide({ ...naruto, id: 1 })!
     const b = streamingGuide({ ...naruto, id: 2 })!
     expect(a.heading).not.toBe(b.heading)
-    expect(a.paragraphs[0].slice(0, 20)).not.toBe(b.paragraphs[0].slice(0, 20))
+    expect(a.intro.slice(0, 20)).not.toBe(b.intro.slice(0, 20))
   })
 })
