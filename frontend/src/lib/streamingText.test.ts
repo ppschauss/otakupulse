@@ -48,54 +48,57 @@ describe('shortTitle', () => {
   })
 })
 
-describe('streamingGuide', () => {
-  it('null ohne Anbieter (Kauf/Leih allein zählt nicht)', () => {
+describe('streamingGuide (Vorlagen-Wortlaut + Datenzusätze)', () => {
+  it('null ohne Streaming-Anbieter (Kauf/Leih allein zählt nicht)', () => {
     expect(streamingGuide({ id: 1, titleEnglish: 'X' })).toBeNull()
     expect(streamingGuide({ id: 1, titleEnglish: 'X', streamingOffers: [{ provider: 'amazon-video', url: 'https://a', monetization: 'buy', audio: '', subs: '' }] })).toBeNull()
   })
-  it('liefert Intro, Übersicht, CTA, Absätze und FAQ mit Datenaussagen', () => {
-    const g = streamingGuide({ ...naruto, streamingOffers: [...naruto.streamingOffers, { provider: 'amazon-video', url: 'https://av', monetization: 'buy', audio: '', subs: '' }, { provider: 'amazon-video', url: 'https://av', monetization: 'rent', audio: '', subs: '' }] })!
-    expect(g.heading).toMatch(/^Wer streamt Naruto/)
-    expect(g.intro).toContain('**Naruto**')
-    expect(g.overview.map((r) => r.label)).toEqual(['Streaming-Anbieter', 'Audio-Spuren', 'Untertitel', 'Kosten', 'Kaufen / Leihen', 'Release', 'Studio', 'Status'])
-    expect(g.overview[0].value).toBe('Crunchyroll, Amazon Prime Video, Joyn')
-    expect(g.overview[1].value).toContain('Deutsch (Amazon Prime Video, Joyn)')
-    expect(g.overview[4].value).toBe('Amazon Video (Kauf/Leihe)')
-    expect(g.cta.url).toBe('https://cr/x')
-    expect(g.cta.provider).toBe('Crunchyroll')
-    const text = g.paragraphs.join(' ')
-    expect(text).toContain('**Crunchyroll**')
-    expect(text).toContain('31.10.2026')
-    expect(text).toContain('5 Staffeln mit 173 Folgen')
-    expect(g.overview.find((r) => r.label === 'Studio')!.value).toBe('Pierrot')
-    const qs = g.faq.map((f) => f.q)
-    expect(qs).toEqual([
+  it('übernimmt die Vorlagensätze wörtlich und hängt Fakten an', () => {
+    const g = streamingGuide({ ...naruto, streamingOffers: [...naruto.streamingOffers, { provider: 'amazon-video', url: 'https://av', monetization: 'buy', audio: '', subs: '' }] })!
+    expect(g.heading).toBe('Wer streamt Naruto? Alle Anbieter & Optionen')
+    expect(g.intro).toContain('Auf der Suche nach dem passenden Stream für **Naruto**? Wir zeigen dir, wo du die Serie aktuell findest.')
+    expect(g.intro).toContain('Seit dem **Herbst 2002** führen **Crunchyroll**, **Amazon Prime Video** und **Joyn** den Anime im Sortiment.')
+    expect(g.intro).toContain('**Naruto auf Deutsch streamen** oder im japanischen Originalton genießen')
+    expect(g.overviewHeading).toBe('Anbieter-Übersicht für Naruto')
+    expect(g.overview.map((r) => r.label)).toEqual(['Streaming-Anbieter', 'Verfügbare Audio-Spuren', 'Release-Termin', 'Kosten', 'Kaufen / Leihen', 'Stand'])
+    expect(g.overview[1].value).toBe('Deutsch & Japanisch (OmU)')
+    expect(g.cta.lead).toBe('Jetzt direkt starten:')
+    expect(g.cta.text).toBe('Zu Crunchyroll wechseln und Naruto streamen')
+    expect(g.cta.title).toBe('Naruto online streamen bei Crunchyroll')
+    expect(g.details).toContain('Bei **Crunchyroll** läuft Naruto im Abo im Original mit deutschen Untertiteln (5 Staffeln mit 173 Folgen).')
+    expect(g.details).toContain('verfügbar bis **31.10.2026**')
+    expect(g.faqHeading).toBe('FAQ zur Anbieter-Verfügbarkeit: Wer streamt Naruto?')
+    expect(g.faq.map((f) => f.q)).toEqual([
       'Wer hat Naruto aktuell im Angebot?',
       'Wer streamt Naruto auf Deutsch?',
       'Wer zeigt den Simulcast von Naruto?',
-      'Streamen auch Netflix, Crunchyroll oder Amazon Prime Video Naruto?',
+      'Streamen auch Dienste wie Netflix, Crunchyroll oder Amazon Prime Video Naruto?',
       'Kann man Naruto auch ohne Abo streamen, kaufen oder leihen?',
       'Warum ändert sich manchmal, wer Naruto streamt?',
     ])
-    expect(g.faq[1].a).toContain('Amazon Prime Video und Joyn')
-    expect(g.faq[2].a).toMatch(/abgeschlossen/)
-    expect(g.faq[3].a).toContain('Ja: Crunchyroll und Amazon Prime Video')
-    expect(g.faq[3].a).toContain('Bei Netflix ist Naruto derzeit nicht gelistet')
-    expect(g.faq[4].a).toContain('Joyn')
-    expect(g.faq[4].a).toContain('Amazon Video')
-    expect(g.faq[5].a).toContain('Amazon Prime Video (bis 31.10.2026)')
+    expect(g.faq[0].a).toMatch(/^Der Anime ist derzeit bei Crunchyroll, Amazon Prime Video und Joyn gelistet \(Stand: 10\.09\.2026\)\. Je nach Ausstrahlungsmuster/)
+    expect(g.faq[1].a).toMatch(/^Die Fassung mit der Tonspur Deutsch steht bei Amazon Prime Video und Joyn zum Abruf bereit\./)
+    expect(g.faq[1].a).toContain('Nur mit deutschen Untertiteln läuft Naruto bei Crunchyroll.')
+    expect(g.faq[2].a).toContain('Naruto ist bereits abgeschlossen; alle 220 Folgen sind komplett abrufbar.')
+    expect(g.faq[3].a).toContain('hängt vom jeweiligen Rechtekatalog im deutschsprachigen Raum ab')
+    expect(g.faq[3].a).toContain('Aktuell: Crunchyroll und Amazon Prime Video haben Naruto im Programm. Bei Netflix ist Naruto derzeit nicht gelistet')
+    expect(g.faq[4].a).toContain('Wir prüfen regelmäßig, ob Naruto online schauen auch als digitaler Einzelkauf möglich ist.')
+    expect(g.faq[4].a).toContain('Ohne Abo läuft Naruto bei Joyn')
+    expect(g.faq[4].a).toContain('Als Einzelkauf ist Naruto aktuell bei Amazon Video erhältlich.')
+    expect(g.faq[5].a).toContain('Bekanntes Enddatum: Amazon Prime Video bis 31.10.2026.')
     expect(g.faq.map((f) => f.a).join(' ')).not.toContain('**')
   })
-  it('Legacy: Übersicht ohne Sprach-/Kostenzeilen, keine Sprach-FAQ', () => {
-    const g = streamingGuide({ id: 3, titleEnglish: 'Z', streamingProviders: ['netflix'], format: 'TV', episodes: 12, status: 'RELEASING' })!
-    expect(g.overview.map((r) => r.label)).toEqual(['Streaming-Anbieter', 'Release', 'Status'])
-    expect(g.faq.map((f) => f.q)).not.toContain('Wer streamt Z auf Deutsch?')
-    expect(g.faq.find((f) => f.q.startsWith('Wer zeigt den Simulcast'))!.a).toContain('läuft aktuell im Simulcast')
+  it('Legacy: Sprache aus globalen Flags, kein Detail-Absatz, Kosten-Zeile fehlt', () => {
+    const g = streamingGuide({ id: 3, titleEnglish: 'Z', streamingProviders: ['netflix'], availableLanguages: ['de-dub'], format: 'TV', episodes: 12, status: 'RELEASING' })!
+    expect(g.intro).toContain('**Netflix** führt den Anime im Sortiment.')
+    expect(g.overview.map((r) => r.label)).toEqual(['Streaming-Anbieter', 'Verfügbare Audio-Spuren'])
+    expect(g.details).toBeNull()
+    expect(g.faq[1].a).toContain('Die Fassung mit der Tonspur Deutsch steht bei Netflix zum Abruf bereit.')
+    expect(g.faq[2].a).toContain('Aktuell laufen neue Folgen')
   })
-  it('variiert Einstieg und Überschrift über die ID', () => {
-    const a = streamingGuide({ ...naruto, id: 1 })!
-    const b = streamingGuide({ ...naruto, id: 2 })!
-    expect(a.heading).not.toBe(b.heading)
-    expect(a.intro.slice(0, 20)).not.toBe(b.intro.slice(0, 20))
+  it('Film: „den Film“ statt „die Serie“', () => {
+    const g = streamingGuide({ id: 4, titleEnglish: 'Your Name.', format: 'MOVIE', streamingProviders: ['crunchyroll'] })!
+    expect(g.intro).toContain('wo du den Film aktuell findest')
+    expect(g.intro).toContain('führt den Film im Sortiment')
   })
 })

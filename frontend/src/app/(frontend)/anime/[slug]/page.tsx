@@ -276,33 +276,32 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
             <p className="leading-relaxed text-zinc-300">
               <RichLine text={guide.intro} />
             </p>
-            <h3 className="mt-6 mb-2 text-sm font-bold uppercase tracking-wide text-zinc-400">Anbieter-Übersicht für {title}</h3>
+            <h3 className="mt-6 mb-2 text-base font-bold text-white">{guide.overviewHeading}</h3>
             <ul className="divide-y divide-white/10 rounded-xl border border-white/10 bg-zinc-900/40 text-sm">
               {guide.overview.map((row) => (
                 <li key={row.label} className="flex gap-4 px-4 py-2.5">
-                  <span className="w-36 shrink-0 text-zinc-500">{row.label}</span>
+                  <strong className="w-44 shrink-0 font-semibold text-zinc-400">{row.label}:</strong>
                   <span className="text-zinc-200">{row.value}</span>
                 </li>
               ))}
             </ul>
-            <p className="mt-4">
+            <p className="mt-4 text-zinc-300">
+              {guide.cta.lead}{' '}
               <a
                 href={guide.cta.url}
                 target="_blank"
                 rel="nofollow noopener noreferrer"
                 title={guide.cta.title}
-                className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-accent to-accent-2 px-4 py-2 font-semibold text-white"
+                className="font-semibold text-accent underline-offset-2 hover:underline"
               >
-                ▶ {guide.cta.text}
+                {guide.cta.text}
               </a>
             </p>
-            <div className="mt-6 space-y-3 leading-relaxed text-zinc-300">
-              {guide.paragraphs.map((p, i) => (
-                <p key={i}>
-                  <RichLine text={p} />
-                </p>
-              ))}
-            </div>
+            {guide.details ? (
+              <p className="mt-4 leading-relaxed text-zinc-300">
+                <RichLine text={guide.details} />
+              </p>
+            ) : null}
           </section>
         ) : null}
 
@@ -461,7 +460,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
         ) : null}
 
         {/* FAQ zum Streaming (FAQPage-JSON-LD über die Faq-Komponente) */}
-        {guide?.faq.length ? <Faq items={guide.faq} title={`FAQ: Wer streamt ${title}?`} /> : null}
+        {guide?.faq.length ? <Faq items={guide.faq} title={guide.faqHeading} /> : null}
 
         {/* Ähnliche Anime — früher /aehnlich/<slug>, seit dem Merge Teil dieser Seite */}
         {similar.length ? (
