@@ -22,6 +22,9 @@ Aufruf (HOST, `pip install curl_cffi` + docker):
   python3 src/scripts/justwatch-streaming.py --only-missing     # nur Titel ohne Offers
   python3 src/scripts/justwatch-streaming.py --stale 150        # rollierend: die 150 am längsten nicht geprüften
   python3 src/scripts/justwatch-streaming.py --slugs naruto,clannad [--dry-run]
+  python3 src/scripts/justwatch-streaming.py --unmatched-top 150 --not-checked-since 2026-09-13T00:00:00Z
+                                                                       # die 150 beliebtesten Titel OHNE Offers, die seit
+                                                                       # dem Datum nicht geprüft wurden (2. Durchlauf)
   python3 src/scripts/justwatch-streaming.py --initial                 # Erst-Backfill: kein first_seen_at
                                                                        # für Titel ohne bisherige Offers
   python3 src/scripts/justwatch-streaming.py --purge-unmatched         # Backfill: Titel OHNE sicheren
@@ -167,11 +170,30 @@ _LONG_VOWELS = str.maketrans({"ô": "ou", "ō": "ou", "û": "uu", "ū": "uu", "�
                               "Ê": "ee", "Ē": "ee", "Î": "ii", "Ī": "ii"})
 
 
+_PAREN = re.compile(r"\s*\((?:tv|ova|ona|movie|film|\d{4})\)\s*$", re.I)
+_ROMAN = {"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6"}
+
+
 def norm_variants(s):
+    """Normalformen eines Titels: ohne Diakritika, mit Doppelvokal-Romanisierung,
+    ohne Klammerzusatz („JoJo's Bizarre Adventure (TV)"), römische Staffelziffer
+    als Zahl („Sword Art Online II" → „swordartonline2")."""
     if not s:
         return []
-    out = {norm(s), norm(s.translate(_LONG_VOWELS))}
+    base = _PAREN.sub("", s)
+    out = {norm(base), norm(base.translate(_LONG_VOWELS))}
+    m = re.search(r"\s(ii|iii|iv|v|vi)$", base.strip(), re.I)
+    if m:
+        out.add(norm(base[: m.start()] + " " + _ROMAN[m.group(1).lower()]))
     return [v for v in out if v]
+
+
+def title_base(s):
+    """Teil vor dem ersten Untertitel-Trenner („Wotakoi: Love is Hard…" → „wotakoi")."""
+    if not s:
+        return ""
+    head = re.split(r"\s*[:\-–—]\s+|\s-", _PAREN.sub("", s), maxsplit=1)[0]
+    return norm(head)
 
 
 def _arg(name, default=None):
@@ -181,7 +203,7 @@ def _arg(name, default=None):
     return default
 
 
-def load_anime(recent_days=None, stale_limit=None, slugs=None):
+def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=None, not_checked_since=None):
     where, tail = "", ""
     if recent_days:
         where = f" WHERE a.created_at > now() - interval '{int(recent_days)} days'"
@@ -189,6 +211,13 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None):
         where = " WHERE a.slug IN (" + ",".join(q(s) for s in slugs) + ")"
     if stale_limit:
         tail = f" ORDER BY a.streaming_checked_at ASC NULLS FIRST LIMIT {int(stale_limit)}"
+    if unmatched_top:
+        where = " WHERE NOT EXISTS (SELECT 1 FROM anime_streaming_offers o WHERE o._parent_id = a.id) AND a.is_hentai IS NOT TRUE"
+        tail = f" ORDER BY a.popularity DESC NULLS LAST LIMIT {int(unmatched_top)}"
+    if not_checked_since:
+        # Zweiter Durchlauf nach Matcher-Änderungen: nur Titel, die seitdem nicht geprüft wurden.
+        clause = f"(a.streaming_checked_at IS NULL OR a.streaming_checked_at < {q(not_checked_since)})"
+        where = f"{where} AND {clause}" if where else f" WHERE {clause}"
     rows = json.loads(psql(
         "SELECT COALESCE(json_agg(json_build_object('id',s.id,'slug',s.slug,'fmt',s.fmt,'year',s.yr,'de',s.de,'en',s.en,'ro',s.ro,'na',s.na)),'[]') "
         "FROM (SELECT a.id, a.slug, a.format fmt, a.season_year yr, a.title_german de, a.title_english en, a.title_romaji ro, a.title_native na "
@@ -248,6 +277,13 @@ def best_match(data, our_titles, want="SHOW", year=None):
         cand = norm_variants(c.get("title")) + norm_variants(c.get("originalTitle"))
         cy = c.get("originalReleaseYear")
         score, rem = 0.0, ""
+        # Gleicher Basistitel vor „:"/„-" und gleiches Jahr → derselbe Titel, nur der Untertitel
+        # ist übersetzt („Wotakoi: Love is Hard for Otaku" vs. „Wotakoi: Keine Chance für …").
+        if year and cy and abs(int(year) - int(cy)) <= 1:
+            ours_base = {title_base(t) for t in our_titles if t}
+            cand_base = {title_base(c.get("title")), title_base(c.get("originalTitle"))}
+            if any(b and len(b) >= 6 and b in cand_base for b in ours_base):
+                score, rem = max(score, 0.92), ""
         for t in our:
             for cn in cand:
                 ratio = SequenceMatcher(None, t, cn).ratio()
@@ -257,7 +293,9 @@ def best_match(data, our_titles, want="SHOW", year=None):
                 # als exakter Treffer der Serie und fällt am Jahres-Tie-Break (2012/2018).
                 if (want == "SHOW" and len(cn) >= 6 and t.startswith(cn) and len(t) > len(cn)
                         and (not year or not cy or int(cy) <= int(year) + 1)):
-                    if ratio < 0.9 and score < 0.9:
+                    # Auch bei hoher Roh-Ähnlichkeit („swordartonlineii" ≈ „swordartonline") gilt:
+                    # Serientitel + Rest = Fortsetzung → Staffel wählen, nicht die ganze Serie.
+                    if score <= 0.9:
                         score, rem = 0.9, t[len(cn):]
                     continue
                 # Umkehrung: JW hängt einen Untertitel an („Nichijou – Das ganz normale
@@ -285,7 +323,7 @@ def best_match(data, our_titles, want="SHOW", year=None):
     return (best, best_rem) if best and best_score >= 0.90 else None
 
 
-_SEASON_NUM = re.compile(r"(?:season|staffel|part|cour|s)(\d{1,2})$|^(\d{1,2})(?:nd|rd|th)?(?:season|staffel)?$")
+_SEASON_NUM = re.compile(r"(?:season|staffel|part|cour|s|r)(\d{1,2})$|^(\d{1,2})(?:nd|rd|th)?(?:season|staffel)?$")
 
 
 def pick_season(node, remainder, year):
@@ -311,6 +349,13 @@ def pick_season(node, remainder, year):
         if len(hit) == 1:
             return hit[0]
     return None
+
+
+def is_base_entry(node, remainder, year):
+    """„Seraph of the End: Vampire Reign" = die Serie selbst (Untertitel der ersten Staffel):
+    kein Staffelmarker im Rest und unser Jahr = Startjahr der Serie → Serien-Angebote."""
+    cy = (node.get("content") or {}).get("originalReleaseYear")
+    return bool(year and cy and int(year) == int(cy) and not _SEASON_NUM.search(remainder))
 
 
 def _slug_and_monet(o):
@@ -414,6 +459,8 @@ def fetch_offers(session, a):
         season = pick_season(node, remainder, a.get("year"))
         if season is not None:
             return aggregate_offers(node, season)
+        if is_base_entry(node, remainder, a.get("year")):
+            return aggregate_offers(node)
         # Serie erkannt, aber Staffel nicht eindeutig → kein Match (keine Serien-
         # Anbieter pauschal auf eine Fortsetzung übertragen).
     return False
@@ -494,7 +541,8 @@ def main():
     purge = "--purge-unmatched" in sys.argv
     initial = "--initial" in sys.argv
     print("→ Lade Anime + vorhandene Anbieter/Offers …")
-    anime = load_anime(recent_days=recent, stale_limit=stale, slugs=slugs.split(",") if slugs else None)
+    anime = load_anime(recent_days=recent, stale_limit=stale, slugs=slugs.split(",") if slugs else None,
+                       unmatched_top=_arg("--unmatched-top"), not_checked_since=_arg("--not-checked-since"))
     if "--only-missing" in sys.argv:
         anime = [a for a in anime if not a["offers"]]
     print(f"  {len(anime)} Anime.")
