@@ -107,9 +107,9 @@ export function Schedule({ days, year, month, episodes, selected, today, genres,
           ›
         </Link>
       </div>
-      {/* Tagesleiste: auf Mobil horizontal scrollbar, ab md als volles Raster */}
-      <div className="overflow-x-auto rounded-b-2xl border border-t-0 border-white/10 bg-zinc-900/30 p-2">
-        <div className="grid min-w-[640px] grid-cols-7 gap-1 md:min-w-0">
+      {/* Tagesleiste: immer 7 Spalten — auf Mobil kompakte Pills, ab sm mit mehr Luft */}
+      <div className="rounded-b-2xl border border-t-0 border-white/10 bg-zinc-900/30 p-1.5 sm:p-2">
+        <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
           {days.map((d) => {
             const isSel = d.date === day
             const isToday = d.date === today
@@ -120,7 +120,7 @@ export function Schedule({ days, year, month, episodes, selected, today, genres,
                 type="button"
                 onClick={() => selectDay(d.date)}
                 aria-pressed={isSel}
-                className={`flex flex-col items-center rounded-xl px-1 py-1.5 text-center transition ${
+                className={`flex flex-col items-center rounded-lg px-0.5 py-1 text-center transition sm:rounded-xl sm:px-1 sm:py-1.5 ${
                   isSel
                     ? 'bg-gradient-to-br from-accent to-accent-2 text-white shadow-lg shadow-accent/20'
                     : isToday
@@ -130,8 +130,8 @@ export function Schedule({ days, year, month, episodes, selected, today, genres,
                         : 'text-zinc-300 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{WD[d.weekday]}</span>
-                <span className="text-base font-extrabold leading-tight">{d.day}</span>
+                <span className="text-[9px] font-semibold uppercase tracking-wide opacity-80 sm:text-[10px]">{WD[d.weekday]}</span>
+                <span className="text-sm font-extrabold leading-tight sm:text-base">{d.day}</span>
                 <span className={`mt-0.5 h-1 w-1 rounded-full ${n ? (isSel ? 'bg-white' : 'bg-accent') : 'bg-transparent'}`} aria-hidden />
               </button>
             )
@@ -226,7 +226,7 @@ function Countdown({ diff }: { diff: number | null }) {
     const h = Math.floor(ago / 3600_000)
     const label = h < 1 ? 'gerade erschienen' : h < 24 ? `seit ${h} Std. verfügbar` : `seit ${Math.floor(h / 24)} Tag${Math.floor(h / 24) === 1 ? '' : 'en'} verfügbar`
     return (
-      <div className="flex w-28 shrink-0 flex-col items-center justify-center gap-1 border-l border-white/10 bg-emerald-500/10 px-2 text-center sm:w-36">
+      <div className="flex w-24 shrink-0 flex-col items-center justify-center gap-1 border-l border-white/10 bg-emerald-500/10 px-2 text-center sm:w-36">
         <span className="text-xs font-bold text-emerald-300">▶ Online</span>
         <span className="text-[10px] text-emerald-200/70">{label}</span>
       </div>
