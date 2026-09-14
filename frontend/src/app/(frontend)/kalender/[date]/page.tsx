@@ -4,12 +4,9 @@ import { pageMeta } from '@/lib/seo'
 import { isYmd } from '@/lib/schedule'
 import { ScheduleView } from '@/components/ScheduleView'
 
-// ISR wie /kalender; jeder Tag ist eine eigene, teilbare URL.
-export const revalidate = 600
-export const dynamicParams = true
-export async function generateStaticParams() {
-  return []
-}
+// Dynamisch (kein ISR): die Seite liest `searchParams` (Genre) — ISR + searchParams
+// endet in DYNAMIC_SERVER_USAGE (500). Jeder Tag ist eine eigene, teilbare URL.
+export const dynamic = 'force-dynamic'
 
 const label = (date: string) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
