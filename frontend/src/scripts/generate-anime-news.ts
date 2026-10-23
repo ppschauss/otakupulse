@@ -141,11 +141,14 @@ async function gatherFacts(payload: Payload, a: any): Promise<Facts> {
 /** Deterministischer Steckbrief als Tabelle (wird an den KI-body angehängt). */
 function steckbrief(a: any, f: Facts): string {
   const esc = (s: string) => s.replace(/\|/g, '∕')
+  // Nur das Label escapen — der Trenner in [[typ:slug|Label]] muss ein echter Pipe bleiben
+  // (splitCells in articleBody trennt Zellen innerhalb von Markern ohnehin nicht).
+  const escBlock = (b: string) => b.replace(/^(\[\[[^\]|]*\|)(.*)\]\]$/, (_, head, label) => `${head}${esc(label)}]]`)
   const titleBlock = `[[anime:${a.slug}|${esc(displayTitle(a))}]]`
   const rows: [string, string][] = [
     ['Titel', titleBlock],
-    ['Studio', f.studioBlocks.length ? esc(f.studioBlocks.join(', ')) : 'unbekannt'],
-    ['Genres', f.genreBlocks.length ? esc(f.genreBlocks.join(', ')) : 'unbekannt'],
+    ['Studio', f.studioBlocks.length ? f.studioBlocks.map(escBlock).join(', ') : 'unbekannt'],
+    ['Genres', f.genreBlocks.length ? f.genreBlocks.map(escBlock).join(', ') : 'unbekannt'],
     ['Episoden', f.episodes],
     ['Format', f.formatStr],
     ['Release', f.release],
