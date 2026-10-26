@@ -9,7 +9,9 @@ export const GENRE_INFO: Record<string, string> = {
     'Große Reisen, unbekannte Welten und der Ruf des Abenteuers: Hier zählt die Reise genauso viel wie das Ziel.',
   comedy: 'Gag-Timing, schräge Charaktere und absurde Situationen — Comedy-Anime sorgen für Lachflashs zwischendurch.',
   drama: 'Emotionale Tiefe, schwierige Entscheidungen und Charakterentwicklung, die unter die Haut geht.',
-  ecchi: 'Frech, fanservice-lastig und augenzwinkernd — Ecchi spielt gezielt mit Anspielungen, ohne explizit zu werden.',
+  ecchi:
+    'Frech, fanservice-lastig und augenzwinkernd: Ecchi spielt mit Anspielungen — Strandfolge, Bikini, ein '
+    + 'Missgeschick im falschen Moment — wird aber nie explizit. Nicht zu verwechseln mit Hentai, das wir nicht listen.',
   fantasy: 'Magie, Schwerter und fremde Reiche: Fantasy-Anime entführen in Welten, in denen alles möglich ist.',
   horror: 'Beklemmung, Grusel und das Unheimliche — Horror-Anime kriechen langsam unter die Haut.',
   mecha: 'Riesige Roboter, Pilot:innen und Mensch-Maschine-Konflikte — das Herzstück vieler Sci-Fi-Klassiker.',

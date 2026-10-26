@@ -6,6 +6,8 @@ import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
 import { Faq } from '@/components/Faq'
+import { ContentNote } from '@/components/ContentNote'
+import { NUDITY_NOTE, NUDITY_NOTE_TITLE } from '@/lib/fanservice'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { ChipSection, NewsSection } from '@/components/HubSections'
 import { SeoFooter } from '@/components/SeoFooter'
@@ -133,9 +135,28 @@ export default async function TagDetail({
             items={relatedTags as any}
           />
 
+          {/* Fanservice-Tags: Einordnung (kein Hentai, nur Anspielungen/kurze Szenen). */}
+          {tag.slug === 'nudity' ? (
+            <ContentNote title={NUDITY_NOTE_TITLE}>
+              {NUDITY_NOTE.map((t, i) => (
+                <p key={i}>{t}</p>
+              ))}
+            </ContentNote>
+          ) : null}
+
           <Faq
             title={`Häufige Fragen zu „${tag.name}"`}
             items={[
+              ...(tag.slug === 'nudity'
+                ? [
+                    {
+                      q: 'Heißt „Nudity" hier Hentai?',
+                      a:
+                        'Nein. Der Tag markiert kurze, meist nicht-sexuelle Szenen — Bad, Umkleide, Verwandlung — in ganz '
+                        + 'normalen Serien. Pornografische Titel (Hentai) sind auf OtakuPulse nicht gelistet.',
+                    },
+                  ]
+                : []),
               {
                 q: `Was bedeutet das Tag „${tag.name}"?`,
                 a: `„${tag.name}" markiert ein wiederkehrendes Thema, Setting oder Element. Anime mit diesem Tag teilen dieses Merkmal — ideal, um ähnliche Titel zu entdecken.`,

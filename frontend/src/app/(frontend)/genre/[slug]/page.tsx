@@ -15,6 +15,8 @@ import { ListLinks } from '@/components/ListLinks'
 import { cachedPlatformListCounts, listLinksForGenre } from '@/lib/platformLists'
 import { pageMeta } from '@/lib/seo'
 import { genreBlurb } from '@/lib/genre-info'
+import { ContentNote } from '@/components/ContentNote'
+import { ECCHI_INTRO, ECCHI_NOTE, ECCHI_NOTE_TITLE } from '@/lib/fanservice'
 import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 import { genreVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
@@ -142,7 +144,9 @@ export default async function GenreDetail({
   })
 
   const extras = isFirst ? await getExtras(payload, genre) : null
-  const intro = genre.descriptionDe || genreBlurb(genre.slug, genre.name)
+  // Ecchi bekommt den präziseren Einstieg (Abgrenzung zu Hentai), sofern im CMS
+  // nichts Eigenes gepflegt ist.
+  const intro = genre.descriptionDe || (genre.slug === 'ecchi' ? ECCHI_INTRO : genreBlurb(genre.slug, genre.name))
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
@@ -288,10 +292,36 @@ export default async function GenreDetail({
 
           <ListLinks title={`${genre.name}-Anime streamen`} links={genreListLinks} />
 
+          {/* Fanservice-Genres: Einordnung, damit Ecchi nicht mit Hentai verwechselt wird. */}
+          {genre.slug === 'ecchi' ? (
+            <ContentNote title={ECCHI_NOTE_TITLE}>
+              {ECCHI_NOTE.map((t, i) => (
+                <p key={i}>{t}</p>
+              ))}
+            </ContentNote>
+          ) : null}
+
           {/* FAQ */}
           <Faq
             title={`Häufige Fragen zu ${genre.name}-Anime`}
             items={[
+              ...(genre.slug === 'ecchi'
+                ? [
+                    {
+                      q: 'Ist Ecchi dasselbe wie Hentai?',
+                      a:
+                        'Nein. Ecchi arbeitet mit Anspielungen und Fanservice — Strandfolge, Bikini, ein Missgeschick im '
+                        + 'falschen Moment — und läuft regulär bei Crunchyroll, Netflix & Co. Hentai bezeichnet pornografische '
+                        + 'Werke; solche Titel sind auf OtakuPulse nicht gelistet.',
+                    },
+                    {
+                      q: 'Sind Ecchi-Anime jugendfrei?',
+                      a:
+                        'Je nach Titel: Die meisten Serien in dieser Liste tragen bei den Streaming-Anbietern eine Freigabe ab '
+                        + '12 oder 16 Jahren. Die verbindliche Altersangabe findest du beim jeweiligen Anbieter.',
+                    },
+                  ]
+                : []),
               { q: `Was macht ${genre.name}-Anime aus?`, a: genreBlurb(genre.slug, genre.name) },
               {
                 q: `Welches sind die besten ${genre.name}-Anime?`,
