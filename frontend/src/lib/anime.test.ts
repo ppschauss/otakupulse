@@ -98,13 +98,26 @@ describe('animeIndexable', () => {
     expect(animeIndexable({ streamingOffers: [{ provider: 'netflix', url: 'https://n' }] })).toBe(true)
     expect(animeIndexable({ streamingProviders: ['netflix'] })).toBe(true)
   })
-  it('indexiert ohne Streaming nur mit deutschem Text ≥ 100 Zeichen', () => {
-    expect(animeIndexable({ descriptionDe: de })).toBe(true)
-    expect(animeIndexable({ descriptionSource: de })).toBe(false) // englischer Quelltext zählt nicht
-    expect(animeIndexable({ descriptionDe: 'kurz' })).toBe(false)
+  it('indexiert ohne Streaming nur mit deutschem Text ≥ 100 Zeichen und genug Nachfrage', () => {
+    expect(animeIndexable({ descriptionDe: de, popularity: 50000 })).toBe(true)
+    expect(animeIndexable({ descriptionSource: de, popularity: 50000 })).toBe(false) // englischer Quelltext zählt nicht
+    expect(animeIndexable({ descriptionDe: 'kurz', popularity: 50000 })).toBe(false)
   })
   it('Musikvideos ohne Streaming nie; redaktionelles noindex gewinnt', () => {
-    expect(animeIndexable({ format: 'MUSIC', descriptionDe: de })).toBe(false)
+    expect(animeIndexable({ format: 'MUSIC', descriptionDe: de, popularity: 50000 })).toBe(false)
     expect(animeIndexable({ noindex: true, streamingProviders: ['netflix'] })).toBe(false)
+  })
+})
+
+describe('animeIndexable: Popularitätsschwelle', () => {
+  const de = 'x'.repeat(120)
+  it('ohne Stream zählt die Nachfrage', () => {
+    expect(animeIndexable({ descriptionDe: de, popularity: 50000 })).toBe(true)
+    expect(animeIndexable({ descriptionDe: de, popularity: 100 })).toBe(false)
+    expect(animeIndexable({ descriptionDe: de })).toBe(false)
+  })
+  it('mit Stream immer, Adult-Bestand nie', () => {
+    expect(animeIndexable({ popularity: 0, streamingProviders: ['netflix'] })).toBe(true)
+    expect(animeIndexable({ isHentai: true, streamingProviders: ['netflix'] })).toBe(false)
   })
 })

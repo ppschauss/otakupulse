@@ -34,7 +34,7 @@ export const TYPES: SitemapType[] = [
     collection: 'anime',
     path: (s) => `/anime/${s}`,
     where: publicAnimeFilter,
-    select: { descriptionDe: true, format: true, noindex: true, streamingProviders: true, streamingOffers: true },
+    select: { descriptionDe: true, format: true, noindex: true, popularity: true, isHentai: true, streamingProviders: true, streamingOffers: true },
     keep: animeIndexable,
   },
   // Charaktere/Personen: nur mit substanziellem DEUTSCHEM Text in Index + Sitemap — der

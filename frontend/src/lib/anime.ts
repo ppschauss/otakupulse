@@ -141,19 +141,33 @@ export function textTooThin(...sources: (string | null | undefined)[]): boolean 
 }
 
 /**
+ * Mindest-Popularität (AniList: Nutzer mit dem Titel auf der Liste), ab der eine
+ * Seite OHNE Streaming-Daten noch indexiert wird. Darunter ist die Seite im
+ * Wesentlichen aufbereitete Stammdaten — Google wertet so etwas als „Low value
+ * content" (AdSense Policy Center / Valuable Inventory). Über `INDEX_MIN_POPULARITY`
+ * anpassbar; mit `scripts/streaming-coverage.ts` lässt sich die Wirkung vorab messen.
+ */
+export const INDEX_MIN_POPULARITY = Number(process.env.INDEX_MIN_POPULARITY ?? 5000)
+
+/**
  * Indexregel für Anime-Seiten — EINE Quelle für Seiten-noindex und Sitemap-keep.
- * Indexiert, wenn der Titel Streaming-Daten hat (das ist der Mehrwert gegenüber
- * AniList/aniSearch) ODER einen eigenen deutschen Text ≥ INDEX_MIN_CHARS. Nur
- * Quelltext (englisch) reicht nicht; Musikvideos ohne Stream sind immer dünn.
+ *
+ * Indexiert wird, wenn der Titel
+ *   • Streaming-Daten hat (unser Mehrwert gegenüber AniList/aniSearch) ODER
+ *   • einen eigenen deutschen Text UND genug Nachfrage (Popularität) hat.
+ * Musikvideos und der gesperrte Adult-Bestand sind nie indexierbar.
  */
 export function animeIndexable(a: any): boolean {
   if (a?.noindex) return false
+  // Adult-Policy: gesperrter Bestand ist öffentlich nicht erreichbar (301 → /genre/ecchi).
+  if (a?.isHentai === true) return false
   const hasStream =
     (Array.isArray(a?.streamingOffers) && a.streamingOffers.length > 0) ||
     (Array.isArray(a?.streamingProviders) && a.streamingProviders.length > 0)
   if (hasStream) return true
   if (a?.format === 'MUSIC') return false
-  return !textTooThin(a?.descriptionDe)
+  if (textTooThin(a?.descriptionDe)) return false
+  return (Number(a?.popularity) || 0) >= INDEX_MIN_POPULARITY
 }
 
 // Natürliche Aufzählung: [a,b,c] → „a, b und c".

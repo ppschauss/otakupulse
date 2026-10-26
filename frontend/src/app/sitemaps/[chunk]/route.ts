@@ -41,7 +41,8 @@ async function animeChunk(where: any, page: number): Promise<Entry[]> {
     depth: 0,
     select: {
       slug: true, updatedAt: true, contentUpdatedAt: true,
-      descriptionDe: true, format: true, noindex: true, streamingProviders: true, streamingOffers: true,
+      descriptionDe: true, format: true, noindex: true, popularity: true, isHentai: true,
+      streamingProviders: true, streamingOffers: true,
     } as any,
   })
   return (res.docs as any[])
