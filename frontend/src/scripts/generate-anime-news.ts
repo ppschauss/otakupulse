@@ -196,8 +196,19 @@ async function main() {
       and: [
         { status: { in: ['RELEASING', 'NOT_YET_RELEASED'] } },
         { createdAt: { greater_than: new Date(Date.now() - Number(recent) * 864e5).toISOString() } },
-        // Hentai nie automatisch in News/RSS — nur manuell (per --slug).
+        // Adult-Policy: gesperrter Bestand nie in News/RSS.
         { isHentai: { not_equals: true } },
+        // Relevanzschwelle: nur Titel mit echtem Nachrichtenwert — bekannt genug,
+        // gut bewertet oder bereits bei einem Anbieter gelistet. Ohne diese Hürde
+        // entstand pro Import-Welle eine Flut austauschbarer Ankündigungen
+        // („Low value content" / Scaled Content in den AdSense-Richtlinien).
+        {
+          or: [
+            { popularity: { greater_than_equal: 1500 } },
+            { averageScore: { greater_than_equal: 65 } },
+            { streamingProviders: { exists: true } },
+          ],
+        },
       ],
     }
     sort = '-createdAt'

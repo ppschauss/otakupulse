@@ -5,9 +5,9 @@
  * gebaut; Claude liefert nur Headline, Teaser und Intro-Fließtext.
  *
  * Modi (je Aufruf einer):
- *   --daily            Tages-Digest „Heute im Simulcast" + Episoden-Highlights
- *                      für Top-Titel (Score ≥ 70). Täglich morgens.
- *   --weekly-preview   Wochenvorschau (alle Episoden der Woche, nach Tag). Montags.
+ *   --daily            ABGESCHAFFT (erzeugte pro Tag Digest + Einzel-Episoden-Artikel).
+ *   --weekly-preview   „Anime-Woche": was startet, was läuft weiter, was endet —
+ *                      ein Artikel pro Kalenderwoche. Montags früh (07:55).
  *   --weekly-recap     Wochenrückblick (was lief, Highlights). Sonntags abends.
  *   --genre-spotlight  Rotierendes Genre-Ranking („Die besten X-Anime"). Wöchentlich.
  *   --platform-new     „Neu auf <Anbieter> im <Monat>" — je DE-Anbieter die Titel, die in
@@ -267,102 +267,6 @@ const score = (a: any): number => a.averageScore || 0
 const pop = (a: any): number => a.popularity || 0
 
 // ---------------------------------------------------------------------------
-// Modus: --daily  (Tages-Digest + Episoden-Highlights)
-// ---------------------------------------------------------------------------
-async function runDaily(payload: Payload, authorId: any, ymd: string): Promise<void> {
-  const from = berlinMidnight(ymd)
-  const to = berlinMidnight(addDays(ymd, 1))
-  const rows = await fetchEpisodes(payload, from, to)
-  console.log(`→ ${rows.length} Episoden am ${ymd}`)
-  if (!rows.length) return
-
-  const dayLabel = DAY_LONG.format(from)
-  const topTitles = [...rows].sort((a, b) => score(b.anime) - score(a.anime) || pop(b.anime) - pop(a.anime)).slice(0, 3)
-
-  // 1) Tages-Digest
-  await createArticle(payload, authorId, {
-    slug: `simulcast-heute-${ymd}`,
-    category: 'simulcast',
-    coverImageUrl: bestBanner(rows),
-    relatedAnime: rows.map((r) => r.anime.id),
-    valid: validFor(rows),
-    fallbackTitle: `Simulcast heute: Diese Anime-Episoden laufen am ${dayLabel}`,
-    prompt: [
-      `Schreibe das Intro (2–3 Absätze, 100–180 Wörter) für unseren täglichen Simulcast-Überblick.`,
-      `Heute ist ${dayLabel}. Es laufen ${rows.length} neue Episoden.`,
-      `Highlights des Tages (diese Bausteine im Text wörtlich einbauen):`,
-      ...topTitles.map(
-        (r) =>
-          `- [[anime:${r.anime.slug}|${displayTitle(r.anime)}]] Episode ${Number(r.ep.number)} um ${TIME.format(r.time)} Uhr` +
-          (platformNames(r.anime).length ? ` auf ${platformNames(r.anime)[0]}` : '') +
-          (score(r.anime) ? ` (Community-Score ${score(r.anime)})` : ''),
-      ),
-      `Verweise am Ende auf unseren Simulcast-Kalender mit dem Baustein [[page:kalender|Simulcast-Kalender]].`,
-      `headline: Muss "Simulcast" und den Wochentag/das Datum enthalten, z. B. Bezug auf "${dayLabel}".`,
-    ].join('\n'),
-    appendix: [`## Alle neuen Episoden am ${dayLabel}`, '', EP_TABLE_HEAD, ...rows.map(epRow)].join('\n'),
-  })
-
-  // 2) Episoden-Highlights für Top-Titel (eigenständige Artikel)
-  const maxHighlights = Number(arg('max-highlights') || 4)
-  const highlights = rows
-    .filter((r) => score(r.anime) >= 70 || pop(r.anime) >= 50000)
-    .sort((a, b) => pop(b.anime) - pop(a.anime))
-    .slice(0, maxHighlights)
-
-  for (const r of highlights) {
-    const a = r.anime
-    const t = displayTitle(a)
-    const n = Number(r.ep.number)
-    const plat = platformNames(a)
-    const genres = ((a.genres || []) as any[]).filter((g) => g && typeof g === 'object')
-    const epTitle = r.ep.titleGerman || r.ep.titleEnglish || r.ep.titleRomaji || ''
-    const synopsis = r.ep.synopsisDe || ''
-    const desc = (a.descriptionDe || '').slice(0, 900)
-
-    await createArticle(payload, authorId, {
-      slug: `episode-${a.slug}-${Number.isFinite(n) ? n : String(r.ep.number).replace(/\./g, '-')}`,
-      category: 'simulcast',
-      coverImageUrl: animeBanner(a) || undefined,
-      relatedAnime: [a.id],
-      valid: {
-        anime: new Set([a.slug]),
-        genre: new Set(genres.map((g: any) => g.slug)),
-        studio: new Set(),
-        tag: new Set(),
-        page: PAGES,
-      },
-      fallbackTitle: `${t} Episode ${n}: heute neu im Simulcast`,
-      prompt: [
-        `Schreibe eine kurze Episoden-News (150–220 Wörter, 2–3 Absätze) zur heutigen Episode.`,
-        `Anime-Baustein (wörtlich einbauen): [[anime:${a.slug}|${t}]]`,
-        genres.length ? `Genre-Bausteine (1–2 davon einbauen): ${genres.map((g: any) => `[[genre:${g.slug}|${g.name}]]`).join(', ')}` : '',
-        `Fakten: Episode ${n}${epTitle ? ` („${epTitle}")` : ''} läuft heute (${dayLabel}) um ${TIME.format(r.time)} Uhr` +
-          (plat.length ? ` auf ${plat.join(', ')}` : '') +
-          (score(a) ? `; Community-Score ${score(a)}/100` : '') +
-          (a.episodes ? `; insgesamt ${a.episodes} Episoden geplant` : ''),
-        synopsis ? `Episoden-Synopsis (neu formulieren, spoiler-arm): ${synopsis}` : '',
-        `Worum es in der Serie geht (für Kontext, NICHT 1:1 kopieren): ${desc || '(keine Beschreibung — nur Fakten einordnen)'}`,
-        `headline: Muss den Titel "${t}" und "Episode ${n}" enthalten.`,
-      ]
-        .filter(Boolean)
-        .join('\n'),
-      appendix: [
-        '## Auf einen Blick',
-        '',
-        `| Anime | Episode | Ausstrahlung | Plattform${score(a) ? ' | Score' : ''} |`,
-        `|---|---|---|---${score(a) ? '|---' : ''}|`,
-        `| [[anime:${a.slug}|${cell(t)}]] | ${n}${epTitle ? ` — ${cell(epTitle)}` : ''} | ${dayLabel}, ${TIME.format(r.time)} Uhr | ${
-          plat.length ? cell(plat.join(', ')) : '—'
-        }${score(a) ? ` | ${score(a)}/100` : ''} |`,
-        '',
-        `Alle Sendetermine der Woche findest du im [[page:kalender|Simulcast-Kalender]].`,
-      ].join('\n'),
-    })
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Modus: --weekly-preview  (Montags: die komplette Woche)
 // ---------------------------------------------------------------------------
 async function runWeeklyPreview(payload: Payload, authorId: any, ymd: string): Promise<void> {
@@ -374,36 +278,90 @@ async function runWeeklyPreview(payload: Payload, authorId: any, ymd: string): P
   console.log(`→ ${rows.length} Episoden in KW ${week}/${year}`)
   if (!rows.length) return
 
-  // Nach Tag gruppieren.
-  const byDay = new Map<string, EpRow[]>()
+  // --- Einordnung je Titel: Start, Finale oder laufend ---------------------
+  type Entry = { row: EpRow; n: number; total: number | null }
+  const first = new Map<any, Entry>() // pro Anime die früheste Episode der Woche
   for (const r of rows) {
-    const k = berlinYmd(r.time)
-    if (!byDay.has(k)) byDay.set(k, [])
-    byDay.get(k)!.push(r)
+    const n = Number(r.ep.number)
+    const prev = first.get(r.anime.id)
+    if (!prev || n < prev.n) {
+      first.set(r.anime.id, { row: r, n, total: typeof r.anime.episodes === 'number' ? r.anime.episodes : null })
+    }
   }
-  const sections: string[] = []
-  for (const [day, list] of [...byDay.entries()].sort()) {
-    sections.push(`## ${DAY_SHORT.format(berlinMidnight(day))}`)
-    sections.push([EP_TABLE_HEAD, ...list.map(epRow)].join('\n'))
+  const entries = [...first.values()]
+  const starters = entries.filter((e) => e.n === 1)
+  // Finale: die letzte Episode der Staffel läuft diese Woche.
+  const finales = rows
+    .map((r) => ({ row: r, n: Number(r.ep.number), total: typeof r.anime.episodes === 'number' ? r.anime.episodes : null }))
+    .filter((e) => e.total && e.n === e.total)
+  const finaleIds = new Set(finales.map((e) => e.row.anime.id))
+  const ongoing = entries.filter((e) => e.n > 1 && !finaleIds.has(e.row.anime.id))
+
+  // Hat ein Titel eine bekannte Fortsetzung? (relations SEQUEL) → „geht weiter"
+  const hasSequel = (a: any): boolean =>
+    ((a?.relations || []) as any[]).some((rel) => rel?.relationType === 'SEQUEL')
+
+  const t = (r: EpRow) => displayTitle(r.anime)
+  const line = (e: Entry | { row: EpRow; n: number }) =>
+    `| [[anime:${e.row.anime.slug}|${cell(t(e.row))}]] | ${e.n} | ${DAY_SHORT.format(e.row.time)}, ${TIME.format(e.row.time)} Uhr | ${
+      platformNames(e.row.anime).length ? cell(platformNames(e.row.anime).join(', ')) : '—'
+    } |`
+  const HEAD = '| Anime | Episode | Ausstrahlung | Wo läuft es |\n|---|---|---|---|'
+
+  const appendix: string[] = []
+  if (starters.length) {
+    appendix.push('## Diese Woche starten', '', HEAD, ...starters.map(line), '')
   }
+  if (ongoing.length) {
+    appendix.push('## Es geht weiter', '', HEAD, ...ongoing.sort((a, b) => +a.row.time - +b.row.time).map(line), '')
+  }
+  if (finales.length) {
+    appendix.push(
+      '## Finale der Woche',
+      '',
+      '| Anime | Letzte Episode | Ausstrahlung | Wie es weitergeht |',
+      '|---|---|---|---|',
+      ...finales.map(
+        (e) =>
+          `| [[anime:${e.row.anime.slug}|${cell(t(e.row))}]] | ${e.n} von ${e.total} | ${DAY_SHORT.format(e.row.time)}, ${TIME.format(
+            e.row.time,
+          )} Uhr | ${hasSequel(e.row.anime) ? 'Fortsetzung angekündigt' : 'Fortsetzung offen'} |`,
+      ),
+      '',
+    )
+  }
+  appendix.push(`Alle Sendetermine mit Countdown findest du im [[page:kalender|Simulcast-Kalender]].`)
 
   const topTitles = [...rows].sort((a, b) => score(b.anime) - score(a.anime) || pop(b.anime) - pop(a.anime)).slice(0, 4)
+  const sequelNote = finales.filter((e) => hasSequel(e.row.anime)).map((e) => t(e.row))
+
   await createArticle(payload, authorId, {
-    slug: `simulcast-vorschau-kw${week}-${year}`,
+    slug: `anime-woche-kw${week}-${year}`,
     category: 'simulcast',
     coverImageUrl: bestBanner(rows),
-    relatedAnime: topTitles.map((r) => r.anime.id),
+    relatedAnime: [...new Set([...starters, ...finales, ...topTitles.map((r) => ({ row: r }) as any)].map((e: any) => e.row.anime.id))].slice(0, 12),
     valid: validFor(rows),
-    fallbackTitle: `Simulcast-Vorschau KW ${week}: Alle neuen Anime-Episoden der Woche`,
+    fallbackTitle: `Anime-Woche KW ${week}: ${starters.length} Starts, ${rows.length} neue Folgen`,
     prompt: [
-      `Schreibe das Intro (2–3 Absätze, 120–180 Wörter) für unsere wöchentliche Simulcast-Vorschau (Kalenderwoche ${week}, ${year}).`,
-      `Diese Woche laufen insgesamt ${rows.length} neue Episoden.`,
-      `Highlights (Bausteine wörtlich einbauen):`,
-      ...topTitles.map((r) => `- [[anime:${r.anime.slug}|${displayTitle(r.anime)}]] (Score ${score(r.anime) || '–'})`),
+      `Schreibe das Intro (3–4 Absätze, 180–260 Wörter) für unseren Wochenüberblick „Anime-Woche" (KW ${week}, ${year}).`,
+      `Zahlen der Woche: ${rows.length} neue Episoden, ${starters.length} Serienstarts, ${finales.length} Staffelfinale.`,
+      starters.length
+        ? `Neu dabei (Bausteine wörtlich einbauen): ${starters.slice(0, 4).map((e) => `[[anime:${e.row.anime.slug}|${t(e.row)}]]`).join(', ')}`
+        : `Diese Woche startet keine neue Serie — der Schwerpunkt liegt auf den laufenden Titeln.`,
+      topTitles.length
+        ? `Weiter geht es u. a. mit: ${topTitles.slice(0, 3).map((r) => `[[anime:${r.anime.slug}|${displayTitle(r.anime)}]]`).join(', ')}`
+        : '',
+      finales.length
+        ? `Zum Finale kommen: ${finales.slice(0, 4).map((e) => `[[anime:${e.row.anime.slug}|${t(e.row)}]]`).join(', ')}.` +
+          (sequelNote.length ? ` Davon haben eine Fortsetzung angekündigt: ${sequelNote.slice(0, 3).join(', ')}.` : '')
+        : '',
+      `Gliedere das Intro grob in: was neu startet · was weiterläuft · was zu Ende geht.`,
       `Verweise auf den [[page:kalender|Simulcast-Kalender]].`,
-      `headline: Muss "Simulcast" und "KW ${week}" oder "diese Woche" enthalten.`,
-    ].join('\n'),
-    appendix: sections.join('\n\n'),
+      `headline: Muss "Woche" enthalten und Lust auf die Woche machen (z. B. "Anime-Woche KW ${week}: …").`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    appendix: appendix.join('\n'),
   })
 }
 
@@ -618,8 +576,12 @@ async function main() {
   const authorId = await ensureAuthor(payload)
   const ymd = arg('date') || berlinYmd(new Date())
 
-  if (process.argv.includes('--daily')) await runDaily(payload, authorId, ymd)
-  else if (process.argv.includes('--weekly-preview')) await runWeeklyPreview(payload, authorId, ymd)
+  if (process.argv.includes('--daily')) {
+    // Abgeschafft: Tages-Digest und Einzel-Episoden-Meldungen erzeugten ~5 Artikel
+    // pro Tag nach Schablone („Low value content" / Scaled Content). Ersetzt durch
+    // den Wochenüberblick --weekly-preview (montags).
+    console.log('→ --daily ist abgeschafft. Nutze --weekly-preview (montags) für den Wochenüberblick.')
+  } else if (process.argv.includes('--weekly-preview')) await runWeeklyPreview(payload, authorId, ymd)
   else if (process.argv.includes('--weekly-recap')) await runWeeklyRecap(payload, authorId, ymd)
   else if (process.argv.includes('--genre-spotlight')) await runGenreSpotlight(payload, authorId, ymd)
   else if (process.argv.includes('--platform-new')) await runPlatformNew(payload, authorId, ymd)
