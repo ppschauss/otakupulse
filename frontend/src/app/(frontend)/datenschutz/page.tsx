@@ -67,7 +67,7 @@ export default function DatenschutzPage() {
             Cookie-Auswahl selbst speichern wir lokal in deinem Browser (localStorage), nicht in einem Cookie.
           </p>
           <p className="mt-2">
-            Optionale Dienste – insbesondere die Reichweitenmessung (Kategorie „Statistik") sowie etwaige
+            Optionale Dienste – insbesondere die Reichweitenmessung (Kategorie „Statistik") sowie Werbung und
             Drittanbieter-Inhalte (Kategorie „Marketing") – werden ausschließlich nach deiner ausdrücklichen
             Einwilligung geladen (Opt-in, Art. 6 Abs. 1 lit. a DSGVO, § 25 Abs. 1 TDDDG). Ohne Einwilligung werden
             diese Dienste nicht aktiviert. Du kannst deine Auswahl jederzeit ändern oder widerrufen:{' '}
@@ -113,7 +113,48 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-lg font-bold text-white">5. Externe Inhalte (Bilder &amp; Verlinkungen)</h2>
+          <h2 className="text-lg font-bold text-white">5. Werbung (Kategorie „Marketing“)</h2>
+          <p className="mt-2">
+            Diese Website finanziert sich anteilig über Werbung. Dazu setzen wir – ausschließlich nach deiner
+            Einwilligung in die Kategorie „Marketing“ – <strong>Google AdSense</strong> ein, einen Dienst der Google
+            Ireland Limited (Gordon House, Barrow Street, Dublin 4, Irland; Mutterkonzern Google LLC, USA).
+          </p>
+          <p className="mt-2">
+            AdSense verwendet Cookies bzw. vergleichbare Technologien, um Anzeigen auszuliefern, deren Auslieferung zu
+            messen und Missbrauch zu erkennen. Dabei werden unter anderem deine gekürzte IP-Adresse, Angaben zu
+            Browser und Endgerät sowie die aufgerufenen Seiten verarbeitet; es kann zu einer Übermittlung an Server
+            von Google in die USA kommen. Google ist unter dem <strong>EU-US Data Privacy Framework</strong>
+            {' '}zertifiziert; ergänzend bestehen Standardvertragsklauseln. Rechtsgrundlage ist deine Einwilligung
+            nach Art. 6 Abs. 1 lit. a DSGVO i.&nbsp;V.&nbsp;m. § 25 Abs. 1 TDDDG.
+          </p>
+          <p className="mt-2">
+            Ohne deine Einwilligung werden weder das Anzeigen-Skript geladen noch Werbe-Cookies gesetzt. Du kannst
+            deine Einwilligung jederzeit mit Wirkung für die Zukunft widerrufen, indem du deine{' '}
+            <ConsentSettingsLink className="font-medium text-accent underline-offset-2 hover:underline" /> anpasst.
+            Einstellungen zu personalisierter Werbung kannst du zusätzlich direkt bei Google unter{' '}
+            <a
+              href="https://adssettings.google.com/"
+              rel="nofollow noopener noreferrer"
+              target="_blank"
+              className="text-accent hover:underline"
+            >
+              adssettings.google.com
+            </a>{' '}
+            vornehmen. Weitere Informationen findest du in der{' '}
+            <a
+              href="https://policies.google.com/technologies/ads"
+              rel="nofollow noopener noreferrer"
+              target="_blank"
+              className="text-accent hover:underline"
+            >
+              Google-Information zu Werbung
+            </a>
+            .
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-lg font-bold text-white">6. Externe Inhalte (Bilder &amp; Verlinkungen)</h2>
           <p className="mt-2">
             Inhalte wie Cover und Bildmaterial können von externen Quellen (u.&nbsp;a. der AniList-CDN) stammen. Beim
             Laden solcher Inhalte kann deine IP-Adresse an den jeweiligen Anbieter übertragen werden. Zudem verlinken
@@ -123,7 +164,7 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-lg font-bold text-white">6. Kontaktaufnahme</h2>
+          <h2 className="text-lg font-bold text-white">7. Kontaktaufnahme</h2>
           <p className="mt-2">
             Wenn du uns per E-Mail kontaktierst, verarbeiten wir die von dir übermittelten Daten (E-Mail-Adresse,
             Inhalt) zur Bearbeitung deiner Anfrage auf Grundlage von Art. 6 Abs. 1 lit. f bzw. lit. b DSGVO. Die Daten
@@ -133,7 +174,7 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-lg font-bold text-white">7. Deine Rechte</h2>
+          <h2 className="text-lg font-bold text-white">8. Deine Rechte</h2>
           <p className="mt-2">
             Du hast jederzeit das Recht auf Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17),
             Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) sowie Widerspruch (Art. 21
@@ -142,7 +183,7 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-lg font-bold text-white">8. Beschwerderecht</h2>
+          <h2 className="text-lg font-bold text-white">9. Beschwerderecht</h2>
           <p className="mt-2">
             Dir steht ein Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde zu. Zuständig ist u.&nbsp;a. Der
             Hessische Beauftragte für Datenschutz und Informationsfreiheit, Postfach 3163, 65021 Wiesbaden.

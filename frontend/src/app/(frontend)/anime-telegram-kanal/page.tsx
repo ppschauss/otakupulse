@@ -85,7 +85,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Kostet der Telegram-Kanal etwas?',
-    a: 'Nein, der Kanal ist kostenlos. OtakuPulse ist ein privates, nicht-kommerzielles Projekt — keine Paywall, keine Werbung.',
+    a: 'Nein, der Kanal ist kostenlos und werbefrei. OtakuPulse ist ein privates Projekt ohne Paywall; die Website selbst finanziert sich anteilig über Werbung.',
   },
   {
     q: 'Wie abonniere ich den Anime-Telegram-Kanal?',

@@ -1,6 +1,7 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { MediaRow } from './MediaRow'
+import { publicAnimeFilter } from '@/lib/adult'
 
 // Rotation: alle 6 Stunden ein neuer Seed → die Reihen wirken dynamisch, bleiben
 // innerhalb eines Zeitfensters aber stabil (konsistent für alle Besucher + cachebar).
@@ -50,7 +51,9 @@ export async function AnimeRowAsync({
 
   // Größeren Pool aus dem Top-Bereich holen, dann pro Zeitfenster mischen und kürzen.
   const pool = rotate ? Math.min(display * 3, 60) : display
-  const { docs } = await payload.find({ collection: 'anime', where: finalWhere, sort, limit: pool, depth: 0 })
+  // Gesperrter Bestand (Adult-Policy) erscheint in keiner Reihe.
+  const where2 = finalWhere ? { and: [finalWhere, publicAnimeFilter] } : publicAnimeFilter
+  const { docs } = await payload.find({ collection: 'anime', where: where2, sort, limit: pool, depth: 0 })
 
   let items = docs
   if (rotate && docs.length > display) {

@@ -6,6 +6,7 @@ import {
 } from '@/lib/sitemap'
 import { url } from '@/lib/site'
 import { animeIndexable } from '@/lib/anime'
+import { publicAnimeFilter } from '@/lib/adult'
 import { platformListPaths } from '@/lib/platformLists'
 
 export const dynamic = 'force-dynamic'
@@ -85,7 +86,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ chunk: 
     const payload = await getPayload({ config })
     const g = await payload.find({ collection: 'genres', where: { slug: { equals: slug } }, limit: 1, depth: 0 })
     if (!g.docs.length) return render([])
-    return render(await animeChunk({ genres: { in: [(g.docs[0] as any).id] } }, page))
+    return render(await animeChunk({ and: [{ genres: { in: [(g.docs[0] as any).id] } }, publicAnimeFilter] }, page))
   }
 
   // Kombinierte Tag-Sitemap: alle Anime mit ≥1 Tag. ID = tagsanime__<page>

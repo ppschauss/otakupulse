@@ -3,6 +3,7 @@ import config from '@payload-config'
 import { SITE_NAME, url } from '@/lib/site'
 import { displayTitle } from '@/lib/anime'
 import { buildRssFeed, rssResponse } from '@/lib/feed'
+import { publicAnimeFilter } from '@/lib/adult'
 
 export const revalidate = 3600
 
@@ -21,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 
   const { docs } = await payload.find({
     collection: 'anime',
-    where: { genres: { in: [genre.id] } },
+    where: { and: [{ genres: { in: [genre.id] } }, publicAnimeFilter] },
     sort: '-createdAt',
     limit: 30,
     depth: 0,

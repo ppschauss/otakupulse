@@ -10,6 +10,7 @@ import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
 import { STREAMING_PROVIDERS } from '@/lib/streaming'
 import { url } from '@/lib/site'
+import { publicAnimeFilter } from '@/lib/adult'
 
 // ISR: Anbieter-Übersicht ändert sich selten (Zahlen alle 10 Min frisch).
 export const revalidate = 600
@@ -32,7 +33,7 @@ export default async function PlatformListPage() {
       payload
         .count({
           collection: 'anime',
-          where: { streamingProviders: { in: [p.slug] } },
+          where: { and: [{ streamingProviders: { in: [p.slug] } }, publicAnimeFilter] },
         })
         .then((r) => ({ provider: p, total: r.totalDocs })),
     ),

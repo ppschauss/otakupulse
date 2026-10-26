@@ -43,7 +43,7 @@ export default function NutzungsbedingungenPage() {
         <section>
           <h2 className="text-lg font-bold text-white">2. Gegenstand des Angebots</h2>
           <p className="mt-2">
-            {SITE_NAME} ist eine kostenlose, privat betriebene und nicht-kommerzielle Informationsplattform rund um
+            {SITE_NAME} ist eine kostenlos nutzbare, privat betriebene Informationsplattform rund um
             Anime: Datenbank zu Anime-Titeln, Charakteren, Studios, Synchronsprechern, Genres und Seasons, ein
             Simulcast-Kalender sowie redaktionelle und automatisiert erstellte News-Beiträge. Es besteht kein Anspruch
             auf Vollständigkeit, Richtigkeit oder ständige Verfügbarkeit der Inhalte.

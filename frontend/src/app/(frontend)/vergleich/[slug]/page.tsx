@@ -1,6 +1,6 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
@@ -8,6 +8,7 @@ import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { pageMeta } from '@/lib/seo'
 import { displayTitle, formatLabel, statusLabel, seasonLabel, plainText } from '@/lib/anime'
 import { AdultGuard } from '@/components/AdultGuard'
+import { ADULT_REDIRECT_TARGET, isBlockedAnime } from '@/lib/adult'
 
 // ISR statt force-dynamic: Detailseiten wurden bislang bei JEDEM Aufruf neu aus
 // der DB gerendert und schickten `Cache-Control: no-store` — dadurch konnte weder
@@ -41,6 +42,8 @@ async function getPair(slug: string) {
     payload.find({ collection: 'anime', where: { slug: { equals: slugB } }, limit: 1, depth: 1 }),
   ])
   if (!a.docs.length || !b.docs.length) return null
+  // Gesperrter Bestand (Adult-Policy) hat keine öffentliche Vergleichsseite.
+  if (isBlockedAnime(a.docs[0]) || isBlockedAnime(b.docs[0])) permanentRedirect(ADULT_REDIRECT_TARGET)
   return { a: a.docs[0] as any, b: b.docs[0] as any }
 }
 

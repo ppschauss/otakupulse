@@ -11,6 +11,7 @@ import { JsonLd } from '@/components/JsonLd'
 import { breadcrumbLd, pageMeta } from '@/lib/seo'
 import { providerBySlug } from '@/lib/streaming'
 import { platformListCounts, MIN_LIST_SIZE, staticFilter } from '@/lib/platformLists'
+import { publicAnimeFilter } from '@/lib/adult'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
@@ -56,7 +57,7 @@ export default async function PlatformDetail({
   const payload = await getPayload({ config })
   const result = await payload.find({
     collection: 'anime',
-    where: { streamingProviders: { in: [provider.slug] } },
+    where: { and: [{ streamingProviders: { in: [provider.slug] } }, publicAnimeFilter] },
     sort: SORTS[sortKey],
     limit: PER_PAGE,
     page,

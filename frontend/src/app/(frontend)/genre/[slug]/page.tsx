@@ -1,12 +1,13 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
 import { Faq } from '@/components/Faq'
+import { ADULT_REDIRECT_TARGET, BLOCKED_GENRE_SLUGS, publicAnimeFilter } from '@/lib/adult'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { Chip } from '@/components/Chip'
 import { SeoFooter } from '@/components/SeoFooter'
@@ -22,6 +23,8 @@ export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
 
 async function getGenre(slug: string) {
+  // Gesperrte Genres (Hentai) existieren öffentlich nicht mehr → dauerhaft auf Ecchi.
+  if ((BLOCKED_GENRE_SLUGS as readonly string[]).includes(slug)) permanentRedirect(ADULT_REDIRECT_TARGET)
   const payload = await getPayload({ config })
   const { docs } = await payload.find({ collection: 'genres', where: { slug: { equals: slug } }, limit: 1, depth: 1 })
   return docs[0] as any
@@ -54,7 +57,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 async function getExtras(payload: any, genre: any) {
   const sample = await payload.find({
     collection: 'anime',
-    where: { genres: { in: [genre.id] } },
+    where: { and: [{ genres: { in: [genre.id] } }, publicAnimeFilter] },
     sort: '-popularity',
     limit: 80,
     depth: 1,
@@ -131,7 +134,7 @@ export default async function GenreDetail({
   const payload = await getPayload({ config })
   const result = await payload.find({
     collection: 'anime',
-    where: { genres: { in: [genre.id] } },
+    where: { and: [{ genres: { in: [genre.id] } }, publicAnimeFilter] },
     sort: '-popularity',
     limit: PER_PAGE,
     page,

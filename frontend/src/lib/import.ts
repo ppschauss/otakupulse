@@ -4,9 +4,29 @@
  * von einem On-Demand-Fallback in einer Route.
  */
 import type { Payload } from 'payload'
+import { BLOCKED_GENRE_SLUGS } from './adult'
 import { anilistRequest, slugify, MEDIA_QUERY, SEARCH_QUERY } from './anilist'
 
 type Id = string | number
+
+/**
+ * Wird geworfen, wenn ein AniList-Titel wegen der Adult-Policy nicht importiert
+ * werden darf. Aufrufer (Batch-Skripte, On-Demand-Import) behandeln das als
+ * „übersprungen", nicht als Fehler.
+ */
+export class BlockedGenreError extends Error {
+  constructor(title: string) {
+    super(`Übersprungen (Adult-Policy): ${title}`)
+    this.name = 'BlockedGenreError'
+  }
+}
+
+export const isBlockedGenreList = (genres?: string[] | null): boolean =>
+  (genres || []).some((g) => (BLOCKED_GENRE_SLUGS as readonly string[]).includes(slugify(String(g))))
+
+/** Gesperrt, wenn AniList den Titel als `isAdult` führt ODER ein gesperrtes Genre trägt. */
+export const isBlockedMedia = (m: { genres?: string[] | null; isAdult?: boolean | null }): boolean =>
+  m?.isAdult === true || isBlockedGenreList(m?.genres)
 
 // --- kleine Mapper ------------------------------------------------------
 
@@ -350,6 +370,12 @@ export async function importAnime(payload: Payload, anilistId: number, opts: Imp
   const m = data.Media
   if (!m) throw new Error(`AniList: kein Media für ID ${anilistId}`)
 
+  // Adult-Policy: Hentai kommt gar nicht erst in den Bestand (Google Publisher
+  // Policies — sexuell explizite Inhalte und Anzeigen schließen sich aus).
+  // Siehe lib/adult.ts. Bereits vorhandene Datensätze bleiben in der DB, ihre
+  // öffentlichen URLs leiten dauerhaft auf /genre/ecchi um.
+  if (isBlockedMedia(m)) throw new BlockedGenreError(m.title?.romaji || String(anilistId))
+
   // Taxonomie / einfache Relationen
   const genreIds: Id[] = []
   for (const g of m.genres || []) genreIds.push(await upsertGenre(payload, g))
@@ -534,8 +560,21 @@ export function importAnimeBySlug(payload: Payload, slug: string): Promise<strin
     for (const c of candidates) {
       const cslug = slugify(c.title?.romaji || c.title?.english || String(c.id))
       if (cslug === slug) {
+        // Gesperrtes Genre → gar nicht erst importieren; die Route zeigt 404.
+        if (isBlockedMedia(c)) {
+          notFound.set(slug, Date.now())
+          return null
+        }
         recentImports.push(Date.now())
-        return (await importAnime(payload, c.id)).slug
+        try {
+          return (await importAnime(payload, c.id)).slug
+        } catch (err) {
+          if (err instanceof BlockedGenreError) {
+            notFound.set(slug, Date.now())
+            return null
+          }
+          throw err
+        }
       }
     }
     // Nichts Passendes → für eine Weile als „nicht gefunden" merken.

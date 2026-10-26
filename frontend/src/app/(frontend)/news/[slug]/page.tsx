@@ -1,6 +1,6 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
@@ -10,6 +10,7 @@ import { JsonLd } from '@/components/JsonLd'
 import { ShareButtons } from '@/components/ShareButtons'
 import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 import { pageMeta } from '@/lib/seo'
+import { ADULT_REDIRECT_TARGET, isBlockedArticle } from '@/lib/adult'
 import { url, SITE_NAME } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
@@ -35,7 +36,10 @@ async function getArticle(slug: string) {
     limit: 1,
     depth: 1,
   })
-  return docs[0] as any
+  const article = docs[0] as any
+  // Beiträge zu Titeln aus dem gesperrten Bestand (Hentai) sind nicht mehr öffentlich.
+  if (article && isBlockedArticle(article)) permanentRedirect(ADULT_REDIRECT_TARGET)
+  return article
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {

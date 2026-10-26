@@ -17,6 +17,7 @@ import { characterVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 import { hubExtras } from '@/lib/hub'
 import { displayName, displayTitle, genderLabel, liveArticleFilters, localImage, plainText, textTooThin } from '@/lib/anime'
+import { publicAnimeFilter } from '@/lib/adult'
 
 // ISR statt force-dynamic: Detailseiten wurden bislang bei JEDEM Aufruf neu aus
 // der DB gerendert und schickten `Cache-Control: no-store` — dadurch konnte weder
@@ -70,7 +71,8 @@ export default async function CharacterDetail({ params }: { params: Promise<{ sl
   if (!character) notFound()
 
   const payload = await getPayload({ config })
-  const where = { 'characters.character': { in: [character.id] } }
+  // Gesperrter Bestand (Adult-Policy) zählt nicht zu den Auftritten.
+  const where = { and: [{ 'characters.character': { in: [character.id] } }, publicAnimeFilter] }
 
   const [appearances, extras, coSample, news] = await Promise.all([
     payload.find({ collection: 'anime', where, sort: '-popularity', limit: 24, depth: 0 }),

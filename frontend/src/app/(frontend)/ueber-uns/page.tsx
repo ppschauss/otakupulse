@@ -33,7 +33,7 @@ export default function UeberUnsPage() {
       <p className="mt-3 leading-relaxed text-zinc-300">
         {SITE_NAME} ist eine deutschsprachige Anime-Datenbank mit einem klaren Schwerpunkt: <strong>Wer streamt welchen
         Anime in Deutschland</strong> – mit welcher Sprachfassung, im Abo oder kostenlos, und wie lange noch. Das Projekt
-        ist privat und nicht-kommerziell und wird von Patrick Schauss aus Karben betrieben (siehe{' '}
+        wird privat von Patrick Schauss aus Karben betrieben und finanziert sich anteilig über Werbung (siehe{' '}
         <Link href="/impressum" className="text-accent hover:underline">Impressum</Link>).
       </p>
 

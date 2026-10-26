@@ -11,6 +11,7 @@ import { ChipSection, NewsSection } from '@/components/HubSections'
 import { pageMeta } from '@/lib/seo'
 import { hubExtras } from '@/lib/hub'
 import { seasonLabel } from '@/lib/anime'
+import { publicAnimeFilter } from '@/lib/adult'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
@@ -51,7 +52,7 @@ export default async function SeasonDetail({
   const payload = await getPayload({ config })
   const result = await payload.find({
     collection: 'anime',
-    where: { animeSeason: { equals: season.id } },
+    where: { and: [{ animeSeason: { equals: season.id } }, publicAnimeFilter] },
     sort: '-popularity',
     limit: PER_PAGE,
     page,

@@ -1,11 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { AdultGate } from './AdultGate'
 
 export type HeroSlide = { imageUrl?: string | null; title: string; href: string; blur?: boolean }
+
+// Der Slider steht in einem max-w-7xl-Container mit px-4, ist also höchstens ~1248 px breit.
+// Mit "100vw" holt der Browser auf dem Desktop den 1920w-Kandidaten und bekommt damit das
+// Original (bis 1649 px breit); 1200px passt zum Slot und spart rund die Hälfte der Bytes.
+const HERO_SIZES = '(max-width: 1280px) 100vw, 1200px'
+const SLIDE_MS = 5500
+// Das nächste Banner erst nach dem ersten Rendern dazuhängen, damit es nicht mit dem
+// LCP-Bild um Bandbreite konkurriert.
+const PRELOAD_DELAY_MS = 2000
 
 export function HeroSlider({
   slides,
@@ -17,13 +26,36 @@ export function HeroSlider({
   subheading: string
 }) {
   const [i, setI] = useState(0)
+  // Nur diese Slides haben ein <Image> im DOM. Alle gleichzeitig zu rendern lädt alle
+  // Banner sofort: sie liegen übereinander im Viewport, da greift loading="lazy" nicht.
+  const [mounted, setMounted] = useState<number[]>([0])
   const count = slides.length
+
+  const mount = useCallback((idx: number) => {
+    setMounted((m) => (m.includes(idx) ? m : [...m, idx]))
+  }, [])
+
+  const show = useCallback(
+    (idx: number) => {
+      mount(idx)
+      setI(idx)
+    },
+    [mount],
+  )
 
   useEffect(() => {
     if (count <= 1) return
-    const t = setInterval(() => setI((p) => (p + 1) % count), 5500)
+    const t = setInterval(() => setI((p) => (p + 1) % count), SLIDE_MS)
     return () => clearInterval(t)
   }, [count])
+
+  // Das jeweils nächste Bild vorbereiten, damit die Überblendung nicht aufs Laden wartet.
+  useEffect(() => {
+    if (count <= 1) return
+    const next = (i + 1) % count
+    const t = setTimeout(() => mount(next), PRELOAD_DELAY_MS)
+    return () => clearTimeout(t)
+  }, [i, count, mount])
 
   const current = slides[i]
 
@@ -37,14 +69,17 @@ export function HeroSlider({
           aria-hidden={idx !== i}
         >
           {s.imageUrl ? (
-            <Image
-              src={s.imageUrl}
-              alt=""
-              fill
-              priority={idx === 0}
-              sizes="100vw"
-              className="object-cover"
-            />
+            mounted.includes(idx) ? (
+              <Image
+                src={s.imageUrl}
+                alt=""
+                fill
+                priority={idx === 0}
+                fetchPriority={idx === 0 ? 'high' : undefined}
+                sizes={HERO_SIZES}
+                className="object-cover"
+              />
+            ) : null
           ) : (
             <div className="h-full w-full bg-gradient-to-br from-accent/30 to-accent-2/30" />
           )}
@@ -76,7 +111,9 @@ export function HeroSlider({
               <button
                 key={idx}
                 aria-label={`Slide ${idx + 1}`}
-                onClick={() => setI(idx)}
+                onClick={() => show(idx)}
+                onPointerEnter={() => mount(idx)}
+                onFocus={() => mount(idx)}
                 className={`h-1.5 rounded-full transition-all ${idx === i ? 'w-7 bg-accent' : 'w-3 bg-white/30 hover:bg-white/50'}`}
               />
             ))}

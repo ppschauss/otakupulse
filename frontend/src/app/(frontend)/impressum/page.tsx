@@ -59,8 +59,9 @@ export default function ImpressumPage() {
         <section>
           <h2 className="text-lg font-bold text-white">Hinweis</h2>
           <p className="mt-2">
-            {SITE_NAME} ist ein privates, nicht-kommerzielles Projekt ohne bestehendes Gewerbe. Es werden keine Aufträge
-            entgegengenommen.
+            {SITE_NAME} ist ein privat betriebenes Projekt. Auf der Website wird Werbung eingeblendet
+            (Google AdSense), um die laufenden Kosten für Server und Domains anteilig zu decken. Es werden keine
+            Aufträge entgegengenommen.
           </p>
         </section>
 

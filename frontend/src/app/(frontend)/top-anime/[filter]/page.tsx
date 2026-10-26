@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 import { RankedList } from '@/components/RankedList'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { pageMeta } from '@/lib/seo'
+import { publicAnimeFilter } from '@/lib/adult'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +38,7 @@ export default async function TopAnimeFilterPage({ params }: { params: Promise<{
   if (!r) notFound()
 
   const payload = await getPayload({ config })
-  const where: any = { and: [{ averageScore: { greater_than: 0 } }] }
+  const where: any = { and: [{ averageScore: { greater_than: 0 } }, publicAnimeFilter] }
   if (r.kind === 'year') where.and.push({ seasonYear: { equals: r.year } })
   else where.and.push({ genres: { in: [r.genre.id] } })
 

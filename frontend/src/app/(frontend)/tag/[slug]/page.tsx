@@ -14,6 +14,7 @@ import { hubExtras } from '@/lib/hub'
 import { TAG_CATEGORY_LABELS } from '@/lib/anime'
 import { tagVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
+import { publicAnimeFilter } from '@/lib/adult'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
@@ -59,7 +60,7 @@ export default async function TagDetail({
   const payload = await getPayload({ config })
   const result = await payload.find({
     collection: 'anime',
-    where: { 'tags.tag': { in: [tag.id] } },
+    where: { and: [{ 'tags.tag': { in: [tag.id] } }, publicAnimeFilter] },
     sort: '-popularity',
     limit: PER_PAGE,
     page,

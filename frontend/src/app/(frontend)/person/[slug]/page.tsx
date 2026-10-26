@@ -18,6 +18,7 @@ import { personVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
 import { hubExtras } from '@/lib/hub'
 import { displayName, displayTitle, genderLabel, liveArticleFilters, personRoleLabel, localImage, plainText, textTooThin } from '@/lib/anime'
+import { publicAnimeFilter } from '@/lib/adult'
 
 // ISR statt force-dynamic: Detailseiten wurden bislang bei JEDEM Aufruf neu aus
 // der DB gerendert und schickten `Cache-Control: no-store` — dadurch konnte weder
@@ -80,7 +81,8 @@ export default async function PersonDetail({ params }: { params: Promise<{ slug:
   if (!person) notFound()
 
   const payload = await getPayload({ config })
-  const staffWhere = { 'staff.person': { in: [person.id] } }
+  // Gesperrter Bestand (Adult-Policy) zählt nicht zu den Credits.
+  const staffWhere = { and: [{ 'staff.person': { in: [person.id] } }, publicAnimeFilter] }
 
   const [staffCredits, voiceCredits, extras, news] = await Promise.all([
     payload.find({ collection: 'anime', where: staffWhere, sort: '-popularity', limit: 24, depth: 0 }),

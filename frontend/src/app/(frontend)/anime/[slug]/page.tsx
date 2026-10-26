@@ -1,6 +1,6 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
-import { notFound, redirect } from 'next/navigation'
+import { notFound, permanentRedirect, redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
@@ -41,6 +41,7 @@ import { ListLinks } from '@/components/ListLinks'
 import { cachedPlatformListCounts, listLinksForProvider } from '@/lib/platformLists'
 import { groupOffersByProvider, streamingOffersOf } from '@/lib/streaming'
 import { animeVars } from '@/lib/entityVars'
+import { ADULT_REDIRECT_TARGET, isBlockedAnime } from '@/lib/adult'
 import { applyVarsMeta } from '@/lib/vars'
 
 // ISR statt force-dynamic: Detailseiten wurden bislang bei JEDEM Aufruf neu aus
@@ -127,6 +128,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const anime = await findBySlug(slug)
   if (!anime) return {}
+  // Aus dem öffentlichen Bestand genommen (Hentai) → die Seite leitet dauerhaft um.
+  if (isBlockedAnime(anime)) permanentRedirect(ADULT_REDIRECT_TARGET)
   const title = displayTitle(anime)
   const vars = animeVars(anime)
   // Title/Description datenabhängig (lib/streamingText): Mit Stream stehen Anbieter,
@@ -151,6 +154,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
   const payload = await getPayload({ config })
 
   let anime: any = await findBySlug(slug)
+  if (anime && isBlockedAnime(anime)) permanentRedirect(ADULT_REDIRECT_TARGET)
 
   // On-Demand-Fallback: Slug noch nicht in der DB → live von AniList importieren.
   if (!anime) {

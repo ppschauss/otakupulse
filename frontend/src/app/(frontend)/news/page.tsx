@@ -7,6 +7,7 @@ import { Pagination } from '@/components/Pagination'
 import { NewsListSidebar } from '@/components/NewsListSidebar'
 import { ARTICLE_CATEGORY_LABELS, articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 import { pageMeta } from '@/lib/seo'
+import { isBlockedArticle } from '@/lib/adult'
 import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
 
@@ -75,6 +76,8 @@ export default async function NewsListPage({
     page,
     depth: 1,
   })
+  // Sicherheitsnetz: Altbeiträge zu gesperrten Titeln (Hentai) nicht mehr listen.
+  result.docs = (result.docs as any[]).filter((a) => !isBlockedArticle(a))
 
   const heading = category ? articleCategoryLabel(category) : q ? `Suche: „${q}"` : 'News & Artikel'
 

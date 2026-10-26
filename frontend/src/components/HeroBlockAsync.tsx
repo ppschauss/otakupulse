@@ -3,6 +3,7 @@ import config from '@payload-config'
 import { HeroSlider, type HeroSlide } from './HeroSlider'
 import { displayTitle, animeBanner } from '@/lib/anime'
 import { getBlurAdult } from '@/lib/settings'
+import { publicAnimeFilter } from '@/lib/adult'
 
 // Async-Serverkomponente: lädt Hero-Quelle (Featured → sonst beliebteste) und rendert den Slider.
 export async function HeroBlockAsync() {
@@ -10,7 +11,7 @@ export async function HeroBlockAsync() {
 
   let pool = await payload.find({
     collection: 'anime',
-    where: { isFeatured: { equals: true } },
+    where: { and: [{ isFeatured: { equals: true } }, publicAnimeFilter] },
     sort: '-popularity',
     limit: 6,
     depth: 0,

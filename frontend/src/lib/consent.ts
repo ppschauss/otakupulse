@@ -2,7 +2,7 @@
 // für die Speicherung selbst kein Cookie nötig ist. Kategorien:
 //  - necessary: immer aktiv (technisch notwendig), nicht abwählbar
 //  - statistics: Reichweitenmessung (Plausible/Umami)
-//  - marketing: Marketing/Drittanbieter (aktuell ungenutzt, zukunftssicher)
+//  - marketing: Werbung/Drittanbieter (Google AdSense) sowie Einbettungen
 
 export type ConsentCategory = 'statistics' | 'marketing'
 export type Consent = { statistics: boolean; marketing: boolean }
@@ -27,7 +27,10 @@ export const CATEGORY_INFO: { key: ConsentCategory; label: string; description: 
   {
     key: 'marketing',
     label: 'Marketing',
-    description: 'Inhalte und Einbettungen von Drittanbietern (z. B. Trailer-Embeds). Aktuell nicht im Einsatz.',
+    description:
+      'Werbeanzeigen über Google AdSense (Google Ireland/USA) sowie Inhalte und Einbettungen von Drittanbietern '
+      + '(z. B. Trailer-Embeds). Dabei können Cookies gesetzt und Daten an Google übertragen werden. '
+      + 'Ohne deine Einwilligung werden keine Anzeigen geladen.',
   },
 ]
 

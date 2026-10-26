@@ -5,6 +5,7 @@ import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
 import { FORMAT_LABELS, STATUS_LABELS, TAG_CATEGORY_LABELS } from '@/lib/anime'
 import { STREAMING_PROVIDERS, providerBySlug } from '@/lib/streaming'
+import { BLOCKED_GENRE_SLUGS, publicAnimeFilter } from '@/lib/adult'
 import { pageMeta } from '@/lib/seo'
 
 export const dynamic = 'force-dynamic'
@@ -108,7 +109,14 @@ export default async function SearchPage({
 
   const payload = await getPayload({ config })
   const [genreList, tagList] = await Promise.all([
-    payload.find({ collection: 'genres', limit: 300, sort: 'name', depth: 0 }),
+    payload.find({
+      collection: 'genres',
+      // Gesperrte Genres (Hentai) tauchen weder als Filter noch in Ergebnissen auf.
+      where: { slug: { not_in: [...BLOCKED_GENRE_SLUGS] } },
+      limit: 300,
+      sort: 'name',
+      depth: 0,
+    }),
     payload.find({ collection: 'tags', limit: 500, sort: 'name', depth: 0 }),
   ])
   const genreId = genre ? (genreList.docs.find((g: any) => g.slug === genre) as any)?.id : undefined
@@ -122,7 +130,8 @@ export default async function SearchPage({
     tagsByCategory.get(cat)!.push(t)
   }
 
-  const and: any[] = []
+  // Gesperrter Bestand (Hentai) erscheint nie in Suchergebnissen.
+  const and: any[] = [publicAnimeFilter]
   if (q) {
     and.push({
       or: [

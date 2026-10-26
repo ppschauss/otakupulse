@@ -84,7 +84,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Ist der Anime-Discord kostenlos?',
-    a: 'Komplett kostenlos. OtakuPulse ist ein privates, nicht-kommerzielles Projekt — der Beitritt zum Discord-Server kostet nichts und es gibt keine Paywall.',
+    a: 'Komplett kostenlos. OtakuPulse ist ein privates Projekt — der Beitritt zum Discord-Server kostet nichts und es gibt keine Paywall.',
   },
   {
     q: 'Worüber wird auf dem Server gesprochen?',

@@ -177,6 +177,10 @@ export const SEARCH_QUERY = /* GraphQL */ `
       media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
         id
         title { romaji english }
+        # genres: damit der On-Demand-Import gesperrte Genres (Adult-Policy)
+        # schon vor dem vollen MEDIA_QUERY erkennt — siehe lib/adult.ts.
+        genres
+        isAdult
       }
     }
   }

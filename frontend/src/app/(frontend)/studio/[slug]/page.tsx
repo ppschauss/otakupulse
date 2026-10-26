@@ -14,6 +14,7 @@ import { pageMeta } from '@/lib/seo'
 import { hubExtras } from '@/lib/hub'
 import { studioVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
+import { publicAnimeFilter } from '@/lib/adult'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
@@ -58,7 +59,7 @@ export default async function StudioDetail({
   const payload = await getPayload({ config })
   const result = await payload.find({
     collection: 'anime',
-    where: { studios: { in: [studio.id] } },
+    where: { and: [{ studios: { in: [studio.id] } }, publicAnimeFilter] },
     sort: '-popularity',
     limit: PER_PAGE,
     page,

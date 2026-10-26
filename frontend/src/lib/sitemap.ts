@@ -3,6 +3,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { PROVIDER_SLUGS } from './streaming'
 import { animeIndexable, liveArticleFilters, textTooThin } from './anime'
+import { BLOCKED_GENRE_SLUGS, publicAnimeFilter } from './adult'
 
 export const PER = 5000
 
@@ -32,6 +33,7 @@ export const TYPES: SitemapType[] = [
     key: 'anime',
     collection: 'anime',
     path: (s) => `/anime/${s}`,
+    where: publicAnimeFilter,
     select: { descriptionDe: true, format: true, noindex: true, streamingProviders: true, streamingOffers: true },
     keep: animeIndexable,
   },
@@ -61,7 +63,14 @@ export const TYPES: SitemapType[] = [
   { key: 'tags', collection: 'tags', path: (s) => `/tag/${s}` },
   { key: 'seasons', collection: 'anime-seasons', path: (s) => `/season/${s}` },
   // Geplante Artikel (publishDate in der Zukunft) erst zum Termin in die Sitemap.
-  { key: 'articles', collection: 'articles', path: (s) => `/news/${s}`, where: () => ({ and: liveArticleFilters() }) },
+  // Artikel: nur live geschaltete UND indexierbare (noindex-Beiträge, z. B. die alten
+  // Einzel-Episoden-Meldungen, gehören nicht in die Sitemap).
+  {
+    key: 'articles',
+    collection: 'articles',
+    path: (s) => `/news/${s}`,
+    where: () => ({ and: [...liveArticleFilters(), { noindex: { not_equals: true } }] }),
+  },
 ]
 
 export const STATIC_PATHS = [
@@ -75,7 +84,7 @@ export const STATIC_PATHS = [
 // daher kollisionsfrei trennbar – auch bei Slugs mit Bindestrichen (slice-of-life).
 export const GENRE_PREFIX = 'genre__' // genre__<slug>__<page> → Anime des Genres
 export const TAG_ANIME_PREFIX = 'tagsanime__' // tagsanime__<page> → alle getaggten Anime
-export const TAG_ANIME_WHERE = { 'tags.tag': { exists: true } } as any
+export const TAG_ANIME_WHERE = { and: [{ 'tags.tag': { exists: true } }, publicAnimeFilter] } as any
 
 // Liste aller Chunk-IDs für den Index – gestaffelt:
 // static · <typ>-N (anime, characters, …) · genre__<slug>__N · tagsanime__N
@@ -91,10 +100,17 @@ export async function listChunkIds(): Promise<string[]> {
   }
 
   // 2) Pro Genre eine Sitemap (Anime des Genres), alphabetisch, ggf. paginiert.
-  const genres = await payload.find({ collection: 'genres', sort: 'slug', limit: 500, depth: 0, select: { slug: true } as any })
+  const genres = await payload.find({
+    collection: 'genres',
+    where: { slug: { not_in: [...BLOCKED_GENRE_SLUGS] } },
+    sort: 'slug',
+    limit: 500,
+    depth: 0,
+    select: { slug: true } as any,
+  })
   for (const g of genres.docs as any[]) {
     if (!g.slug) continue
-    const res = await payload.find({ collection: 'anime', where: { genres: { in: [g.id] } }, limit: 1, depth: 0 })
+    const res = await payload.find({ collection: 'anime', where: { and: [{ genres: { in: [g.id] } }, publicAnimeFilter] }, limit: 1, depth: 0 })
     const pages = Math.max(1, Math.ceil((res.totalDocs || 0) / PER))
     if (!res.totalDocs) continue
     for (let p = 0; p < pages; p++) ids.push(`${GENRE_PREFIX}${g.slug}__${p}`)

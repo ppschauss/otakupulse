@@ -11,7 +11,7 @@ import { getNavigation } from '@/lib/navigation'
 import { getPayload } from 'payload'
 import config from '@payload-config'
 import { cachedPlatformListCounts, topListLinks } from '@/lib/platformLists'
-import { SITE_URL, SITE_NAME, SITE_DESCRIPTION } from '@/lib/site'
+import { SITE_URL, SITE_NAME, SITE_DESCRIPTION, ADSENSE_CLIENT } from '@/lib/site'
 
 const googleVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
 
@@ -30,6 +30,10 @@ export const metadata: Metadata = {
     types: { 'application/rss+xml': [{ url: '/feed.xml', title: `${SITE_NAME} — News` }] },
   },
   ...(googleVerification ? { verification: { google: googleVerification } } : {}),
+  // AdSense-Kontoverifizierung. Reines Meta-Tag: lädt nichts nach und setzt keine
+  // Cookies, braucht daher keine Einwilligung. Das Anzeigen-Skript selbst gehört
+  // hinter die Consent-Kategorie „Marketing“.
+  ...(ADSENSE_CLIENT ? { other: { 'google-adsense-account': ADSENSE_CLIENT } } : {}),
 }
 
 export default async function FrontendLayout({ children }: { children: React.ReactNode }) {

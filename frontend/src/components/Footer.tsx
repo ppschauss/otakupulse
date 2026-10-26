@@ -113,7 +113,7 @@ export function Footer({ columns, legal, lists = [] }: { columns: FooterColumn[]
         </div>
 
         <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} OtakuPulse — privates, nicht-kommerzielles Projekt.</p>
+          <p>© {new Date().getFullYear()} OtakuPulse — privates Projekt, anteilig werbefinanziert.</p>
           {/* flex-wrap: fünf Einträge passen mobil nicht in eine Zeile — ohne Umbruch
               lief die Leiste rechts aus dem Viewport (horizontaler Layout-Shift). */}
           <nav className="flex flex-wrap gap-x-5 gap-y-2">

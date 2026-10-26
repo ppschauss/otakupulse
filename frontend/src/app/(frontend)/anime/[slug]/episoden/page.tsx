@@ -1,10 +1,11 @@
 import { getPayload } from 'payload'
 import config from '@payload-config'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import type { Metadata } from 'next'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { pageMeta } from '@/lib/seo'
 import { displayTitle } from '@/lib/anime'
+import { ADULT_REDIRECT_TARGET, isBlockedAnime } from '@/lib/adult'
 
 // ISR statt force-dynamic: Detailseiten wurden bislang bei JEDEM Aufruf neu aus
 // der DB gerendert und schickten `Cache-Control: no-store` — dadurch konnte weder
@@ -29,6 +30,7 @@ export async function generateStaticParams() {
 async function getAnime(slug: string) {
   const payload = await getPayload({ config })
   const { docs } = await payload.find({ collection: 'anime', where: { slug: { equals: slug } }, limit: 1, depth: 0 })
+  if (docs[0] && isBlockedAnime(docs[0])) permanentRedirect(ADULT_REDIRECT_TARGET)
   return docs[0] as any
 }
 

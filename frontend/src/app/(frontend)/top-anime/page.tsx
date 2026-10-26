@@ -10,6 +10,7 @@ import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
 import { displayTitle } from '@/lib/anime'
 import { url } from '@/lib/site'
+import { publicAnimeFilter } from '@/lib/adult'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,7 +33,7 @@ export default async function TopAnimePage() {
   const payload = await getPayload({ config })
   const { docs } = await payload.find({
     collection: 'anime',
-    where: { averageScore: { greater_than: 0 } },
+    where: { and: [{ averageScore: { greater_than: 0 } }, publicAnimeFilter] },
     sort: '-averageScore',
     limit: 50,
     depth: 0,
