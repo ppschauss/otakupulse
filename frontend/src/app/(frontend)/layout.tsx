@@ -6,6 +6,8 @@ import { Footer } from '@/components/Footer'
 import { JsonLd } from '@/components/JsonLd'
 import { Analytics } from '@/components/Analytics'
 import { CookieConsent } from '@/components/CookieConsent'
+import { GoogleCmp } from '@/components/GoogleCmp'
+import { AdSense } from '@/components/AdSense'
 import { organizationLd } from '@/lib/seo'
 import { getNavigation } from '@/lib/navigation'
 import { getPayload } from 'payload'
@@ -31,8 +33,8 @@ export const metadata: Metadata = {
   },
   ...(googleVerification ? { verification: { google: googleVerification } } : {}),
   // AdSense-Kontoverifizierung. Reines Meta-Tag: lädt nichts nach und setzt keine
-  // Cookies, braucht daher keine Einwilligung. Das Anzeigen-Skript selbst gehört
-  // hinter die Consent-Kategorie „Marketing“.
+  // Cookies, braucht daher keine Einwilligung. Das Anzeigen-Skript lädt erst nach
+  // dem TCF-Signal des zertifizierten CMP (components/AdSense.tsx).
   ...(ADSENSE_CLIENT ? { other: { 'google-adsense-account': ADSENSE_CLIENT } } : {}),
 }
 
@@ -52,6 +54,9 @@ export default async function FrontendLayout({ children }: { children: React.Rea
         {children}
         <Footer columns={nav.footerColumns} legal={nav.legal} lists={footerLists} />
         <JsonLd data={organizationLd()} />
+        {/* Zertifiziertes CMP (TCF v2.2) zuerst — es steuert Anzeigen UND Messung. */}
+        <GoogleCmp />
+        <AdSense />
         <Analytics />
         <CookieConsent />
       </body>

@@ -1,10 +1,16 @@
-// Cookie-/Tracking-Einwilligung (granular). Gespeichert in localStorage, damit
-// für die Speicherung selbst kein Cookie nötig ist. Kategorien:
-//  - necessary: immer aktiv (technisch notwendig), nicht abwählbar
-//  - statistics: Reichweitenmessung (Plausible/Umami)
-//  - marketing: Werbung/Drittanbieter (Google AdSense) sowie Einbettungen
+// Cookie-/Tracking-Einwilligung. Gespeichert in localStorage, damit für die
+// Speicherung selbst kein Cookie nötig ist. Kategorien:
+//  - necessary:  immer aktiv (technisch notwendig), nicht abwählbar
+//  - statistics: Reichweitenmessung (Umami/Plausible/GA)
+//
+// WERBUNG läuft NICHT mehr über dieses Banner: Für Anzeigen gilt Googles
+// EU-Nutzereinwilligungsrichtlinie, die ein zertifiziertes CMP (IAB TCF v2.2)
+// verlangt. Das übernimmt „Privacy & messaging" aus dem AdSense-Konto
+// (components/GoogleCmp.tsx, Auswertung in lib/tcf.ts). Dieses Banner erscheint
+// nur noch als Rückfall, wenn kein TCF-CMP antwortet — und dann ohne Werbung.
 
 export type ConsentCategory = 'statistics' | 'marketing'
+/** `marketing` bleibt im Typ, wird aber nur noch vom TCF-Signal gesetzt. */
 export type Consent = { statistics: boolean; marketing: boolean }
 
 export const CONSENT_KEY = 'op-consent'
@@ -23,14 +29,6 @@ export const CATEGORY_INFO: { key: ConsentCategory; label: string; description: 
     label: 'Statistik',
     description:
       'Reichweitenmessung mit Umami (cookielos) sowie Google Analytics (Google Ireland/USA), um die Nutzung der Seite zu verstehen und zu verbessern. Wird nur nach deiner Einwilligung geladen.',
-  },
-  {
-    key: 'marketing',
-    label: 'Marketing',
-    description:
-      'Werbeanzeigen über Google AdSense (Google Ireland/USA) sowie Inhalte und Einbettungen von Drittanbietern '
-      + '(z. B. Trailer-Embeds). Dabei können Cookies gesetzt und Daten an Google übertragen werden. '
-      + 'Ohne deine Einwilligung werden keine Anzeigen geladen.',
   },
 ]
 
@@ -57,8 +55,16 @@ export function writeConsent(c: Consent): void {
   }
 }
 
-// Aus beliebigem Code (z. B. Footer-Link) den Einstellungen-Dialog öffnen.
+/**
+ * Einstellungen öffnen (Footer-Link). Bevorzugt das zertifizierte CMP; nur wenn
+ * das nicht erreichbar ist, öffnet sich der eigene Dialog.
+ */
 export function openConsentSettings(): void {
   if (typeof window === 'undefined') return
+  const fc = (window as any).googlefc
+  if (fc && typeof fc.showRevocationMessage === 'function') {
+    fc.showRevocationMessage()
+    return
+  }
   window.dispatchEvent(new Event(OPEN_CONSENT_EVENT))
 }

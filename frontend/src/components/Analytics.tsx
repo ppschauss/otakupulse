@@ -3,11 +3,13 @@
 import Script from 'next/script'
 import { useEffect, useState } from 'react'
 import { CONSENT_EVENT, type Consent, readConsent } from '@/lib/consent'
+import { TCF_NONE, watchTcf, type TcfState } from '@/lib/tcf'
 
 /**
- * Datenschutzfreundliches Analytics (Plausible oder Umami) — wird NUR geladen,
- * wenn der Nutzer die Kategorie „Statistik" eingewilligt hat (echtes Opt-in)
- * und die jeweiligen Env-Variablen gesetzt sind.
+ * Datenschutzfreundliches Analytics (Plausible oder Umami) — wird NUR nach
+ * echtem Opt-in geladen. Die Einwilligung kommt bevorzugt aus dem zertifizierten
+ * CMP (TCF-Zweck 1 „Speichern/Abrufen" + 7/8/9 „Messung", siehe lib/tcf.ts);
+ * ohne CMP greift das Eigen-Banner (Kategorie „Statistik").
  *
  * Aktivieren via secrets.env / Env:
  *   NEXT_PUBLIC_PLAUSIBLE_DOMAIN=otakupulse.de            (+ optional NEXT_PUBLIC_PLAUSIBLE_SRC)
@@ -15,15 +17,21 @@ import { CONSENT_EVENT, type Consent, readConsent } from '@/lib/consent'
  */
 export function Analytics() {
   const [consent, setConsent] = useState<Consent | null>(null)
+  const [tcf, setTcf] = useState<TcfState>(TCF_NONE)
 
   useEffect(() => {
     setConsent(readConsent())
     const onChange = (e: Event) => setConsent((e as CustomEvent<Consent>).detail)
     window.addEventListener(CONSENT_EVENT, onChange)
-    return () => window.removeEventListener(CONSENT_EVENT, onChange)
+    const stop = watchTcf(setTcf)
+    return () => {
+      window.removeEventListener(CONSENT_EVENT, onChange)
+      stop()
+    }
   }, [])
 
-  if (!consent?.statistics) return null
+  const allowed = (tcf.ready && tcf.storage && tcf.measurement) || !!consent?.statistics
+  if (!allowed) return null
 
   const plausibleDomain = process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN
   const plausibleSrc = process.env.NEXT_PUBLIC_PLAUSIBLE_SRC || 'https://plausible.io/js/script.js'

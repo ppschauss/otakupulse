@@ -11,15 +11,27 @@ import {
   readConsent,
   writeConsent,
 } from '@/lib/consent'
+import { watchTcf } from '@/lib/tcf'
 
 /**
- * Granularer Cookie-Consent: Banner + Einstellungen-Dialog. Notwendige Cookies
- * sind immer aktiv; Statistik/Marketing sind opt-in. Skripte (siehe Analytics)
- * werden erst nach Zustimmung geladen. Re-Öffnen via openConsentSettings().
+ * Eigen-Banner für die Reichweitenmessung — RÜCKFALL.
+ *
+ * Für Anzeigen gilt Googles zertifiziertes CMP (components/GoogleCmp.tsx). Wenn
+ * dieses antwortet, übernimmt es auch die Statistik-Entscheidung (TCF-Zwecke
+ * 1 + 7/8/9) und dieses Banner bleibt unsichtbar — kein doppelter Dialog. Nur
+ * wenn kein TCF-CMP erreichbar ist (nicht konfiguriert, geblockt), erscheint es
+ * und deckt die Statistik ab; Anzeigen laufen dann gar nicht.
  */
 export function CookieConsent() {
   const [phase, setPhase] = useState<'hidden' | 'banner' | 'settings'>('hidden')
   const [draft, setDraft] = useState<Consent>(CONSENT_NONE)
+  // Solange unklar ist, ob ein TCF-CMP antwortet, zeigen wir nichts an.
+  const [cmpMissing, setCmpMissing] = useState(false)
+
+  useEffect(() => watchTcf(
+    () => setCmpMissing(false),
+    () => setCmpMissing(true),
+  ), [])
 
   useEffect(() => {
     const existing = readConsent()
@@ -38,7 +50,10 @@ export function CookieConsent() {
     setPhase('hidden')
   }
 
+  // Banner nur zeigen, wenn kein zertifiziertes CMP da ist. Der Einstellungen-
+  // Dialog lässt sich dagegen immer öffnen (Footer-Link als letzter Ausweg).
   if (phase === 'hidden') return null
+  if (phase === 'banner' && !cmpMissing) return null
 
   // Banner: nur unten angedockt (blockiert die Seite NICHT). Einstellungen: modal
   // mit Dimmer, der die Seite bewusst sperrt.

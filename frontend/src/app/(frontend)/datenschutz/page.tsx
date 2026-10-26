@@ -113,11 +113,24 @@ export default function DatenschutzPage() {
         </section>
 
         <section>
-          <h2 className="text-lg font-bold text-white">5. Werbung (Kategorie „Marketing“)</h2>
+          <h2 className="text-lg font-bold text-white">5. Werbung</h2>
           <p className="mt-2">
             Diese Website finanziert sich anteilig über Werbung. Dazu setzen wir – ausschließlich nach deiner
-            Einwilligung in die Kategorie „Marketing“ – <strong>Google AdSense</strong> ein, einen Dienst der Google
-            Ireland Limited (Gordon House, Barrow Street, Dublin 4, Irland; Mutterkonzern Google LLC, USA).
+            Einwilligung – <strong>Google AdSense</strong> ein, einen Dienst der Google Ireland Limited (Gordon House,
+            Barrow Street, Dublin 4, Irland; Mutterkonzern Google LLC, USA).
+          </p>
+          <p className="mt-2">
+            Die Einwilligung für Werbung holen wir über ein von Google zertifiziertes{' '}
+            <strong>Consent-Management-Tool (CMP)</strong> nach dem IAB-Transparency-&amp;-Consent-Framework (TCF
+            v2.2) ein. Es erscheint beim ersten Besuch als eigenes Fenster und lässt dich zwischen personalisierter
+            Werbung, nicht personalisierter Werbung und Ablehnung wählen. Erst wenn dort eine Einwilligung vorliegt,
+            wird das Anzeigen-Skript überhaupt geladen; ohne Einwilligung werden keine Anzeigen ausgeliefert und keine
+            Werbe-Cookies gesetzt. Deine Auswahl kannst du jederzeit über{' '}
+            <strong>„Cookie-Einstellungen“</strong> im Seitenfuß ändern.
+          </p>
+          <p className="mt-2">
+            Auf Seiten mit nicht jugendfreien oder freizügigen Themen (z. B. das Genre „Ecchi“) blenden wir
+            grundsätzlich keine Werbung ein.
           </p>
           <p className="mt-2">
             AdSense verwendet Cookies bzw. vergleichbare Technologien, um Anzeigen auszuliefern, deren Auslieferung zu
