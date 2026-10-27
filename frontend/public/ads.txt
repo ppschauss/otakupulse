@@ -1,0 +1,3 @@
+# ads.txt — autorisierte Verkäufer für otakupulse.de (IAB Tech Lab Spec 1.1)
+# Format: <Domain des Anbieters>, <Publisher-ID>, <DIRECT|RESELLER>, <Cert-ID>
+google.com, pub-5566154579483105, DIRECT, f08c47fec0942fa0
