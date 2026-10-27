@@ -79,21 +79,48 @@ function isInternalOnlyPath(pathname: string): boolean {
   )
 }
 
+/**
+ * Quellen für Google AdSense und das zertifizierte CMP (Funding Choices).
+ * Bewusst eine eigene Liste, damit beim nächsten CSP-Eingriff erkennbar bleibt,
+ * was zu den Anzeigen gehört und was zur Reichweitenmessung.
+ */
+const ADS_SCRIPT_SRC = [
+  'https://pagead2.googlesyndication.com',
+  'https://tpc.googlesyndication.com',
+  'https://partner.googleadservices.com',
+  'https://adservice.google.com',
+  'https://fundingchoicesmessages.google.com',
+  'https://googleads.g.doubleclick.net',
+]
+
+/** Anzeigen und die Einwilligungsnachricht rendern in eigenen iframes. */
+const ADS_FRAME_SRC = [
+  'https://googleads.g.doubleclick.net',
+  'https://tpc.googlesyndication.com',
+  'https://www.google.com',
+  'https://fundingchoicesmessages.google.com',
+]
+
 // CSP — inhaltlich identisch zur bisherigen next.config-Policy. Einziger
 // Unterschied: `upgrade-insecure-requests` wird nur für öffentliche HTTPS-
 // Requests angehängt.
-function buildContentSecurityPolicy(secure: boolean): string {
+export function buildContentSecurityPolicy(secure: boolean): string {
   const directives = [
     "default-src 'self'",
     // Google Analytics (gtag.js) von googletagmanager.com; Daten an google-analytics.com.
-    "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com",
+    // AdSense + das zertifizierte CMP („Privacy & messaging"/Funding Choices) laden
+    // ihre Skripte von googlesyndication/googleadservices/doubleclick nach — ohne
+    // diese Quellen blockiert die CSP jede Anzeige stillschweigend.
+    "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com " +
+      ADS_SCRIPT_SRC.join(' '),
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self' data:",
     "connect-src 'self' https:",
     "media-src 'self' https:",
     // youtube-nocookie.com: eingebettete Trailer auf Artikelseiten.
-    "frame-src 'self' https://www.youtube-nocookie.com",
+    // Anzeigen und die CMP-Nachricht rendern in eigenen iframes (SafeFrame).
+    "frame-src 'self' https://www.youtube-nocookie.com " + ADS_FRAME_SRC.join(' '),
     "frame-ancestors 'self'",
     "base-uri 'self'",
     "form-action 'self'",
