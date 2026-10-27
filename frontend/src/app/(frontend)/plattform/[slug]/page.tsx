@@ -7,6 +7,7 @@ import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
 import { Faq } from '@/components/Faq'
+import { AdBanner } from '@/components/AdSlot'
 import { JsonLd } from '@/components/JsonLd'
 import { breadcrumbLd, pageMeta } from '@/lib/seo'
 import { providerBySlug } from '@/lib/streaming'
@@ -307,6 +308,8 @@ export default async function PlatformDetail({
             ständig, Lizenzen laufen aus und das Angebot unterscheidet sich je nach Land. Ob ein Titel aktuell bei{' '}
             {provider.name} läuft — und in welcher Sprachfassung — prüfst du am besten direkt beim Anbieter.
           </section>
+
+          <AdBanner />
 
           <Faq items={faq} />
         </>

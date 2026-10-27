@@ -7,7 +7,7 @@ import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
 import { Faq } from '@/components/Faq'
-import { ADULT_REDIRECT_TARGET, BLOCKED_GENRE_SLUGS, publicAnimeFilter } from '@/lib/adult'
+import { ADULT_REDIRECT_TARGET, BLOCKED_GENRE_SLUGS, adsAllowedForGenre, publicAnimeFilter } from '@/lib/adult'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { Chip } from '@/components/Chip'
 import { SeoFooter } from '@/components/SeoFooter'
@@ -16,6 +16,7 @@ import { cachedPlatformListCounts, listLinksForGenre } from '@/lib/platformLists
 import { pageMeta } from '@/lib/seo'
 import { genreBlurb } from '@/lib/genre-info'
 import { ContentNote } from '@/components/ContentNote'
+import { AdBanner } from '@/components/AdSlot'
 import { ECCHI_INTRO, ECCHI_NOTE, ECCHI_NOTE_TITLE } from '@/lib/fanservice'
 import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 import { genreVars } from '@/lib/entityVars'
@@ -300,6 +301,8 @@ export default async function GenreDetail({
               ))}
             </ContentNote>
           ) : null}
+
+          <AdBanner allowed={adsAllowedForGenre(slug)} />
 
           {/* FAQ */}
           <Faq

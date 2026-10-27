@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
 import { Faq } from '@/components/Faq'
+import { AdBanner } from '@/components/AdSlot'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { ChipSection, NewsSection } from '@/components/HubSections'
 import { pageMeta } from '@/lib/seo'
@@ -107,6 +108,8 @@ export default async function SeasonDetail({
           <ChipSection title={`Studios in ${label}`} base="/studio" items={extras.topStudios} withCount />
           <NewsSection title={`News zur Season ${label}`} entity={`Anime aus ${label}`} items={extras.news} />
           <ChipSection title="Weitere Seasons" base="/season" items={otherSeasons as any} />
+
+          <AdBanner />
 
           <Faq
             title={`Häufige Fragen zur Season ${label}`}

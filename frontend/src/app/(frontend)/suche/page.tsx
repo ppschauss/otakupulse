@@ -3,6 +3,7 @@ import config from '@payload-config'
 import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
+import { AdBanner } from '@/components/AdSlot'
 import { FORMAT_LABELS, STATUS_LABELS, TAG_CATEGORY_LABELS } from '@/lib/anime'
 import { STREAMING_PROVIDERS, providerBySlug } from '@/lib/streaming'
 import { BLOCKED_GENRE_SLUGS, publicAnimeFilter } from '@/lib/adult'
@@ -312,6 +313,7 @@ export default async function SearchPage({
             </div>
           )}
           <Pagination basePath="/suche" page={page} totalPages={result.totalPages} query={query} />
+          <AdBanner />
         </>
       ) : (
         <p className="mt-8 text-zinc-500">Gib einen Suchbegriff ein oder kombiniere die Filter oben.</p>

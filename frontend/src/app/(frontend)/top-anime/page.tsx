@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 import { RankedList } from '@/components/RankedList'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { Faq } from '@/components/Faq'
+import { AdBanner } from '@/components/AdSlot'
 import { JsonLd } from '@/components/JsonLd'
 import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
@@ -121,6 +122,8 @@ export default async function TopAnimePage() {
             ))}
           </div>
         </section>
+
+        <AdBanner />
 
         <Faq items={faqItems} title="Häufige Fragen zu den besten Anime" />
 

@@ -53,6 +53,17 @@ export function adsAllowedForAnime(anime: any): boolean {
   return !genres.some((g) => typeof g === 'object' && (NO_ADS_GENRE_SLUGS as readonly string[]).includes(g?.slug))
 }
 
+/**
+ * Dürfen in diesem Beitrag Anzeigen laufen? Ein Artikel erbt die Bewertung der
+ * Titel, die er behandelt: sobald einer davon Adult-nah ist (Hentai gesperrt,
+ * Ecchi/Nudity anzeigenfrei), bleibt auch der Beitrag ohne Anzeigen.
+ */
+export function adsAllowedForArticle(article: any): boolean {
+  if (isBlockedArticle(article)) return false
+  const related: any[] = Array.isArray(article?.relatedAnime) ? article.relatedAnime : []
+  return related.every((a) => typeof a !== 'object' || adsAllowedForAnime(a))
+}
+
 export const adsAllowedForGenre = (slug?: string | null): boolean =>
   !!slug && !(NO_ADS_GENRE_SLUGS as readonly string[]).includes(slug) && !(BLOCKED_GENRE_SLUGS as readonly string[]).includes(slug)
 

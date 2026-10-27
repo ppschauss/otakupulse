@@ -13,6 +13,8 @@ import { MediaRow } from '@/components/MediaRow'
 import { JsonLd } from '@/components/JsonLd'
 import { SeoFooter } from '@/components/SeoFooter'
 import { ShareButtons } from '@/components/ShareButtons'
+import { AdInArticle, AdMultiplex } from '@/components/AdSlot'
+import { adsAllowedForAnime } from '@/lib/adult'
 import { animeLd, breadcrumbLd, pageMeta } from '@/lib/seo'
 import { url } from '@/lib/site'
 import {
@@ -338,6 +340,10 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
           </section>
         ) : null}
 
+        <div className="max-w-3xl">
+          <AdInArticle allowed={adsAllowedForAnime(anime)} />
+        </div>
+
         {/* Streaming-Guide: Fließtext aus den Angebotsdaten (nur mit Anbietern) */}
         {guide ? (
           <section className="mt-10 max-w-3xl" id="wer-streamt">
@@ -539,6 +545,8 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
             <MediaRow title={`Anime ähnlich wie ${title}`} items={similar} />
           </section>
         ) : null}
+
+        <AdMultiplex allowed={adsAllowedForAnime(anime)} />
       </div>
 
       <SeoFooter data={anime.footerText} vars={animeVars(anime)} maxW="max-w-6xl" />

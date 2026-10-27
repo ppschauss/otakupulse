@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { ScheduleView } from '@/components/ScheduleView'
+import { AdBanner } from '@/components/AdSlot'
 import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
 import { berlinYmd } from '@/lib/schedule'
@@ -34,6 +35,7 @@ export default async function KalenderPage({ searchParams }: { searchParams: Pro
           Jede Anime-Episode nach Tag, mit Live-Countdown bis zur Veröffentlichung und dem Anbieter, bei dem sie läuft.
         </p>
         <ScheduleView selected={today} genre={genre} path="/kalender" />
+        <AdBanner />
       </main>
       <PageSeoFooter pageKey="kalender" maxW="max-w-5xl" />
     </>

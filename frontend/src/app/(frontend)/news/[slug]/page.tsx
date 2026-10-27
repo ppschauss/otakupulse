@@ -4,13 +4,14 @@ import { notFound, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
-import { RichText } from '@/components/RichText'
+import { RichText, splitAfterParagraphs } from '@/components/RichText'
 import { AnimeCard } from '@/components/AnimeCard'
 import { JsonLd } from '@/components/JsonLd'
 import { ShareButtons } from '@/components/ShareButtons'
+import { AdInArticle, AdMultiplex } from '@/components/AdSlot'
 import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 import { pageMeta } from '@/lib/seo'
-import { ADULT_REDIRECT_TARGET, isBlockedArticle } from '@/lib/adult'
+import { ADULT_REDIRECT_TARGET, adsAllowedForArticle, isBlockedArticle } from '@/lib/adult'
 import { url, SITE_NAME } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
@@ -104,6 +105,10 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
     })
   ).docs as any[]
 
+  const adsAllowed = adsAllowedForArticle(article)
+  // Google empfiehlt den In-Article-Block „idealerweise nach dem zweiten Absatz".
+  // Für kurze Beiträge gibt es keinen sinnvollen Schnitt — dann steht er darunter.
+  const adCut = splitAfterParagraphs(article.body)
   const articleImage = coverUrl(article.coverImageUrl)
   const ytId = youtubeId(article.trailerUrl)
   const shareUrl = url(`/news/${article.slug}`)
@@ -175,8 +180,18 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
       ) : null}
 
       <article className="mt-8">
-        <RichText data={article.body} />
+        {adCut === null ? (
+          <RichText data={article.body} />
+        ) : (
+          <>
+            <RichText data={article.body} to={adCut} />
+            <AdInArticle allowed={adsAllowed} />
+            <RichText data={article.body} from={adCut} />
+          </>
+        )}
       </article>
+
+      {adCut === null ? <AdInArticle allowed={adsAllowed} /> : null}
 
       <div className="mt-8 border-t border-white/10 pt-6">
         <ShareButtons url={shareUrl} title={article.title} message={`Schau dir diesen Beitrag auf OtakuPulse an: „${article.title}“ 👀`} />
@@ -229,6 +244,8 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
           </div>
         </section>
       ) : null}
+
+      <AdMultiplex allowed={adsAllowed} />
     </main>
   )
 }

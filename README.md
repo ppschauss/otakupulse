@@ -32,6 +32,7 @@ Stammdaten stammen aus **AniList**, angereichert um echte **Dub-/Sub-Sprachen** 
 - [Jugendschutz](#jugendschutz)
 - [SEO & IndexNow](#seo--indexnow)
 - [Analytics (Umami, self-hosted)](#analytics-umami-self-hosted)
+- [Werbung (Google AdSense)](#werbung-google-adsense)
 - [Backups & Monitoring](#backups--monitoring)
 - [Deployment](#deployment)
 - [Cronjobs](#cronjobs)
@@ -183,6 +184,13 @@ INDEXNOW_KEY=<hex-key>                         # + Key-Datei public/<key>.txt
 NEXT_PUBLIC_UMAMI_WEBSITE_ID=<website-id>
 NEXT_PUBLIC_UMAMI_SRC=/stats/script.js
 NEXT_PUBLIC_UMAMI_HOST_URL=https://www.otakupulse.de/stats
+
+# Google AdSense — optional, alle mit sinnvollem Default in src/lib/site.ts.
+# Nur setzen, um z. B. auf Staging gegen Testblöcke zu laufen.
+NEXT_PUBLIC_ADSENSE_CLIENT=ca-pub-…
+NEXT_PUBLIC_ADSENSE_SLOT_BANNER=<slot-id>
+NEXT_PUBLIC_ADSENSE_SLOT_IN_ARTICLE=<slot-id>
+NEXT_PUBLIC_ADSENSE_SLOT_MULTIPLEX=<slot-id>
 ```
 
 > `NEXT_PUBLIC_*` werden beim **Build** in den Client-Bundle eingebacken — nach
@@ -388,6 +396,39 @@ Datenschutzfreundlich, cookielos, lädt **nur nach Statistik-Einwilligung** (Con
 - Setup-Details & Website-ID: siehe `secrets.env` + interne Notizen.
 
 ---
+
+## Werbung (Google AdSense)
+
+Publisher-ID und Anzeigenblock-IDs stehen zentral in `src/lib/site.ts`
+(`ADSENSE_CLIENT`, `ADSENSE_SLOTS`) und sind per `NEXT_PUBLIC_ADSENSE_*`
+überschreibbar. Drei Blöcke sind angelegt:
+
+| Preset | Format | Platzierung |
+|---|---|---|
+| `AdBanner` | `auto`, responsiv | Listen-/Hub-Seiten, über FAQ bzw. Pagination |
+| `AdInArticle` | `fluid`, `in-article` | im Fließtext — News nach dem 2. Absatz, Anime nach der Handlung |
+| `AdMultiplex` | `autorelaxed` | Seitenende der Detailseiten |
+
+Aufrufstellen nutzen immer die Presets aus `components/AdSlot.tsx`, nie `AdSlot`
+direkt — so können Format und Slot-ID nicht auseinanderlaufen.
+
+**Drei Dinge, die Anzeigen stillschweigend verhindern:**
+
+1. **Einwilligung.** Nichts lädt ohne TCF-Signal des zertifizierten CMP
+   (`components/GoogleCmp.tsx` → `lib/tcf.ts`): verlangt werden Zweck 1
+   (Gerätespeicherung) **und** Vendor 755 (Google Advertising Products).
+   Ohne veröffentlichte DSGVO-Nachricht im AdSense-Konto gibt es keine Anzeigen.
+2. **Adult-Policy.** `lib/adult.ts` entscheidet pro Seite: Hentai ist komplett
+   raus, Ecchi/Nudity bleiben öffentlich, aber anzeigenfrei. Artikel erben die
+   Bewertung ihrer Titel (`adsAllowedForArticle`).
+3. **CSP.** `src/proxy.ts` listet die Google-Quellen in `ADS_SCRIPT_SRC` /
+   `ADS_FRAME_SRC`. Fehlen sie, blockiert der Browser jede Anzeige ohne
+   sichtbaren Fehler — `src/lib/csp.test.ts` hält das fest.
+
+Zum Prüfen im Browser: DevTools → Konsole auf CSP-Verstöße, Netzwerk auf
+`pagead2.googlesyndication.com`. Nach dem Schalten dauert es laut Google 20–30
+Minuten (In-Article teils bis zu einer Stunde), bis Anzeigen erscheinen.
+
 
 ## Backups & Monitoring
 

@@ -8,6 +8,7 @@ import { ChipSection, NewsSection } from '@/components/HubSections'
 import { Faq } from '@/components/Faq'
 import { JsonLd } from '@/components/JsonLd'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
+import { AdBanner } from '@/components/AdSlot'
 import { PageSeoFooter } from '@/components/SeoFooter'
 import { pageMetaFor } from '@/lib/pageContent'
 import { pageMeta, breadcrumbLd } from '@/lib/seo'
@@ -271,6 +272,8 @@ export default async function AnimeListPage({
           </div>
           <Pagination page={page} result={result} />
         </section>
+
+        <AdBanner />
 
         {/* FAQ (Rich Snippets) */}
         <Faq items={faqItems} title="Häufige Fragen zur Anime-Datenbank" />

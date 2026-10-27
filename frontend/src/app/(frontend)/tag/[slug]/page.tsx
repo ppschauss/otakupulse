@@ -16,7 +16,8 @@ import { hubExtras } from '@/lib/hub'
 import { TAG_CATEGORY_LABELS } from '@/lib/anime'
 import { tagVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
-import { publicAnimeFilter } from '@/lib/adult'
+import { adsAllowedForTag, publicAnimeFilter } from '@/lib/adult'
+import { AdBanner } from '@/components/AdSlot'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
@@ -143,6 +144,8 @@ export default async function TagDetail({
               ))}
             </ContentNote>
           ) : null}
+
+          <AdBanner allowed={adsAllowedForTag(slug)} />
 
           <Faq
             title={`Häufige Fragen zu „${tag.name}"`}

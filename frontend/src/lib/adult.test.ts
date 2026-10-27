@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { adsAllowedForAnime, adsAllowedForGenre, adsAllowedForTag, isBlockedAnime, isBlockedArticle } from './adult'
+import {
+  adsAllowedForAnime,
+  adsAllowedForArticle,
+  adsAllowedForGenre,
+  adsAllowedForTag,
+  isBlockedAnime,
+  isBlockedArticle,
+} from './adult'
 
 describe('Adult-Policy', () => {
   it('erkennt gesperrte Titel über Flag und Genre', () => {
@@ -22,5 +29,11 @@ describe('Adult-Policy', () => {
     expect(adsAllowedForGenre('hentai')).toBe(false)
     expect(adsAllowedForTag('ninja')).toBe(true)
     expect(adsAllowedForTag('nudity')).toBe(false)
+  })
+  it('vererbt die Anzeigen-Entscheidung vom Artikel auf die behandelten Titel', () => {
+    expect(adsAllowedForArticle({ title: 'Frieren Staffel 3', relatedAnime: [{ genres: [{ slug: 'action' }] }] })).toBe(true)
+    expect(adsAllowedForArticle({ title: 'Strandfolge', relatedAnime: [{ genres: [{ slug: 'ecchi' }] }] })).toBe(false)
+    expect(adsAllowedForArticle({ title: 'Neue Hentai-OVA angekündigt' })).toBe(false)
+    expect(adsAllowedForArticle({ title: 'Branchenzahlen 2026' })).toBe(true)
   })
 })

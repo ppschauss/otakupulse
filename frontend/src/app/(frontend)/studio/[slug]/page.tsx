@@ -10,6 +10,7 @@ import { Faq } from '@/components/Faq'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { ChipSection, NewsSection } from '@/components/HubSections'
 import { SeoFooter } from '@/components/SeoFooter'
+import { AdBanner } from '@/components/AdSlot'
 import { pageMeta } from '@/lib/seo'
 import { hubExtras } from '@/lib/hub'
 import { studioVars } from '@/lib/entityVars'
@@ -193,6 +194,8 @@ export default async function StudioDetail({
           <ChipSection title="Häufige Themen" base="/tag" items={extras.topTags} />
           <NewsSection title={`News zu ${studio.name}`} entity={`${studio.name}-Produktionen`} items={extras.news} />
           <ChipSection title="Weitere Studios entdecken" base="/studio" items={otherStudios as any} />
+
+          <AdBanner />
 
           <Faq
             title={`Häufige Fragen zu ${studio.name}`}

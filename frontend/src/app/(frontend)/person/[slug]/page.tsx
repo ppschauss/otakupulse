@@ -13,6 +13,7 @@ import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { JsonLd } from '@/components/JsonLd'
 import { ChipSection, NewsSection } from '@/components/HubSections'
 import { SeoFooter } from '@/components/SeoFooter'
+import { AdBanner } from '@/components/AdSlot'
 import { personLd, pageMeta } from '@/lib/seo'
 import { personVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
@@ -208,6 +209,8 @@ export default async function PersonDetail({ params }: { params: Promise<{ slug:
 
       {/* News */}
       <NewsSection title={`News zu ${name}`} entity={name} items={news.docs} />
+
+      <AdBanner />
 
       {/* FAQ */}
       <Faq

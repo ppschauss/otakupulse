@@ -104,8 +104,33 @@ function renderNode(node: any, key: React.Key): React.ReactNode {
   }
 }
 
-export function RichText({ data }: { data: any }) {
+/**
+ * `from`/`to` schneiden die Wurzelknoten zu — damit lässt sich ein Beitrag an
+ * einer Absatzgrenze teilen (z. B. um eine In-Article-Anzeige dazwischen zu
+ * setzen), ohne den Text zweimal aus der DB zu holen. Siehe `splitAfterParagraphs`.
+ */
+export function RichText({ data, from = 0, to }: { data: any; from?: number; to?: number }) {
   const root = data?.root
   if (!root?.children?.length) return null
-  return <div>{renderChildren(root.children)}</div>
+  const children = root.children.slice(from, to)
+  if (!children.length) return null
+  return <div>{renderChildren(children)}</div>
+}
+
+/**
+ * Index des Wurzelknotens NACH dem n-ten Absatz — Schnittstelle für Anzeigen
+ * im Fließtext. Liefert `null`, wenn danach nicht mehr genug Text folgt; dann
+ * gehört die Anzeige ans Ende statt mitten hinein.
+ */
+export function splitAfterParagraphs(data: any, n = 2, minRest = 2): number | null {
+  const children: any[] = data?.root?.children || []
+  let seen = 0
+  for (let i = 0; i < children.length; i++) {
+    if (children[i]?.type === 'paragraph') seen++
+    if (seen === n) {
+      const cut = i + 1
+      return children.length - cut >= minRest ? cut : null
+    }
+  }
+  return null
 }

@@ -9,6 +9,7 @@ import { GenreOfTheDay } from '@/components/GenreOfTheDay'
 import { SiteHubGrid } from '@/components/SiteHubGrid'
 import { HomeDiscover } from '@/components/HomeDiscover'
 import { Faq } from '@/components/Faq'
+import { AdBanner } from '@/components/AdSlot'
 import { JsonLd } from '@/components/JsonLd'
 import { RowSkeleton, HeroSkeleton, BoxSkeleton } from '@/components/Skeletons'
 import { pageMetaFor } from '@/lib/pageContent'
@@ -175,6 +176,8 @@ export default function HomePage() {
           </p>
         </div>
       </section>
+
+      <AdBanner />
 
       <Faq items={FAQ_ITEMS} />
 

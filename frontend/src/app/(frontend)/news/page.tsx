@@ -4,6 +4,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { Metadata } from 'next'
 import { Pagination } from '@/components/Pagination'
+import { AdBanner } from '@/components/AdSlot'
 import { NewsListSidebar } from '@/components/NewsListSidebar'
 import { ARTICLE_CATEGORY_LABELS, articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 import { pageMeta } from '@/lib/seo'
@@ -136,6 +137,8 @@ export default async function NewsListPage({
               ))}
             </div>
           )}
+
+          <AdBanner />
 
           <Pagination basePath="/news" page={page} totalPages={result.totalPages} query={{ q, category }} />
         </div>

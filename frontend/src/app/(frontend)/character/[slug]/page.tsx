@@ -12,6 +12,7 @@ import { Faq } from '@/components/Faq'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { ChipSection, NewsSection } from '@/components/HubSections'
 import { SeoFooter } from '@/components/SeoFooter'
+import { AdBanner } from '@/components/AdSlot'
 import { pageMeta } from '@/lib/seo'
 import { characterVars } from '@/lib/entityVars'
 import { applyVarsMeta } from '@/lib/vars'
@@ -215,6 +216,8 @@ export default async function CharacterDetail({ params }: { params: Promise<{ sl
 
       {/* News */}
       <NewsSection title={`News zu ${name}`} entity={name} items={news.docs} />
+
+      <AdBanner />
 
       {/* FAQ */}
       <Faq
