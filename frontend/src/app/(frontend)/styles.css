@@ -1,8 +1,11 @@
-@import 'tailwindcss';
+/* `source(none)`: Tailwinds automatische Suche ist AUS. Sie läuft sonst über den
+   ganzen Projektordner — inklusive public/media mit über 100.000 Cover-Dateien —
+   und killt den Build-Worker per OOM (TurbopackInternalError beim PostCSS-Schritt).
+   Stattdessen deklarieren wir den kompletten src-Baum explizit, damit KEINE
+   Komponente (z. B. CookieConsent mit pointer-events-auto / z-[70] / bg-*\/95)
+   übersehen wird. */
+@import 'tailwindcss' source(none);
 
-/* Tailwind v4 scannt Sources automatisch; wir deklarieren den kompletten
-   src-Baum explizit, damit KEINE Komponente (z. B. CookieConsent mit
-   pointer-events-auto / z-[70] / bg-*\/95) beim Build übersehen wird. */
 @source '../../**/*.{ts,tsx}';
 
 /* OtakuPulse-Design-Tokens (erzeugen Utilities wie bg-accent, text-accent, from-accent …) */

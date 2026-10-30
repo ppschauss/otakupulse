@@ -40,6 +40,11 @@ const securityHeaders = [
 const nextConfig = {
   // Kein `X-Powered-By: Next.js`-Header (Tech-Fingerprinting reduzieren).
   poweredByHeader: false,
+  // Build-Ziel überschreibbar (NEXT_DIST_DIR), Standard bleibt `.next`.
+  // Grund: `next build` räumt zu Beginn `.next/server/app` auf und stolpert dabei über
+  // die ISR-Segmente, die die laufende Instanz parallel schreibt (ENOTEMPTY). Mit
+  // NEXT_DIST_DIR=.next-new baut man daneben, ohne die laufende App anzufassen.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // Erlaubt dem Dev-Server, /_next/-Ressourcen an diese Origins auszuliefern
   // (sonst bleibt z.B. das Admin-Panel im LAN weiß, weil die JS-Chunks geblockt werden).
   allowedDevOrigins: ['192.168.0.161', '100.87.113.82'],
