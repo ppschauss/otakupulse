@@ -116,3 +116,23 @@ async def test_connect_error_bleibt_wiederholbar(tmp_db, httpx_mock, meldungen, 
     d = await models.get_draft(did)
     assert d["state"] == "approved" and d["attempts"] == 1
     assert meldungen == []
+
+
+async def test_abgerissene_verbindung_wird_nicht_wiederholt(
+        tmp_db, httpx_mock, meldungen, tumblr_adapter):
+    httpx_mock.add_exception(httpx.RemoteProtocolError("Server disconnected without sending a response."))
+    did = await _entwurf()
+    await poster.run_post_pass()
+    await poster.run_post_pass()
+    assert (await models.get_draft(did))["state"] == "failed"
+    assert len(httpx_mock.get_requests()) == 1
+    assert any("Ausgang unbekannt" in m for m in meldungen)
+
+
+async def test_500_wird_nicht_wiederholt(tmp_db, httpx_mock, meldungen, tumblr_adapter):
+    httpx_mock.add_response(status_code=500, text="boom")
+    did = await _entwurf()
+    await poster.run_post_pass()
+    await poster.run_post_pass()
+    assert (await models.get_draft(did))["state"] == "failed"
+    assert len(httpx_mock.get_requests()) == 1

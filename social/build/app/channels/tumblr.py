@@ -39,9 +39,12 @@ AUTHENTIFIZIERUNG (am 2026-11-02 gegen github.com/tumblr/docs, api.md, geprueft)
 
 Keine eigene Retry-Logik: Wiederholung, Breaker und Versuchszaehler liegen in poster.py.
 Der Adapter markiert aber Ausgaenge, die man nicht wiederholen darf: Tumblr hat keinen
-Idempotency-Key, nach ReadTimeout/WriteTimeout/PoolTimeout und nach 502/503/504 kann der Post
-trotzdem veroeffentlicht sein. Dann steht `PostResult.outcome_unknown=True`, und poster.py gibt
-sofort auf und meldet es. ConnectError/ConnectTimeout bleiben normal wiederholbar.
+Idempotency-Key, der Post kann nach fast jedem Fehler trotzdem veroeffentlicht sein. Darum gilt
+die Regel umgekehrt: sicher wiederholbar ist nur eine kleine Positivliste (ConnectError,
+ConnectTimeout, UnsupportedProtocol, LocalProtocolError, InvalidURL, dazu unvollstaendige
+Konfiguration und Fehler beim Bau von Body/Auth-Header). Jeder andere Fehler nach dem Senden und
+jedes 5xx setzt `PostResult.outcome_unknown=True`; poster.py gibt dann sofort auf und meldet es.
+4xx ist ein endgueltiger Fehlschlag, 429 hat seinen eigenen Pfad mit retry_after.
 """
 import base64
 import hashlib
@@ -157,9 +160,14 @@ def _tags_param(tags) -> str:
     return ",".join(t for t in sauber if t)
 
 
-# Statuscodes und Fehler, nach denen unklar bleibt, ob der Post veröffentlicht wurde.
-_AUSGANG_UNBEKANNT_STATUS = frozenset({502, 503, 504})
-_AUSGANG_UNBEKANNT_FEHLER = (httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout)
+# Sicher wiederholbar ist NUR, was nachweislich scheitert, bevor etwas beim Server ankommt.
+# Alles andere (Timeouts, abgerissene Verbindung, kaputte Antwort, 5xx, künftige httpx-Fehler)
+# gilt als "Ausgang unbekannt": Tumblr hat keinen Idempotency-Key, ein Wiederholen riskiert
+# einen Doppelpost. Bewusst als kleine Positivliste, damit neue Fehlerklassen nie als sicher gelten.
+_VOR_DEM_SENDEN_FEHLER = (
+    httpx.ConnectError, httpx.ConnectTimeout, httpx.UnsupportedProtocol,
+    httpx.LocalProtocolError, httpx.InvalidURL,
+)
 
 _RETRY_AFTER_MAX = 86400  # ein Tag; größere Werte würden im Breaker überlaufen
 
@@ -225,14 +233,20 @@ class Tumblr(Channel):
         if fehlt:
             return PostResult(ok=False, error="Tumblr-Konfiguration unvollständig: " + ", ".join(fehlt))
         url = f"{API_BASE}/blog/{self._blog}/posts"
+        # Aufbau von Body und Auth-Header: scheitert hier etwas, ging noch nichts raus. Der Poster
+        # verlässt sich darauf, dass post() nie wirft, darum auch dieser Teil im try.
         try:
-            # Der Aufbau steht im try: der Poster verlässt sich darauf, dass post() nie wirft.
             body = {"content": build_npf_content(post), "state": "published"}
             tags = _tags_param(post.tags)
             if tags:
                 body["tags"] = tags  # leere Liste: Schlüssel weglassen statt "" zu senden
+            headers = self._auth_headers("POST", url)
+        except Exception as e:  # noqa: BLE001
+            return PostResult(ok=False, error=_fehlertext(e))
+
+        try:
             async with httpx.AsyncClient(timeout=30) as client:
-                r = await client.post(url, headers=self._auth_headers("POST", url), json=body)
+                r = await client.post(url, headers=headers, json=body)
                 if r.status_code == 429:
                     return PostResult(ok=False, error="429 rate limited",
                                       retry_after=_retry_after(r.headers.get("retry-after")))
@@ -240,13 +254,14 @@ class Tumblr(Channel):
                 # Ein 201 ist ein Erfolg, auch wenn die ID nicht lesbar ist; sonst würde der
                 # Poster einen schon veröffentlichten Beitrag erneut senden.
                 return PostResult(ok=True, external_id=_post_id(r))
+        except _VOR_DEM_SENDEN_FEHLER as e:
+            return PostResult(ok=False, error=_fehlertext(e))
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
+            # Nur 4xx ist ein endgültiges "nein". 5xx kann nach Teilverarbeitung kommen, ein
+            # dauerhaftes 5xx gibt man ohnehin besser sofort auf.
             return PostResult(ok=False, error=f"HTTP {code}: {e.response.text[:200]}",
-                              outcome_unknown=code in _AUSGANG_UNBEKANNT_STATUS)
-        except _AUSGANG_UNBEKANNT_FEHLER as e:
-            # Die Anfrage kann schon beim Server angekommen sein; Tumblr hat keinen Idempotency-Key.
-            return PostResult(ok=False, error=_fehlertext(e), outcome_unknown=True)
+                              outcome_unknown=not 400 <= code < 500)
         except Exception as e:  # noqa: BLE001
-            # Dazu gehören ConnectError/ConnectTimeout: da ging nichts raus, Wiederholung ist sicher.
-            return PostResult(ok=False, error=_fehlertext(e))
+            # Alles Übrige kann nach dem Absenden passiert sein.
+            return PostResult(ok=False, error=_fehlertext(e), outcome_unknown=True)

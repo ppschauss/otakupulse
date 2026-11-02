@@ -116,7 +116,6 @@ async def test_tags_mit_nicht_strings_stuerzen_nicht_ab(httpx_mock):
     assert body["tags"] == "anime,ok"
 
 
-
 async def test_post_gibt_retry_after_bei_429(httpx_mock):
     httpx_mock.add_response(status_code=429, headers={"Retry-After": "900"})
     r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
@@ -144,7 +143,7 @@ async def test_netzwerkfehler_wird_zum_postresult(httpx_mock):
 async def test_fehlende_zugangsdaten_senden_nichts(monkeypatch, httpx_mock):
     monkeypatch.setattr(config, "TUMBLR_OAUTH_TOKEN", "")
     r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
-    assert r.ok is False and "TUMBLR_OAUTH_TOKEN" in r.error
+    assert r.ok is False and "TUMBLR_OAUTH_TOKEN" in r.error and r.outcome_unknown is False
     assert httpx_mock.get_requests() == []
 
 
@@ -163,31 +162,40 @@ async def test_201_mit_unlesbarem_body_bleibt_erfolg(httpx_mock, antwort):
 
 @pytest.mark.parametrize("exc", [
     httpx.ReadTimeout(""), httpx.WriteTimeout("zu"), httpx.PoolTimeout("voll"),
+    httpx.RemoteProtocolError("Server disconnected without sending a response."),
+    httpx.ReadError("kaputt"), httpx.WriteError("kaputt"), httpx.CloseError("kaputt"),
+    httpx.DecodingError("kaputt komprimiert"), httpx.ProxyError("Proxy"),
+    RuntimeError("voellig unerwartet"),
 ])
-async def test_timeout_nach_dem_senden_ist_ausgang_unbekannt(httpx_mock, exc):
+async def test_fehler_nach_dem_absenden_sind_ausgang_unbekannt(httpx_mock, exc):
+    """Umgekehrte Regel: alles, was nicht sicher VOR dem Senden scheitert, ist unbekannt."""
     httpx_mock.add_exception(exc)
     r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
     assert r.ok is False and r.outcome_unknown is True
     assert type(exc).__name__ in r.error  # auch bei leerem Text steht die Art des Fehlers drin
 
 
-@pytest.mark.parametrize("status", [502, 503, 504])
-async def test_gateway_fehler_ist_ausgang_unbekannt(httpx_mock, status):
-    httpx_mock.add_response(status_code=status, text="Bad Gateway")
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+async def test_5xx_ist_ausgang_unbekannt(httpx_mock, status):
+    httpx_mock.add_response(status_code=status, text="Serverfehler")
     r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
     assert r.ok is False and r.outcome_unknown is True and str(status) in r.error
 
 
-@pytest.mark.parametrize("exc", [httpx.ConnectError("kein Netz"), httpx.ConnectTimeout("")])
-async def test_verbindungsfehler_ist_sicher_nicht_gesendet(httpx_mock, exc):
+@pytest.mark.parametrize("exc", [
+    httpx.ConnectError("kein Netz"), httpx.ConnectTimeout(""),
+    httpx.UnsupportedProtocol("kein http"), httpx.LocalProtocolError("lokal"),
+    httpx.InvalidURL("kaputt"),
+])
+async def test_fehler_vor_dem_absenden_sind_sicher_wiederholbar(httpx_mock, exc):
     httpx_mock.add_exception(exc)
     r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
     assert r.ok is False and r.outcome_unknown is False
     assert type(exc).__name__ in r.error
 
 
-@pytest.mark.parametrize("status", [400, 401, 403, 500])
-async def test_sonstige_http_fehler_sind_kein_unbekannter_ausgang(httpx_mock, status):
+@pytest.mark.parametrize("status", [400, 401, 403, 404])
+async def test_4xx_ist_endgueltiger_fehlschlag(httpx_mock, status):
     httpx_mock.add_response(status_code=status, text="nein")
     r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
     assert r.ok is False and r.outcome_unknown is False and str(status) in r.error
@@ -229,6 +237,7 @@ async def test_post_wirft_nie_auch_wenn_der_aufbau_scheitert(monkeypatch, httpx_
     monkeypatch.setattr(modul, "build_npf_content", kaputt)
     r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
     assert r.ok is False and "RuntimeError" in r.error and "Aufbau kaputt" in r.error
+    assert r.outcome_unknown is False  # scheitert vor dem Senden: sicher wiederholbar
     assert httpx_mock.get_requests() == []
 
 
