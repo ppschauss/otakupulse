@@ -348,7 +348,8 @@ gleichzeitig. Ungebremst sieht das auf Tumblr nach Bot aus, lange bevor das
   Datenbankabfrage wandern (`NOT EXISTS` gegen `seen_sources`).
 - Kein Backfill. Die Altartikel werden wie bei der Erstinbetriebnahme des
   Agents über `manage.sh seed` als „gesehen" markiert. Sonst entstehen beim
-  ersten Lauf über tausend Entwürfe.
+  ersten Lauf zieht jeder Lauf 6 Altartikel nach (MAX_DRAFTS_PER_BATCH) — schleichend,
+   und bei Tumblr fängt keine Einzelfreigabe das auf.
 
 ### 6. Theme
 
@@ -410,7 +411,8 @@ Der Trockenlauf ist hier nicht optional, weil es keine Einzelfreigabe gibt.
 4. Erst dann `DRY_RUN=0`, und zwar zuerst gegen einen **Test-Tumblr**, nicht
    gegen den Marken-Blog.
 5. `manage.sh seed` vor dem Echtbetrieb. Ohne diesen Schritt erzeugt der erste
-   Lauf über tausend Entwürfe.
+   Lauf zieht jeder Lauf 6 Altartikel nach (MAX_DRAFTS_PER_BATCH) — schleichend,
+   und bei Tumblr fängt keine Einzelfreigabe das auf.
 
 Erfolgsmaßstab nach vier Wochen: Referral-Sitzungen von tumblr.com in der
 Analytics und die Zahl der Posts, die überhaupt Reblogs oder Likes bekommen.

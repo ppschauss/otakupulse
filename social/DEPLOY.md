@@ -249,7 +249,10 @@ Reihenfolge einhalten. Die Punkte stammen aus den Reviews der Tasks 1 bis 9.
    Stolperfalle: nach dem Seeden sind nur Artikel **neu**, die nach Schritt 6 erscheinen, und
    ein Lauf nimmt höchstens 6. Ein Tag liefert womöglich keine 30 Stück. Dann länger laufen
    lassen, statt mit weniger Stichprobe weiterzumachen.
-8. **Vor dem Scharfschalten `/status` im Telegram-Bot lesen.** Dort muss genau die erwartete
+8. **Direkt nach dem Scharfschalten `/status` im Telegram-Bot lesen** — also nach
+   Schritt 10, und bevor auf den Markenblog umgestellt wird (Schritt 12). Vorher steht
+   `DRY_RUN=1`, dann meldet `/status` nur „TROCKENMODUS (alle Kanäle)“ und die
+   Aufteilung ist gar nicht sichtbar.**Zu prüfen ist dann:** Dort muss genau die erwartete
    Aufteilung stehen, zum Beispiel `Modus: LIVE: tumblr · TROCKEN: bluesky, mastodon`, und unter
    „Kanäle“ alle drei Namen. Ein Tippfehler in `DRY_RUN_CHANNELS` trocknet nichts und erzeugt nur
    eine Log-Warnung; ein Tippfehler in `CHANNELS_ENABLED` schaltet den Kanal ohne jede Warnung ab.

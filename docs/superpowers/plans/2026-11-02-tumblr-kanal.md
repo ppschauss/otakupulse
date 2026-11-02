@@ -721,7 +721,8 @@ Kein Code, aber ohne diese Schritte geht nichts live. Reihenfolge einhalten.
 
 1. **Deploy mit `DRY_RUN=1`** in den Coolify-Service, Volume auf `/data`
    gesetzt. Dann `seed` ausführen — ohne `seed` erzeugt der erste Lauf
-   über tausend Entwürfe.
+   zieht jeder Lauf 6 Altartikel nach (MAX_DRAFTS_PER_BATCH) — schleichend,
+   und bei Tumblr fängt keine Einzelfreigabe das auf.
 2. Einen vollen Tag trocken laufen lassen. Die Tag-Zeilen von mindestens 30
    Artikeln quer über `news` und `simulcast` von Hand durchsehen. Jeder
    peinliche oder explizite Tag ist ein Grund, `TAG_BLOCKLIST` zu erweitern
