@@ -5,7 +5,7 @@
     python -m app.cli ingest [N]        # N neue Artikel formulieren + einreihen (echt)
     python -m app.cli status            # Zähler ausgeben
 
-`seed` ist PFLICHT vor dem ersten Start — sonst sieht der Agent 590 Altartikel als 'neu'.
+`seed` ist PFLICHT vor dem ersten Start — sonst hält der Agent alle bereits publizierten Artikel für 'neu'.
 """
 import asyncio
 import sys

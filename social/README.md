@@ -32,8 +32,8 @@ Noch **nicht** dabei: Evergreen-Recycling (v1.5), Antworten-Inbox (v2), weitere 
 4. Im Freigabe-Chat **einmal `/start`** senden (registriert die Chat-ID), falls
    `SOCIAL_APPROVAL_CHAT_ID` nicht gesetzt ist.
 5. **PFLICHT vor dem echten Betrieb:** `./manage.sh seed`
-   → markiert alle 590 bereits publizierten Artikel als „gesehen". **Ohne diesen Schritt
-   erzeugt der erste Lauf 590 Entwürfe.**
+   → markiert alle bereits publizierten Artikel als „gesehen". **Ohne diesen Schritt
+   zieht jeder Lauf 6 Altartikel nach** (`MAX_DRAFTS_PER_BATCH`), täglich, ohne dass es auffällt.
 
 ## Bedienung
 - `/status` — Modus, Kanäle, Entwurfs-Zähler.
@@ -65,7 +65,7 @@ sources/articles ─▶ compose (LLM) ─▶ Queue (drafts) ─▶ Batch (Telegr
 - **Bluesky-Umlaute:** der Link steckt als externe Karte (`embed.external`), NICHT im Text →
   keine Facet-Byte-Offsets nötig (die brechen sonst bei Umlauten).
 - **Mastodon-Limit** wird aus `GET /api/v1/instance` gelesen (Fallback: `MASTODON_CHAR_LIMIT`).
-- **Erststart ohne `seed`** = 590 Entwürfe. Immer erst seeden.
+- **Erststart ohne `seed`** = täglich 6 Altartikel im Batch. Immer erst seeden.
 
 ## Tumblr-Kanal
 Zusätzlicher Kanal `tumblr` (Blog `otakupulse-de.tumblr.com`). Nur Artikel der Kategorien `news` und
