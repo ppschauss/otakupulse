@@ -28,6 +28,8 @@ async def _entwurf(channel="tumblr", ref="1", perishable=True, freigeben=True):
         batch_day="2026-11-02", channel=channel, source_kind="article", source_ref=ref,
         url=f"https://otakupulse.de/news/{ref}", image_url=None, title="T", body="B",
         perishable=perishable,
+        # Ein echter Tumblr-Entwurf trägt immer Tags; der Poster prüft das streng.
+        tags=["anime", "otakupulse"] if channel == "tumblr" else None,
     )
     if freigeben:
         await models.approve(did)

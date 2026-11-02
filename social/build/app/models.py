@@ -117,11 +117,46 @@ async def mark_posted(draft_id: int, external_id: str | None, channel: str,
     await c.commit()
 
 
-async def record_attempt_failure(draft_id: int, error: str, give_up: bool) -> None:
+async def already_posted(channel: str, source_kind: str, source_ref: str) -> bool:
+    """Steht dieser Beitrag für diesen Kanal schon im posted_log?
+
+    Die Schranke, die der Vertrag im Kopf von db.py zusagt: posted_log wurde bisher nur
+    geschrieben und gezählt, aber vor einem Post nie gefragt. poster.run_post_pass fragt hier,
+    bevor gesendet wird — das deckt jede Quelle doppelter 'approved'-Entwürfe ab (Absturz
+    zwischen enqueue/approve und mark_seen, zweiter `/batch`, paralleler `cli ingest`).
+    """
+    cur = await db.conn().execute(
+        "SELECT 1 FROM posted_log WHERE channel=? AND source_kind=? AND source_ref=?",
+        (channel, source_kind, source_ref),
+    )
+    return (await cur.fetchone()) is not None
+
+
+async def mark_posted_duplicate(draft_id: int) -> None:
+    """Zwillings-Entwurf als 'posted' verbuchen, ohne zu senden (der Beitrag ist schon draußen).
+
+    Kein posted_log-Eintrag (der steht schon da) und bewusst kein posted_at: sonst zählte die
+    Tumblr-Tagesmeldung (posted_between) denselben Post zweimal.
+    """
+    await db.conn().execute(
+        "UPDATE drafts SET state='posted', decided_at=? WHERE id=? AND state='approved'",
+        (now_utc_iso(), draft_id),
+    )
+    await db.conn().commit()
+
+
+async def record_attempt_failure(draft_id: int, error: str, give_up: bool,
+                                 count_attempt: bool = True) -> None:
+    """Fehlschlag festhalten; `give_up` setzt 'failed', sonst bleibt der Entwurf 'approved'.
+
+    `count_attempt=False` schreibt nur Grund und Zustand, ohne attempts zu erhöhen: der Versuch
+    wurde dann schon vor dem Senden gezählt (poster.run_post_pass, Tumblr-Vormerkung), und ein
+    zweites Hochzählen im selben Durchlauf würde das Retry-Limit halbieren.
+    """
     state = "failed" if give_up else "approved"
     # Beim endgültigen Aufgeben den Zeitpunkt festhalten (für die Tagesmeldung).
     await db.conn().execute(
-        "UPDATE drafts SET attempts=attempts+1, last_error=?, state=?, "
+        f"UPDATE drafts SET attempts=attempts+{1 if count_attempt else 0}, last_error=?, state=?, "
         "decided_at=CASE WHEN ? THEN ? ELSE decided_at END WHERE id=?",
         (error[:500], state, 1 if give_up else 0, now_utc_iso(), draft_id),
     )

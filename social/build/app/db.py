@@ -2,7 +2,9 @@
 
 Zwei tragende Verträge:
 - posted_log PRIMARY KEY (channel, source_kind, source_ref): derselbe Beitrag kann nie
-  zweimal auf denselben Kanal, egal wie oft der Container neu startet.
+  zweimal auf denselben Kanal, egal wie oft der Container neu startet. Tragend wird das erst
+  durch die Abfrage VOR dem Senden (models.already_posted, aufgerufen in poster.run_post_pass);
+  der Primärschlüssel allein verschluckt die Kollision nur im Nachhinein (INSERT OR IGNORE).
 - seen_sources: pro Quelle wird nur EINMAL formuliert (Ingest-Dedup über alle Kanäle).
 """
 import aiosqlite

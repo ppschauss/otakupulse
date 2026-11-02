@@ -46,6 +46,9 @@ ConnectTimeout, UnsupportedProtocol, LocalProtocolError, InvalidURL, dazu unvoll
 Konfiguration und Fehler beim Bau von Body/Auth-Header). Jeder andere Fehler nach dem Senden und
 jedes 5xx setzt `PostResult.outcome_unknown=True`; poster.py gibt dann sofort auf und meldet es.
 4xx ist ein endgueltiger Fehlschlag, 429 hat seinen eigenen Pfad mit retry_after.
+Erfolg ist ausschliesslich 201. Jeder andere Status, der kein 4xx ist -- also auch ein 200 und
+(httpx folgt von sich aus keiner Weiterleitung) jedes 3xx --, gilt als Fehlschlag mit
+`outcome_unknown=True`: nichts belegt die Veroeffentlichung, und ein Retry koennte doppelt posten.
 """
 import logging
 
@@ -210,10 +213,17 @@ class Tumblr(Channel):
                 if r.status_code == 429:
                     return PostResult(ok=False, error="429 rate limited",
                                       retry_after=_retry_after(r.headers.get("retry-after")))
-                r.raise_for_status()
-                # Ein 201 ist ein Erfolg, auch wenn die ID nicht lesbar ist; sonst würde der
-                # Poster einen schon veröffentlichten Beitrag erneut senden.
-                return PostResult(ok=True, external_id=_post_id(r))
+                if r.status_code == 201:
+                    # Ein 201 ist ein Erfolg, auch wenn die ID nicht lesbar ist; sonst würde der
+                    # Poster einen schon veröffentlichten Beitrag erneut senden.
+                    return PostResult(ok=True, external_id=_post_id(r))
+                r.raise_for_status()  # 4xx/5xx: unten im HTTPStatusError-Zweig
+                # Kein Fehlerstatus, aber auch kein 201: jedes andere 2xx und (da httpx von sich
+                # aus keiner Weiterleitung folgt) jedes 3xx. Erfolg ist damit NICHT belegt, der
+                # Beitrag kann aber verarbeitet worden sein -> kein Retry.
+                return PostResult(
+                    ok=False, outcome_unknown=True,
+                    error=f"HTTP {r.status_code}: kein 201 Created (Antwort: {r.text[:200]})")
         except _VOR_DEM_SENDEN_FEHLER as e:
             return PostResult(ok=False, error=_fehlertext(e))
         except httpx.HTTPStatusError as e:

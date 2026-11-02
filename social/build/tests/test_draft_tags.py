@@ -3,6 +3,7 @@ import json
 import sqlite3
 
 import aiosqlite
+import pytest
 
 from app import batch, compose, config, db, models, poster
 from app.channels import registry
@@ -264,6 +265,26 @@ async def test_ingest_tags_for_wirft_nur_dieser_artikel_ohne_tumblr(
     assert any(r.levelname == "ERROR" and "1" in r.getMessage() for r in caplog.records)
 
 
+async def test_ingest_ohne_verlaessliche_tagdaten_entfaellt_nur_tumblr(tmp_db, monkeypatch):
+    """articles.fetch_new konnte die Tag-Rohdaten nicht laden (I1) — nur Tumblr entfällt."""
+    aufrufe = _patch_ingest(monkeypatch, [_item("1", tag_data_ok=False), _item("2")])
+    assert await batch.ingest(6) == 5
+    assert sorted((d["source_ref"], d["channel"]) for d in await _drafts()) == [
+        ("1", "bluesky"), ("1", "mastodon"),
+        ("2", "bluesky"), ("2", "mastodon"), ("2", "tumblr")]
+    assert aufrufe["compose"] == [("1", ["bluesky", "mastodon"]),
+                                  ("2", ["bluesky", "mastodon", "tumblr"])]
+    assert await models.is_seen("article", "1")
+
+
+async def test_ingest_ohne_tagdaten_entscheidet_nicht_ueber_den_adult_ausschluss(
+        tmp_db, monkeypatch):
+    """is_hentai käme aus derselben Abfrage: ohne sie darf nichts auf den Markenblog."""
+    _patch_ingest(monkeypatch, [_item("1", tag_data_ok=False, is_hentai=False, genres=[])])
+    await batch.ingest(6)
+    assert "tumblr" not in {d["channel"] for d in await _drafts()}
+
+
 async def test_ingest_fuer_tumblr_wirft_nur_tumblr_entfaellt(tmp_db, monkeypatch, caplog):
     _patch_ingest(monkeypatch, [_item("1")])
 
@@ -317,6 +338,39 @@ async def test_poster_ohne_tags_ergibt_leere_liste(tmp_db, monkeypatch):
     (post,) = await _poste(monkeypatch, did)
     assert post.tags == []
     assert post.category is None
+
+
+@pytest.mark.parametrize("kaputt", [[1, 2], ["", "  "], ["ok", ""], ["ok", None], "abc",
+                                    {"a": 1}, 7])
+async def test_poster_unbrauchbare_tags_gehen_nicht_raus(tmp_db, monkeypatch, kaputt):
+    """isinstance(list) allein reicht nicht: _tags_param würde still filtern und ohne Tags posten."""
+    did = await _enqueue(tags=kaputt)
+    posts = await _poste(monkeypatch, did)
+    assert posts == []
+    d = await models.get_draft(did)
+    assert d["state"] == "failed" and "tags" in (d["last_error"] or "").lower()
+
+
+async def test_poster_tumblr_ohne_tags_wird_nicht_gepostet(tmp_db, monkeypatch):
+    """Ein Tumblr-Post ohne Tags findet niemand — tagging.tags_for liefert immer mindestens zwei."""
+    did = await _enqueue(tags=[])
+    assert await _poste(monkeypatch, did) == []
+    d = await models.get_draft(did)
+    assert d["state"] == "failed" and "leer" in (d["last_error"] or "")
+
+
+async def test_poster_bluesky_darf_ohne_tags_posten(tmp_db, monkeypatch):
+    """Nur Tumblr braucht Tags; Bluesky und Mastodon bleiben wie sie waren."""
+    did = await _enqueue(channel="bluesky", source_ref="9", tags=[])
+    (post,) = await _poste(monkeypatch, did)
+    assert post.tags == []
+    assert (await models.get_draft(did))["state"] == "posted"
+
+
+async def test_poster_bluesky_mit_nicht_strings_faellt_trotzdem_auf(tmp_db, monkeypatch):
+    did = await _enqueue(channel="bluesky", source_ref="9", tags=["ok", 3])
+    assert await _poste(monkeypatch, did) == []
+    assert (await models.get_draft(did))["state"] == "failed"
 
 
 async def test_poster_kaputte_tags_markieren_entwurf_failed_und_weiter(tmp_db, monkeypatch):

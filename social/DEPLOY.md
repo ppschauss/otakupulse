@@ -105,17 +105,28 @@ Postgres (nur lesend, Rolle `social_ro`):
 Kanäle:
 `CHANNELS_ENABLED`: Komma-Liste der aktiven Kanäle, bekannte Namen `tumblr`, `bluesky`,
 `mastodon`. **Leer heißt: der Agent läuft fehlerfrei und tut nichts**, `ingest` erzeugt 0 Entwürfe
-und loggt nur `Keine aktiven Kanäle`. Ein unbekannter Name (Tippfehler) wird **ohne Warnung**
-übergangen; `/status` zeigt unter „Kanäle“, was wirklich aktiv ist. Werte je Phase:
+und loggt nur `Keine aktiven Kanäle`. Groß-/Kleinschreibung ist egal (`Tumblr` wirkt wie `tumblr`);
+ein unbekannter Name meldet sich beim Start als Warnung (Log **und** Freigabe-Chat). `/status`
+zeigt unter „Kanäle“, was wirklich aktiv ist. Werte je Phase:
 
 | Phase | `CHANNELS_ENABLED` | `DRY_RUN` | `DRY_RUN_CHANNELS` |
 |---|---|---|---|
-| Deploy, bis der Seed gelaufen ist (Schritt 4) | leer | `1` | egal |
-| Trockenlauf (Schritt 6 bis 9) | `tumblr,bluesky,mastodon` | `1` | leer oder wie unten |
-| Tumblr-Livegang, Test-Blog (ab Schritt 10) | `tumblr,bluesky,mastodon` | `0` | `bluesky,mastodon` |
+| Deploy, bis der Seed gelaufen ist (Schritt 4) | leer | `1` | leer |
+| Trockenlauf (Schritt 6 bis 9) | `tumblr` | `1` | leer |
+| Tumblr-Livegang, Test-Blog (ab Schritt 10) | `tumblr` | `0` | leer |
+| Später, wenn Bluesky/Mastodon Konten haben (Schritt 13) | `tumblr,bluesky,mastodon` | `0` | zuerst `bluesky,mastodon`, dann einzeln leeren |
 
-`DRY_RUN_CHANNELS` wirkt nur auf Kanäle, die in `CHANNELS_ENABLED` stehen. Fehlen `bluesky` und
-`mastodon` dort, greift `DRY_RUN_CHANNELS` ins Leere, und es ist nur Tumblr aktiv.
+**Für Bluesky und Mastodon gibt es (noch) keine Konten.** `BLUESKY_HANDLE`,
+`BLUESKY_APP_PASSWORD`, `MASTODON_BASE_URL` und `MASTODON_ACCESS_TOKEN` sind leer; ohne
+Zugangsdaten könnten die beiden Kanäle nicht falsch posten, sondern nur mit einem Auth-Fehler
+scheitern. Deshalb reicht für Trockenlauf und Livegang `CHANNELS_ENABLED=tumblr`. Dann entstehen
+für die beiden anderen Kanäle **gar keine Entwürfe**: keine LLM-Kosten, keine Breaker-Meldungen,
+keine Fehlschläge im Telegram-Chat.
+
+`DRY_RUN_CHANNELS` wird damit für den Start **nicht gebraucht** — es wirkt nur auf Kanäle, die in
+`CHANNELS_ENABLED` stehen, und dort steht nur Tumblr. Der Mechanismus bleibt und ist das richtige
+Werkzeug, sobald Konten angelegt werden: ein neuer Kanal gehört erst in `DRY_RUN_CHANNELS` und
+wird danach einzeln herausgenommen (Schritt 13).
 
 Bluesky:
 `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `BLUESKY_PDS`
@@ -181,9 +192,14 @@ Der Agent schreibt nach stdout. Zwei Wege:
 Worauf achten:
 
 - **Startzeile:** `Startup fertig — <Modus>, Kanäle: [...]`. Hier steht der Ist-Zustand.
-- **Warnungen davor** (`⚠️ DRY_RUN_CHANNELS enthält unbekannten Kanal …` oder
+- **Warnungen davor** (`⚠️ CHANNELS_ENABLED enthält unbekannten Kanal …`,
+  `⚠️ DRY_RUN_CHANNELS enthält unbekannten Kanal …` oder
   `ACHTUNG: DRY_RUN=0 und DRY_RUN_CHANNELS ist leer — ALLE aktivierten Kanäle …`) nie
-  überlesen. Die erste heißt: Tippfehler, der Kanal ist **nicht** trocken. Die zweite: alles geht live.
+  überlesen. Die erste heißt: Tippfehler, der Kanal ist **nicht aktiv**. Die zweite: Tippfehler,
+  der Kanal ist **nicht** trocken. Die dritte: alles geht live.
+  Dieselben Warnungen gehen beim Start zusätzlich als eine Nachricht `⚠️ Start-Warnungen:` in den
+  Freigabe-Chat — der Betreiber muss dafür nicht im Coolify-Log sitzen. Scheitert Telegram dabei,
+  startet der Agent trotzdem (dann steht es nur im Log).
 - Der Log nennt keine Telegram-URLs (`httpx` ist stumm gestellt), damit der Bot-Token nicht im
   Log landet.
 
@@ -231,8 +247,9 @@ Reihenfolge einhalten. Die Punkte stammen aus den Reviews der Tasks 1 bis 9.
 6. **Seeden.** `docker exec otakupulse-social python -m app.cli seed` markiert alle bereits
    publizierten Artikel als gesehen. **Ohne diesen Schritt zieht jeder Lauf 6 Altartikel nach**
    (siehe Schritt 4). Danach `status`: „Bekannte Quellen“ entspricht der Zahl der publizierten
-   Artikel. **Erst jetzt** `CHANNELS_ENABLED=tumblr,bluesky,mastodon` setzen (weiter
-   `DRY_RUN=1`) und neu starten; der Zustand bleibt im Volume.
+   Artikel. **Erst jetzt** `CHANNELS_ENABLED=tumblr` setzen (weiter `DRY_RUN=1`) und neu starten;
+   der Zustand bleibt im Volume. Bluesky und Mastodon bleiben draußen, solange sie keine Konten
+   haben (siehe „Kanäle“ oben und Schritt 13).
 7. **Einen vollen Tag trocken laufen lassen.** Einen Lauf stößt man mit `/batch` im Bot an
    (oder `docker exec otakupulse-social python -m app.cli ingest 6`); sonst läuft er zur
    `BATCH_HOUR`. Die Tag-Zeilen von mindestens 30 Artikeln quer über `news` und `simulcast` von
@@ -251,19 +268,21 @@ Reihenfolge einhalten. Die Punkte stammen aus den Reviews der Tasks 1 bis 9.
    lassen, statt mit weniger Stichprobe weiterzumachen.
 8. **Direkt nach dem Scharfschalten `/status` im Telegram-Bot lesen** — also nach
    Schritt 10, und bevor auf den Markenblog umgestellt wird (Schritt 12). Vorher steht
-   `DRY_RUN=1`, dann meldet `/status` nur „TROCKENMODUS (alle Kanäle)“ und die
-   Aufteilung ist gar nicht sichtbar.**Zu prüfen ist dann:** Dort muss genau die erwartete
-   Aufteilung stehen, zum Beispiel `Modus: LIVE: tumblr · TROCKEN: bluesky, mastodon`, und unter
-   „Kanäle“ alle drei Namen. Ein Tippfehler in `DRY_RUN_CHANNELS` trocknet nichts und erzeugt nur
-   eine Log-Warnung; ein Tippfehler in `CHANNELS_ENABLED` schaltet den Kanal ohne jede Warnung ab.
-9. **Die 14 offenen `pending`-Entwürfe aus Juli 2026 verwerfen, bevor jemals ein Kanal aus
-   `DRY_RUN_CHANNELS` entfernt wird.** Das Risiko ist kleiner, als es klingt: ein neuer Batch
-   wählt seine Entwürfe über `batch_day` (`pending_for_batch`), die alten tauchen darin nicht auf
-   und sind nur über ihre alten Telegram-Nachrichten erreichbar. Verwerfen bleibt trotzdem
-   sauberer. Die 14 stammen aus der lokalen Entwicklungsdatenbank; auf einem frischen Volume im
-   VPS-Container gibt es sie nicht. Prüfen lässt sich das nach Schritt 7 nicht mehr über
-   `pending: 0` in `/status`, denn dann liegen längst neue trockene Entwürfe dort. Stattdessen
-   Entwürfe mit altem Datum suchen:
+   `DRY_RUN=1`, dann meldet `/status` nur „TROCKENMODUS (alle Kanäle)“ und der Ist-Zustand je
+   Kanal ist gar nicht sichtbar. **Zu prüfen ist dann:** Dort muss `Modus: LIVE: tumblr` stehen
+   und unter „Kanäle“ genau `tumblr`. Steht dort mehr oder weniger, stimmt `CHANNELS_ENABLED`
+   nicht. Ein unbekannter Name in `CHANNELS_ENABLED` oder `DRY_RUN_CHANNELS` meldet sich beim
+   Start als Warnung (Log und Freigabe-Chat) — ein Name, der nur falsch geschrieben ist, schaltet
+   den Kanal trotzdem ab bzw. trocknet nichts.
+9. **Alte offene `pending`-Entwürfe (Juli 2026) verwerfen.** Mit `CHANNELS_ENABLED=tumblr` ist das
+   nahezu belanglos: die alten Entwürfe gehören zu Bluesky und Mastodon, und der Poster
+   überspringt Entwürfe eines nicht aktivierten Kanals ohnehin unangetastet. Auch ein neuer Batch
+   wählt seine Entwürfe über `batch_day` (`pending_for_batch`); die alten tauchen darin nicht auf
+   und sind nur über ihre alten Telegram-Nachrichten erreichbar. Aufräumen bleibt sauberer, ist
+   aber keine Voraussetzung für den Livegang. Die 14 stammen aus der lokalen
+   Entwicklungsdatenbank; auf einem frischen Volume im VPS-Container gibt es sie nicht. Prüfen
+   lässt sich das nach Schritt 7 nicht mehr über `pending: 0` in `/status`, denn dann liegen
+   längst neue trockene Entwürfe dort. Stattdessen Entwürfe mit altem Datum suchen:
    ```bash
    docker exec otakupulse-social python -c "
    import sqlite3
@@ -272,15 +291,32 @@ Reihenfolge einhalten. Die Punkte stammen aus den Reviews der Tasks 1 bis 9.
    ```
    Keine Zeile heißt: nichts Altes da. Wurde der Zustand hinübergenommen und es gibt Zeilen,
    die Entwürfe über ❌ in den alten Telegram-Nachrichten verwerfen.
-10. **`DRY_RUN=0` mit `DRY_RUN_CHANNELS=bluesky,mastodon`** und
-    `CHANNELS_ENABLED=tumblr,bluesky,mastodon`, weiterhin gegen den Test-Tumblr.
-    **Der erste echte Post ist zugleich der Auth-Test.** Ein 401 wäre der Hinweis, dass Tumblr
-    doch einen `oauth_body_hash` erwartet. Das ist die einzige Annahme im Projekt, die sich nicht
-    vorab verifizieren ließ.
+10. **`DRY_RUN=0`** bei `CHANNELS_ENABLED=tumblr` und leerem `DRY_RUN_CHANNELS`, weiterhin gegen
+    den Test-Tumblr. **Der erste echte Post ist zugleich der Auth-Test.** Ein 401 wäre der Hinweis,
+    dass Tumblr doch einen `oauth_body_hash` erwartet. Das ist die einzige Annahme im Projekt, die
+    sich nicht vorab verifizieren ließ.
+    Die Startwarnung „ACHTUNG: DRY_RUN=0 und DRY_RUN_CHANNELS ist leer“ ist hier **erwartet**:
+    Tumblr soll live gehen, und es ist der einzige aktive Kanal.
 11. **Den ersten echten Post im Browser prüfen** (auf dem Test-Blog, Theme aus Schritt 4). Sitzt das Cover links? Wenn das erste Bild nicht
     als erstes Kind in `.op-body` ankommt, den Selektor in `tumblr-theme/theme.html` nachziehen
     (siehe [`tumblr-theme/README.md`](tumblr-theme/README.md)).
 12. **Erst dann** `TUMBLR_BLOG_IDENTIFIER` auf den Markenblog `otakupulse-de.tumblr.com` umstellen.
+    (In `secrets.env.example` steht die Variable bewusst **leer** — der dokumentierte Weg beginnt
+    beim Testblog aus Schritt 4.)
+13. **Später: Bluesky und Mastodon scharf schalten.** Erst wenn es dafür Konten gibt. Reihenfolge:
+    1. Konten anlegen — Bluesky-**App**-Passwort (nicht das Kontopasswort), Mastodon-Access-Token
+       über Konto → Entwicklung → Neue Anwendung.
+    2. Zugangsdaten eintragen: `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD` (ggf. `BLUESKY_PDS`),
+       `MASTODON_BASE_URL`, `MASTODON_ACCESS_TOKEN`.
+    3. **Zuerst** `DRY_RUN_CHANNELS=bluesky,mastodon` setzen, **dann** `CHANNELS_ENABLED` auf
+       `tumblr,bluesky,mastodon` erweitern und neu starten. Nie umgekehrt: sonst posten die
+       neuen Kanäle sofort live.
+    4. `/status` prüfen: `Modus: LIVE: tumblr · TROCKEN: bluesky, mastodon`, unter „Kanäle“ alle
+       drei Namen. Einen Batch abwarten und die Entwürfe im Freigabe-Chat durchsehen (Bluesky und
+       Mastodon haben die Einzelfreigabe, Tumblr nicht).
+    5. **Einen Kanal nach dem anderen** aus `DRY_RUN_CHANNELS` nehmen und je Kanal einen echten
+       Post prüfen, bevor der nächste folgt. Die alten `pending`-Entwürfe aus Schritt 9 sollten
+       vorher weg sein — ab hier sind sie wieder postbar.
 
 ## Offene Fragen
 

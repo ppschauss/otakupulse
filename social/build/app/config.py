@@ -42,9 +42,17 @@ def _bool(key: str, default: bool) -> bool:
     return raw.strip().lower() not in ("0", "false", "no", "off", "")
 
 
+def _csv_list(key: str) -> list[str]:
+    """Kommaseparierte Umgebungsvariable als Liste: getrimmt, kleingeschrieben, leere Teile weg.
+
+    Reihenfolge bleibt erhalten (CHANNELS_ENABLED steuert damit die Anzeige in mode_summary).
+    """
+    return [c.strip().lower() for c in os.environ.get(key, "").split(",") if c.strip()]
+
+
 def _csv_set(key: str) -> frozenset[str]:
     """Kommaseparierte Umgebungsvariable als Menge: getrimmt, kleingeschrieben, leere Teile weg."""
-    return frozenset(c.strip().lower() for c in os.environ.get(key, "").split(",") if c.strip())
+    return frozenset(_csv_list(key))
 
 
 # --- Pflicht ---
@@ -66,7 +74,10 @@ BOOTSTRAP_APPROVAL_CHAT_ID = (
 MODEL = os.environ.get("SOCIAL_MODEL", "claude-sonnet-5")
 
 # --- Kanäle ---
-CHANNELS_ENABLED = [c.strip() for c in os.environ.get("CHANNELS_ENABLED", "").split(",") if c.strip()]
+# Gleiche Behandlung wie DRY_RUN_CHANNELS: getrimmt UND kleingeschrieben, dazu in
+# validate_dry_config auf unbekannte Namen geprüft. "CHANNELS_ENABLED=Tumblr" hat den Kanal
+# vorher ohne jede Warnung stumm abgeschaltet.
+CHANNELS_ENABLED = _csv_list("CHANNELS_ENABLED")
 
 # Kanalweiser Trockenmodus: diese Kanäle posten nie echt, auch wenn DRY_RUN=0.
 # Default leer; so lässt sich ein einzelner Kanal live schalten, ohne die anderen mitzureißen.
@@ -145,11 +156,18 @@ TUMBLR_MAX_POSTS_PER_DAY = _int("TUMBLR_MAX_POSTS_PER_DAY", 6, minimum=1)
 
 
 def validate_dry_config(bekannte_kanaele) -> list[str]:
-    """Prüft DRY_RUN_CHANNELS gegen die bekannten Kanäle; liefert Warnungen (leer = alles gut).
+    """Prüft CHANNELS_ENABLED und DRY_RUN_CHANNELS gegen die bekannten Kanäle.
 
-    Ein Tippfehler oder falscher Trenner ("bluesky mastodon") trocknet sonst still nichts.
+    Liefert Warnungen (leer = alles gut). Ein Tippfehler oder falscher Trenner
+    ("bluesky mastodon") trocknet sonst still nichts bzw. schaltet still einen Kanal ab.
     """
     warnungen = []
+    for name in sorted(set(CHANNELS_ENABLED) - set(bekannte_kanaele)):
+        warnungen.append(
+            f"CHANNELS_ENABLED enthält unbekannten Kanal '{name}' (bekannt: "
+            f"{', '.join(sorted(bekannte_kanaele))}). Trennzeichen ist das Komma. "
+            "Dieser Kanal ist NICHT aktiv."
+        )
     for name in sorted(DRY_RUN_CHANNELS - set(bekannte_kanaele)):
         warnungen.append(
             f"DRY_RUN_CHANNELS enthält unbekannten Kanal '{name}' (bekannt: "

@@ -3,12 +3,17 @@
 Schema verifiziert 2026-07-16: Tabelle `articles`, Status in `_status`, Datum in
 `publish_date` (NICHT published_at), Kurztext in `excerpt`, Bild in `cover_image_url`.
 """
+import logging
 from dataclasses import dataclass, field
 
 from .. import pg, config, models
 
+log = logging.getLogger(__name__)
+
 # News-Detailseite liegt unter /news/<slug>.
 _URL = "{base}/news/{slug}"
+
+TUMBLR = "tumblr"
 
 
 @dataclass
@@ -27,6 +32,9 @@ class SourceItem:
     category: str | None = None       # articles.category (news, simulcast, ...)
     is_hentai: bool = False           # true, wenn irgendein verknüpfter Anime Hentai ist
     anime_count: int = 0              # Zahl verknüpfter Anime; > 1 => Tag-Felder leer
+    # False: die Tag-Rohdaten wurden nicht (verlässlich) geladen. Dann entfällt der Tumblr-Entwurf
+    # dieses Artikels; über is_hentai/genres darf dann nicht entschieden werden.
+    tag_data_ok: bool = True
 
 
 # Nur diese Kategorien gehen auf Tumblr. Angewandt wird das kanalspezifisch in batch.ingest
@@ -36,11 +44,25 @@ TUMBLR_CATEGORIES: frozenset[str] = frozenset({"news", "simulcast"})
 # Rang ist eine Stärke (höher = besser). Tags ohne Rang zählen 0 und fallen unter die Schwelle.
 _RANG_UNBEKANNT = 0
 
-# Eine Zeile je Artikel: alle Verknüpfungen werden in korrelierten Unterabfragen zu
-# Arrays aggregiert, es gibt keinen Join auf die Hauptabfrage und damit keine
-# Zeilenvervielfachung. Direkt in psql ausführbar ($1 = int Limit).
+# Grundabfrage: liest NUR `articles`, also genau das, was jeder Kanal braucht. Das Tag-Material
+# steht in TAGS_SQL und wird getrennt geholt — eine fehlende Leseberechtigung oder ein
+# Schema-Drift in den sechs Tag-Tabellen darf den Ingest von Bluesky und Mastodon nicht
+# mitreißen. Direkt in psql ausführbar ($1 = int Limit).
 ARTICLES_SQL = """
-SELECT a.id, a.slug, a.title, a.excerpt, a.cover_image_url, a.category,
+SELECT a.id, a.slug, a.title, a.excerpt, a.cover_image_url, a.category
+FROM articles a
+WHERE a._status = 'published' AND a.slug IS NOT NULL
+ORDER BY a.publish_date DESC NULLS LAST
+LIMIT $1
+"""
+
+# Tag-Rohdaten (nur für den Tumblr-Pfad, nur für die schon ausgewählten Artikel). Eine Zeile je
+# Artikel: alle Verknüpfungen werden in korrelierten Unterabfragen zu Arrays aggregiert, es gibt
+# keinen Join auf die Hauptabfrage und damit keine Zeilenvervielfachung. Diese Abfrage braucht
+# SELECT auf articles_rels, anime, anime_rels, genres, anime_tags und tags; scheitert sie,
+# entfällt Tumblr für diesen Lauf. Direkt in psql ausführbar ($1 = Liste der Artikel-IDs).
+TAGS_SQL = """
+SELECT a.id,
        (SELECT count(DISTINCT ar.anime_id)
           FROM articles_rels ar
          WHERE ar.parent_id = a.id AND ar.anime_id IS NOT NULL) AS anime_count,
@@ -71,9 +93,7 @@ LEFT JOIN LATERAL (
          GROUP BY tg.name, tg.category::text
       ) x
 ) t ON true
-WHERE a._status = 'published' AND a.slug IS NOT NULL
-ORDER BY a.publish_date DESC NULLS LAST
-LIMIT $1
+WHERE a.id = ANY($1)
 """
 
 # Genre-Häufigkeit (Genre-Name -> Anzahl Anime), für tagging.pick_genre.
@@ -96,59 +116,145 @@ async def genre_rarity() -> dict[str, int]:
     return _rarity_cache
 
 
-def row_to_item(r) -> SourceItem:
-    """Bildet eine aggregierte Zeile aus ARTICLES_SQL auf ein SourceItem ab (ohne DB-Zugriff).
+def bild_url(roh) -> str | None:
+    """Bildpfad absolut machen — dieselbe Quelle (SITE_BASE_URL) wie die Artikel-URL.
+
+    `articles.cover_image_url` steht in der Produktionsdatenbank als RELATIVER Pfad
+    ("/media/anime/banner/195/195604.jpg"); gemessen über alle publizierten Artikel: 1158 relativ,
+    0 absolut. Unverändert durchgereicht landet dieser Wert als `media[0].url` im NPF-Bildblock,
+    und jeder Tumblr-Post hätte ein kaputtes Cover (das Theme holt es per
+    `.op-body > figure:first-child` nach links und fände nichts). Bluesky nutzt denselben Wert
+    für die externe Karte und profitiert mit.
+
+    Bereits absolute Werte (http/https) bleiben unverändert, leere bleiben None. Ein fehlender
+    führender Schrägstrich wird ergänzt, ein doppelter nicht erzeugt.
+    """
+    if not isinstance(roh, str) or not roh.strip():
+        return None
+    pfad = roh.strip()
+    if pfad.lower().startswith(("http://", "https://")):
+        return pfad
+    return f"{config.SITE_BASE_URL}/{pfad.lstrip('/')}"
+
+
+def _feld(r, name):
+    """Feld einer Zeile, auch wenn die Abfrage es nicht liefert (Grundabfrage ohne Tag-Spalten)."""
+    try:
+        return r[name]
+    except (KeyError, IndexError):
+        return None
+
+
+def _tagdaten(r):
+    """Tag-Rohdaten einer Zeile aus TAGS_SQL: (genres, anime_tags, series_title, is_hentai, anzahl).
 
     Ohne verknüpften Anime sind Genres, Anime-Tags und Serientitel leer. Bei mehreren
     Anime bleiben Genres und Tags (aggregiert über alle) erhalten; nur der Serientitel
     entfällt, damit kein falscher Serientag unter einem Sammelartikel steht.
     `is_hentai` bleibt immer erhalten, damit der Ausschluss auch bei Sammelartikeln greift.
+    Fehlen die Spalten ganz (Grundabfrage), ist alles leer.
     """
-    anzahl = int(r["anime_count"] or 0)
-    hat_anime = anzahl >= 1
+    anzahl = int(_feld(r, "anime_count") or 0)
     genres, tags, serie = [], [], None
-    if hat_anime:
-        genres = list(r["genres"] or [])
-        namen = r["tag_names"] or []
-        kategorien = r["tag_categories"] or []
-        raenge = r["tag_ranks"] or []
+    if anzahl >= 1:
+        genres = list(_feld(r, "genres") or [])
+        namen = _feld(r, "tag_names") or []
+        kategorien = _feld(r, "tag_categories") or []
+        raenge = _feld(r, "tag_ranks") or []
         tags = [
             (n, c, _RANG_UNBEKANNT if rk is None else int(rk))
             for n, c, rk in zip(namen, kategorien, raenge)
         ]
         if anzahl == 1:
-            serie = r["series_title"] or None
+            serie = _feld(r, "series_title") or None
+    return genres, tags, serie, bool(_feld(r, "is_hentai")), anzahl
+
+
+def tags_uebernehmen(item: SourceItem, r) -> None:
+    """Tag-Rohdaten aus einer TAGS_SQL-Zeile in ein bestehendes SourceItem schreiben."""
+    (item.genres, item.anime_tags, item.series_title,
+     item.is_hentai, item.anime_count) = _tagdaten(r)
+    item.tag_data_ok = True
+
+
+def row_to_item(r) -> SourceItem:
+    """Bildet eine Zeile auf ein SourceItem ab (ohne DB-Zugriff).
+
+    Verträgt sowohl eine Zeile der Grundabfrage (dann bleiben die Tag-Felder leer) als auch eine
+    um die TAGS_SQL-Spalten ergänzte Zeile.
+    """
+    genres, tags, serie, hentai, anzahl = _tagdaten(r)
     return SourceItem(
         kind="article",
         ref=str(r["id"]),
         url=_URL.format(base=config.SITE_BASE_URL, slug=r["slug"]),
         title=r["title"] or "",
         excerpt=r["excerpt"] or "",
-        image_url=r["cover_image_url"],
+        image_url=bild_url(r["cover_image_url"]),
         perishable=True,
         genres=genres,
         anime_tags=tags,
         series_title=serie,
         category=r["category"],
-        is_hentai=bool(r["is_hentai"]),
+        is_hentai=hentai,
         anime_count=anzahl,
     )
 
 
+async def _tags_anreichern(items: list[SourceItem], ids: list) -> None:
+    """Tag-Rohdaten für die gewählten Artikel nachladen (zweite Abfrage, nur für Tumblr).
+
+    Degradiert wie der übrige Tumblr-Pfad: scheitert die Abfrage, bleibt `tag_data_ok=False`,
+    batch.ingest lässt Tumblr für diesen Lauf entfallen, und Bluesky/Mastodon laufen weiter.
+    """
+    try:
+        rows = await pg.fetch(TAGS_SQL, ids)
+    except Exception:
+        log.warning("Tag-Rohdaten nicht lesbar — kein Tumblr-Entwurf in diesem Lauf.",
+                    exc_info=True)
+        for item in items:
+            item.tag_data_ok = False
+        return
+    je_id = {str(r["id"]): r for r in rows}
+    for item in items:
+        zeile = je_id.get(item.ref)
+        if zeile is None:
+            # Artikel zwischen den beiden Abfragen verschwunden: ohne Tag-Daten kein Tumblr-Post.
+            item.tag_data_ok = False
+            log.warning("Keine Tag-Rohdaten für Artikel %s — kein Tumblr-Entwurf.", item.ref)
+            continue
+        tags_uebernehmen(item, zeile)
+
+
 async def fetch_new(limit: int) -> list[SourceItem]:
-    """Liefert bis zu `limit` publizierte Artikel (alle Kategorien, `item.category` trägt den Wert), die noch nicht formuliert wurden."""
+    """Liefert bis zu `limit` publizierte Artikel (alle Kategorien, `item.category` trägt den Wert), die noch nicht formuliert wurden.
+
+    Die Grundabfrage liest nur `articles`. Die Tag-Rohdaten holt eine zweite Abfrage, und zwar
+    nur, wenn Tumblr aktiv ist: eine reine Tumblr-Datenabhängigkeit darf den Ingest der anderen
+    Kanäle nicht zum Stillstand bringen.
+    """
     rows = await pg.fetch(
         ARTICLES_SQL,
         # großzügig ziehen, danach in Python gegen seen_sources filtern
         max(limit * 6, 40),
     )
     items: list[SourceItem] = []
+    ids: list = []
     for r in rows:
         if await models.is_seen("article", str(r["id"])):
             continue
         items.append(row_to_item(r))
+        ids.append(r["id"])
         if len(items) >= limit:
             break
+    if not items:
+        return items
+    if TUMBLR in config.CHANNELS_ENABLED:
+        await _tags_anreichern(items, ids)
+    else:
+        # Keine Tag-Rohdaten geholt (Tumblr ist nicht aktiv): niemand darf sie für echt nehmen.
+        for item in items:
+            item.tag_data_ok = False
     return items
 
 

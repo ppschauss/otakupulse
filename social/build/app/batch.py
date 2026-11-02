@@ -58,8 +58,11 @@ async def ingest(limit: int) -> int:
         # Tags sind Daten, kein Modelltext: aus den Rohdaten abgeleitet, vor dem Modellaufruf.
         # Scheitert das (oder fehlt rarity), entfällt nur der Tumblr-Entwurf dieses Artikels.
         tumblr_tags: list[str] | None = None
-        if TUMBLR in item_channels and rarity is None:
-            item_channels.remove(TUMBLR)  # Ursache ist oben schon als Warnung geloggt
+        if TUMBLR in item_channels and (rarity is None or not item.tag_data_ok):
+            # Ursache ist schon als Warnung geloggt (oben bzw. in articles.fetch_new).
+            # Ohne verlässliche Tag-Rohdaten gibt es keinen Tumblr-Entwurf: weder Tags noch
+            # der Adult-Ausschluss (is_hentai) wären belegt.
+            item_channels.remove(TUMBLR)
         elif TUMBLR in item_channels:
             try:
                 tumblr_tags = tagging.tags_for(

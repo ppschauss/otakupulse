@@ -201,6 +201,33 @@ async def test_4xx_ist_endgueltiger_fehlschlag(httpx_mock, status):
     assert r.ok is False and r.outcome_unknown is False and str(status) in r.error
 
 
+# --- I2: Erfolg ist ausschliesslich 201 ---
+
+@pytest.mark.parametrize("status", [200, 202, 204])
+async def test_2xx_ohne_201_ist_kein_erfolg(httpx_mock, status):
+    """raise_for_status schweigt bei 200 — ohne 201-Pruefung waere der Entwurf 'posted'."""
+    httpx_mock.add_response(status_code=status, json={"response": {"id": 42}})
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is False and r.outcome_unknown is True
+    assert str(status) in r.error and "201" in r.error
+
+
+@pytest.mark.parametrize("status", [301, 302, 307, 308])
+async def test_3xx_ist_kein_erfolg(httpx_mock, status):
+    """httpx folgt von sich aus keiner Weiterleitung: die 3xx-Antwort kommt hier an."""
+    httpx_mock.add_response(status_code=status, headers={"Location": "https://anderswo"})
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is False and r.outcome_unknown is True
+    assert str(status) in r.error
+    assert len(httpx_mock.get_requests()) == 1  # keiner Weiterleitung gefolgt
+
+
+async def test_nur_201_ist_erfolg(httpx_mock):
+    httpx_mock.add_response(status_code=201, json={"response": {"id": "7"}})
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is True and r.external_id == "7"
+
+
 @pytest.mark.parametrize("roh,erwartet", [
     ("999999999999", 86400), ("86401", 86400), ("900", 900), ("-5", 1), ("1", 1),
 ])

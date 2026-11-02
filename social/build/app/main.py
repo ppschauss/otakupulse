@@ -20,6 +20,26 @@ logging.getLogger("apscheduler").setLevel(logging.WARNING)
 log = logging.getLogger("otakupulse-social")
 
 
+async def warnungen_melden(warnungen: list[str]) -> None:
+    """Startwarnungen zusätzlich in den Freigabe-Chat: im Coolify-Log sieht sie niemand.
+
+    Gekapselt wie die übrigen Meldungen — ein Telegram-Ausfall darf den Start nicht verhindern.
+    """
+    if not warnungen:
+        return
+    try:
+        chat_id = await settings.approval_chat_id()
+        if not chat_id or not runtime.bot:
+            return
+        await runtime.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ Start-Warnungen:\n\n" + "\n\n".join(warnungen),
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        log.exception("Start-Warnungen konnten nicht in den Freigabe-Chat gesendet werden")
+
+
 async def on_startup(app: Application) -> None:
     await db.init()
     await pg.init()
@@ -27,8 +47,10 @@ async def on_startup(app: Application) -> None:
     runtime.set_bot(app.bot)
     await scheduler.setup()
     await commands.set_menu(app)
-    for warnung in config.validate_dry_config(registry.known_channel_names()):
+    warnungen = config.validate_dry_config(registry.known_channel_names())
+    for warnung in warnungen:
         log.warning("⚠️ %s", warnung)
+    await warnungen_melden(warnungen)
     log.info("Startup fertig — %s, Kanäle: %s", config.mode_summary(), config.CHANNELS_ENABLED)
 
 

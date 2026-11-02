@@ -25,8 +25,9 @@ Noch **nicht** dabei: Evergreen-Recycling (v1.5), Antworten-Inbox (v2), weitere 
 2. `cp secrets.env.example secrets.env && chmod 600 secrets.env`, dann ausfüllen:
    - `SOCIAL_BOT_TOKEN`, `ANTHROPIC_API_KEY`
    - `PG_PASSWORD` = Passwort der Rolle `social_ro`
-   - `CHANNELS_ENABLED=bluesky,mastodon` (oder was du zuerst willst)
-   - Bluesky-App-Passwort / Mastodon-Access-Token
+   - `CHANNELS_ENABLED=tumblr` (Groß-/Kleinschreibung egal; für Bluesky und Mastodon gibt es
+     noch keine Konten — siehe [`DEPLOY.md`](DEPLOY.md), Abschnitt „Kanäle“ und Schritt 13)
+   - Bluesky-App-Passwort / Mastodon-Access-Token, sobald es die Konten gibt
    - `DRY_RUN=1` **beim ersten Start lassen** (Trockenmodus).
 3. `./manage.sh build && ./manage.sh up`
 4. Im Freigabe-Chat **einmal `/start`** senden (registriert die Chat-ID), falls
@@ -102,14 +103,19 @@ die Doku nicht: kommt im Betrieb ein 401, Schritt 2 wiederholen.
 
 ### Rolle von `DRY_RUN_CHANNELS`
 `DRY_RUN=1` setzt **alle** Kanäle trocken. `DRY_RUN_CHANNELS` ist die feinere Stellschraube bei
-`DRY_RUN=0`: die dort genannten Kanäle (Komma-getrennt) posten weiter nur zum Schein. So geht
-Tumblr als einziger Kanal live, während die anderen trocken bleiben:
+`DRY_RUN=0`: die dort genannten Kanäle (Komma-getrennt) posten weiter nur zum Schein. Solange nur
+Tumblr in `CHANNELS_ENABLED` steht, wird das **nicht gebraucht** (`DRY_RUN_CHANNELS` wirkt nur auf
+aktivierte Kanäle). Gebraucht wird es, sobald ein zweiter Kanal dazukommt — der gehört dann erst
+hierher und wird danach einzeln herausgenommen:
 ```
 DRY_RUN=0
+CHANNELS_ENABLED=tumblr,bluesky,mastodon
 DRY_RUN_CHANNELS=bluesky,mastodon
 ```
-Beim Start warnt der Agent vor unbekannten Kanalnamen (Tippfehler, Leerzeichen statt Komma) und
-davor, dass `DRY_RUN=0` mit leerer `DRY_RUN_CHANNELS` **alle** aktivierten Kanäle live schaltet.
+Beim Start warnt der Agent vor unbekannten Kanalnamen in `CHANNELS_ENABLED` und
+`DRY_RUN_CHANNELS` (Tippfehler, Leerzeichen statt Komma) und davor, dass `DRY_RUN=0` mit leerer
+`DRY_RUN_CHANNELS` **alle** aktivierten Kanäle live schaltet. Diese Warnungen gehen in den Log
+**und** als Nachricht in den Freigabe-Chat.
 Vor dem ersten echten Post: erst `DRY_RUN=1`, Entwürfe im Telegram-Batch prüfen, dann umstellen.
 
 ### Stolperfallen

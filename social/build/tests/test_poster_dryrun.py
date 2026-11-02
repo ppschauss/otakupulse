@@ -1,7 +1,17 @@
 """Kanalweiser Trockenmodus: DRY_RUN_CHANNELS haelt einzelne Kanaele zurueck (ohne Postgres)."""
-from app import config, models, poster, texts_de as T
+import pytest
+
+from app import config, main, models, poster, runtime, settings, texts_de as T
 from app.channels import registry
 from app.channels.base import PostResult
+
+
+@pytest.fixture(autouse=True)
+def frische_skip_drossel():
+    """Die Drossel der Liegenbleib-Warnung ist Modulzustand — je Test frisch."""
+    poster._skip_gemeldet.clear()
+    yield
+    poster._skip_gemeldet.clear()
 
 
 def test_is_dry_bei_globalem_dry_run(monkeypatch):
@@ -38,6 +48,8 @@ async def _entwurf(channel, source_ref):
         batch_day="2026-11-02", channel=channel, source_kind="article",
         source_ref=source_ref, url=f"https://otakupulse.de/news/{source_ref}",
         image_url=None, title="T", body="B", perishable=True,
+        # Ein echter Tumblr-Entwurf trägt immer Tags; der Poster prüft das streng.
+        tags=["anime", "otakupulse"] if channel == "tumblr" else None,
     )
     await models.approve(did)
     return did
@@ -238,3 +250,149 @@ def test_all_dry_ist_false_ohne_aktivierte_kanaele(monkeypatch):
     _modus(monkeypatch, False, set(), enabled=())
     assert config.all_dry() is False
     assert config.mode_summary() == "keine Kanäle aktiv"
+
+
+# ---------- CHANNELS_ENABLED wird wie DRY_RUN_CHANNELS behandelt ----------
+
+def test_channels_enabled_wird_kleingeschrieben_und_getrimmt(monkeypatch):
+    monkeypatch.setenv("CHANNELS_ENABLED", " Tumblr , BLUESKY ,, mastodon")
+    assert config._csv_list("CHANNELS_ENABLED") == ["tumblr", "bluesky", "mastodon"]
+
+
+def test_channels_enabled_leer_und_fehlend(monkeypatch):
+    monkeypatch.setenv("CHANNELS_ENABLED", " , ,")
+    assert config._csv_list("CHANNELS_ENABLED") == []
+    monkeypatch.delenv("CHANNELS_ENABLED")
+    assert config._csv_list("CHANNELS_ENABLED") == []
+
+
+def test_csv_list_behaelt_die_reihenfolge_csv_set_nicht(monkeypatch):
+    monkeypatch.setenv("DRY_RUN_CHANNELS", "tumblr,bluesky")
+    assert config._csv_list("DRY_RUN_CHANNELS") == ["tumblr", "bluesky"]
+    assert config._csv_set("DRY_RUN_CHANNELS") == frozenset({"tumblr", "bluesky"})
+
+
+def test_validate_meldet_unbekannten_kanal_in_channels_enabled(monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", True)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset())
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", ["tumblr", "tumbler"])
+    warnungen = config.validate_dry_config({"bluesky", "mastodon", "tumblr"})
+    assert len(warnungen) == 1
+    assert "CHANNELS_ENABLED" in warnungen[0] and "tumbler" in warnungen[0]
+    assert "NICHT aktiv" in warnungen[0]
+
+
+def test_validate_schweigt_bei_gueltigem_channels_enabled(monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", True)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset())
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", ["tumblr"])
+    assert config.validate_dry_config({"bluesky", "mastodon", "tumblr"}) == []
+
+
+# ---------- I4: Startwarnungen erreichen den Freigabe-Chat ----------
+
+class _Bot:
+    def __init__(self, kaputt=False):
+        self.gesendet = []
+        self.kaputt = kaputt
+
+    async def send_message(self, **kw):
+        if self.kaputt:
+            raise RuntimeError("Telegram weg")
+        self.gesendet.append(kw["text"])
+
+
+@pytest.fixture
+def chat(monkeypatch):
+    async def chat_id():
+        return 42
+
+    monkeypatch.setattr(settings, "approval_chat_id", chat_id)
+
+
+async def test_startwarnungen_gehen_in_den_freigabe_chat(monkeypatch, chat):
+    bot = _Bot()
+    monkeypatch.setattr(runtime, "bot", bot)
+    await main.warnungen_melden(["ACHTUNG: alles live", "Tippfehler im Kanalnamen"])
+    assert len(bot.gesendet) == 1
+    assert "ACHTUNG: alles live" in bot.gesendet[0]
+    assert "Tippfehler im Kanalnamen" in bot.gesendet[0]
+
+
+async def test_ohne_warnungen_wird_nichts_gesendet(monkeypatch, chat):
+    bot = _Bot()
+    monkeypatch.setattr(runtime, "bot", bot)
+    await main.warnungen_melden([])
+    assert bot.gesendet == []
+
+
+async def test_telegram_ausfall_verhindert_den_start_nicht(monkeypatch, chat, caplog):
+    monkeypatch.setattr(runtime, "bot", _Bot(kaputt=True))
+    with caplog.at_level("ERROR"):
+        await main.warnungen_melden(["ACHTUNG: alles live"])  # darf nicht werfen
+    assert any(r.levelname == "ERROR" for r in caplog.records)
+
+
+async def test_ohne_freigabe_chat_und_ohne_bot_passiert_nichts(monkeypatch):
+    async def kein_chat():
+        return None
+
+    monkeypatch.setattr(settings, "approval_chat_id", kein_chat)
+    monkeypatch.setattr(runtime, "bot", _Bot())
+    await main.warnungen_melden(["ACHTUNG"])
+    monkeypatch.setattr(runtime, "bot", None)
+    await main.warnungen_melden(["ACHTUNG"])
+
+
+# ---------- Drossel: der deaktivierte Kanal loggt nicht endlos ----------
+
+async def _nur_tumblr(monkeypatch):
+    async def keine_meldung(text):
+        pass
+
+    monkeypatch.setattr(config, "DRY_RUN", True)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset())
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", ["tumblr"])
+    monkeypatch.setattr(poster, "_notify", keine_meldung)
+
+
+def _bluesky_warnungen(caplog):
+    return [r for r in caplog.records if r.levelname == "WARNING"
+            and "bluesky" in r.getMessage() and "CHANNELS_ENABLED" in r.getMessage()]
+
+
+async def test_liegenbleib_warnung_wird_gedrosselt(tmp_db, monkeypatch, caplog):
+    await _nur_tumblr(monkeypatch)
+    await _entwurf("bluesky", "1")
+    with caplog.at_level("WARNING"):
+        for _ in range(5):
+            await poster.run_post_pass()
+    assert len(_bluesky_warnungen(caplog)) == 1  # nicht fünfmal dieselbe Warnung
+
+
+async def test_geaenderte_anzahl_meldet_wieder(tmp_db, monkeypatch, caplog):
+    await _nur_tumblr(monkeypatch)
+    await _entwurf("bluesky", "1")
+    with caplog.at_level("WARNING"):
+        await poster.run_post_pass()
+        await _entwurf("bluesky", "2")  # jetzt bleiben zwei liegen
+        await poster.run_post_pass()
+        await poster.run_post_pass()
+    meldungen = [r.getMessage() for r in _bluesky_warnungen(caplog)]
+    assert len(meldungen) == 2  # einmal fuer 1, einmal fuer 2 — der dritte Lauf schweigt
+    assert "1 freigegebene" in meldungen[0]
+    assert "2 freigegebene" in meldungen[1]
+
+
+async def test_nach_rueckkehr_des_kanals_meldet_der_naechste_ausfall_wieder(
+        tmp_db, monkeypatch, caplog):
+    await _nur_tumblr(monkeypatch)
+    await _entwurf("bluesky", "1")
+    with caplog.at_level("WARNING"):
+        await poster.run_post_pass()
+        monkeypatch.setattr(config, "CHANNELS_ENABLED", ["tumblr", "bluesky"])
+        await poster.run_post_pass()      # Kanal zurück: Entwurf geht trocken raus
+        await _entwurf("bluesky", "2")
+        monkeypatch.setattr(config, "CHANNELS_ENABLED", ["tumblr"])
+        await poster.run_post_pass()      # wieder weg: Warnung sofort wieder
+    assert len(_bluesky_warnungen(caplog)) == 2
