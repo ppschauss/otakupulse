@@ -32,14 +32,34 @@ async def ingest(limit: int) -> int:
         return 0
 
     items = await articles.fetch_new(limit)
-    # Genre-Häufigkeit einmal je Lauf (nur für Tumblr-Tags nötig)
-    rarity = await articles.genre_rarity() if TUMBLR in channels and items else {}
+    # Genre-Häufigkeit einmal je Lauf (nur für Tumblr-Tags nötig). Der Tumblr-Pfad
+    # degradiert: bei einem Fehler entfällt Tumblr in diesem Lauf, die anderen Kanäle laufen weiter.
+    rarity: dict[str, int] | None = {}
+    if TUMBLR in channels and items:
+        try:
+            rarity = await articles.genre_rarity()
+        except Exception:
+            log.warning("Genre-Häufigkeit nicht lesbar — kein Tumblr-Entwurf in diesem Lauf.",
+                        exc_info=True)
+            rarity = None
     day = today_str()
     created = 0
     for item in items:
         # Tumblr nimmt nur ausgewählte Kategorien und keine Adult-Titel; die anderen
         # Kanäle bekommen den Artikel unverändert.
         item_channels = [ch for ch in channels if ch != TUMBLR or _fuer_tumblr(item)]
+        # Tags sind Daten, kein Modelltext: aus den Rohdaten abgeleitet, vor dem Modellaufruf.
+        # Scheitert das (oder fehlt rarity), entfällt nur der Tumblr-Entwurf dieses Artikels.
+        tumblr_tags: list[str] | None = None
+        if TUMBLR in item_channels and rarity is None:
+            item_channels.remove(TUMBLR)  # Ursache ist oben schon als Warnung geloggt
+        elif TUMBLR in item_channels:
+            try:
+                tumblr_tags = tagging.tags_for(
+                    item.genres, item.anime_tags, item.series_title, rarity)
+            except Exception:
+                log.exception("Tag-Herleitung fehlgeschlagen für %s — kein Tumblr-Entwurf", item.ref)
+                item_channels.remove(TUMBLR)
         if not item_channels:  # nur Tumblr aktiv und Artikel ausgeschlossen: nichts zu formulieren
             await models.mark_seen(item.kind, item.ref)
             continue
@@ -52,14 +72,12 @@ async def ingest(limit: int) -> int:
             body = texts.get(ch)
             if not body:
                 continue
-            # Tags sind Daten, kein Modelltext: hier aus den Rohdaten abgeleitet
-            tags = (tagging.tags_for(item.genres, item.anime_tags, item.series_title, rarity)
-                    if ch == TUMBLR else None)
             await models.enqueue(
                 batch_day=day, channel=ch, source_kind=item.kind, source_ref=item.ref,
                 url=item.url, image_url=item.image_url, title=item.title,
                 body=body, perishable=item.perishable,
-                tags=tags, category=item.category if ch == TUMBLR else None,
+                tags=tumblr_tags if ch == TUMBLR else None,
+                category=item.category if ch == TUMBLR else None,
             )
             created += 1
         await models.mark_seen(item.kind, item.ref)

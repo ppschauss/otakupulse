@@ -188,6 +188,46 @@ async def test_ingest_ohne_tumblr_kanal_braucht_keine_rarity(tmp_db, monkeypatch
     assert aufrufe["rarity"] == 0
 
 
+# ---------- Ingest: Tumblr-Pfad degradiert, reißt nichts mit ----------
+
+async def test_ingest_genre_rarity_wirft_andere_kanaele_laufen_weiter(
+        tmp_db, monkeypatch, caplog):
+    aufrufe = _patch_ingest(monkeypatch, [_item("1"), _item("2")])
+
+    async def kaputt():
+        raise ConnectionError("postgres weg")
+
+    monkeypatch.setattr(articles, "genre_rarity", kaputt)
+    with caplog.at_level("WARNING"):
+        assert await batch.ingest(6) == 4
+    assert sorted((d["source_ref"], d["channel"]) for d in await _drafts()) == [
+        ("1", "bluesky"), ("1", "mastodon"), ("2", "bluesky"), ("2", "mastodon")]
+    assert aufrufe["compose"] == [("1", ["bluesky", "mastodon"]), ("2", ["bluesky", "mastodon"])]
+    assert await models.is_seen("article", "1") and await models.is_seen("article", "2")
+    assert any(r.levelname == "WARNING" and "Genre-Häufigkeit" in r.getMessage()
+               for r in caplog.records)
+
+
+async def test_ingest_tags_for_wirft_nur_dieser_artikel_ohne_tumblr(
+        tmp_db, monkeypatch, caplog):
+    _patch_ingest(monkeypatch, [_item("1", series_title="BOOM"), _item("2")])
+    echt = batch.tagging.tags_for
+
+    def tags_for(genres, anime_tags, series_title, rarity):
+        if series_title == "BOOM":
+            raise ValueError("kaputte Daten")
+        return echt(genres, anime_tags, series_title, rarity)
+
+    monkeypatch.setattr(batch.tagging, "tags_for", tags_for)
+    with caplog.at_level("ERROR"):
+        assert await batch.ingest(6) == 5
+    assert sorted((d["source_ref"], d["channel"]) for d in await _drafts()) == [
+        ("1", "bluesky"), ("1", "mastodon"),
+        ("2", "bluesky"), ("2", "mastodon"), ("2", "tumblr")]
+    assert await models.is_seen("article", "1") and await models.is_seen("article", "2")
+    assert any(r.levelname == "ERROR" and "1" in r.getMessage() for r in caplog.records)
+
+
 # ---------- Poster: Post-Aufbau ----------
 
 class _FakeChannel:
