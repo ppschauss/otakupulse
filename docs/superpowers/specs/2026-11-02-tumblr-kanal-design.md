@@ -123,7 +123,8 @@ später eine Zahl darauf stützen.
 Verknüpfung: `articles_rels.anime_id` → `anime`. Bei **1158 von 1161**
 publizierten Artikeln gesetzt, die Slots sind also praktisch immer füllbar.
 Gibt es keinen verknüpften Anime, entfallen Slot 3–6 und der Post geht mit
-`#anime #otakupulse` raus.
+`#anime #otakupulse` raus. Bei mehreren verknüpften Anime entfällt nur Slot 6
+(siehe „Umfang“ weiter unten).
 
 **Slot 3 `#genre1`** — das *seltenste* Genre des Anime, gemessen an der
 Häufigkeit im eigenen Katalog, nicht das erste gespeicherte (Befund 3).
@@ -478,9 +479,29 @@ hängen mehrere Anime an einem Artikel. Ein Season-Überblick bekäme sonst die
 Tags eines willkürlich gewählten Einzeltitels — das Falsch-Tagging aus den
 Anti-Zielen.
 
-Umsetzung: Filter in `articles.fetch_new()` bzw. im Tumblr-Pfad. Hängt an
-einem Artikel der erlaubten Kategorien wider Erwarten mehr als ein Anime,
-entfallen Slot 3–6 und der Post geht mit `#anime #otakupulse` raus.
+Umsetzung: Der Filter gehört **nicht** in `articles.fetch_new()`, sondern in
+den kanalspezifischen Pfad in `batch.ingest`. `fetch_new()` wird von allen
+Kanälen gemeinsam benutzt; ein Filter dort nähme auch Bluesky und Mastodon
+die übrigen Kategorien weg. `SourceItem.category` trägt den Wert,
+`TUMBLR_CATEGORIES` steht als Konstante in `articles.py`.
+
+**Mehrere verknüpfte Anime** (geprüft an der Produktion: 94 `news`- und 185
+`simulcast`-Artikel, bis zu 12 Anime an einem Artikel — zusammen 279 von 1070):
+Dort entfällt **nur Slot 6**, der Serientag. Genres und Anime-Tags bleiben,
+aggregiert über alle verknüpften Anime. Das Anti-Ziel ist ein falscher
+*Serientag* unter einem Sammelartikel; aggregierte Genres und Tags
+beschreiben den Artikel dagegen zutreffend. Würden auch sie entfallen,
+bekäme ein Viertel aller Posts nur die zwei festen Tags und wäre praktisch
+unauffindbar.
+
+Die naheliegende Verschärfung „ein Tag muss auf der Hälfte der verknüpften
+Anime vorkommen“ wurde an der Produktion gemessen und ist **schlechter**: ein
+Wochenrückblick über acht Serien bekäme damit gar keinen Tag mehr, ein
+anderer `#chibi`, ein dritter `#foreign`. Sammelartikel haben keine
+gemeinsamen spezifischen Tags.
+
+Gibt es **gar keinen** verknüpften Anime, entfallen Slot 3–6 und der Post
+geht mit `#anime #otakupulse` raus.
 
 Die ausgeschlossenen Kategorien sind die evergreen-fähigen Inhalte. Wenn der
 Kanal läuft, lohnt ein zweiter Blick darauf — mit einem eigenen Tag-Schema
