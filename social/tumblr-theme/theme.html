@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+
+<!-- ===========================================================================
+     OtakuPulse — Tumblr-Theme "Editorial Dark"
+     Entwurf: docs/superpowers/specs/2026-11-02-tumblr-kanal-design.md
+
+     ACHTUNG beim Bearbeiten: Tumblrs Parser liest Template-Tags AUCH in
+     HTML-Kommentaren. Ein "block:Photo" in geschweiften Klammern hier oben
+     zählt als geöffneter Block, und alles danach verschwindet — die Seite
+     wird dann komplett weiß. Deshalb stehen Tag-Namen in diesem Kommentar
+     ohne Klammern.
+
+     WICHTIG — NPF: Posts, die über die API im Neue Post Format erzeugt werden,
+     rendern in Legacy-Themes fast immer über die TEXT-Post-Variablen. Das
+     Cover-Bild steckt dann INNERHALB des Body, nicht in einem Photo-Block.
+     Deshalb holt .op-body > figure:first-child das erste Bild per CSS nach
+     links, statt auf block:Photo zu bauen. block:Photo ist zusätzlich
+     gestylt, damit manuell erstellte Foto-Posts nicht nackt dastehen.
+
+     Einsetzen: Blog-Einstellungen → Theme bearbeiten → "Eigenes HTML
+     bearbeiten" → diesen Inhalt komplett einsetzen → Vorschau prüfen →
+     Speichern.
+     =========================================================================== -->
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>{Title}</title>
+<link rel="shortcut icon" href="{Favicon}">
+<link rel="alternate" type="application/rss+xml" href="{RSS}">
+{block:Description}<meta name="description" content="{MetaDescription}">{/block:Description}
+
+<!-- Anpassbare Optionen im Theme-Editor -->
+<meta name="color:Background"   content="#09090b">
+<meta name="color:Text"         content="#e9e9ee">
+<meta name="color:Muted"        content="#9b9ba6">
+<meta name="color:Accent"       content="#ff4d6d">
+<meta name="color:Accent 2"     content="#8b5cf6">
+<meta name="color:Line"         content="#232329">
+<meta name="text:Kicker"        content="Anime-News, jeden Tag">
+<meta name="text:Site Link"     content="https://otakupulse.de">
+<meta name="text:Site Label"    content="otakupulse.de">
+<meta name="if:Show Avatar"     content="1">
+<meta name="if:Show Notes"      content="1">
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style type="text/css">
+
+  :root {
+    color-scheme: dark;
+    --bg: {color:Background};
+    --fg: {color:Text};
+    --muted: {color:Muted};
+    --accent: {color:Accent};
+    --accent-2: {color:Accent 2};
+    --line: {color:Line};
+    --surface: #131317;
+    --surface-2: #1b1b21;
+    --dim: #6d6d78;
+    --font-display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+    --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: rgba(255, 77, 109, 0.35); color: #fff; }
+
+  a { color: inherit; text-decoration: none; }
+  a:focus-visible,
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  img { max-width: 100%; height: auto; display: block; }
+
+  .op-shell {
+    max-width: 720px;
+    margin: 0 auto;
+    padding-left: max(18px, env(safe-area-inset-left, 0px));
+    padding-right: max(18px, env(safe-area-inset-right, 0px));
+    padding-block: 34px 72px;
+  }
+
+  /* ---------------- Kopf ---------------- */
+
+  .op-head {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .op-avatar {
+    width: 38px; height: 38px; flex: none;
+    border-radius: 9px; overflow: hidden;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  }
+
+  .op-name {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 25px;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+  }
+
+  .op-kicker {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .op-head-link {
+    margin-left: auto;
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid rgba(255, 77, 109, 0.35);
+    border-radius: 99px;
+    padding: 6px 13px;
+    transition: background 0.16s ease;
+  }
+  .op-head-link:hover { background: rgba(255, 77, 109, 0.12); }
+
+  .op-desc {
+    color: var(--muted);
+    font-size: 15px;
+    margin: 16px 0 0;
+    max-width: 62ch;
+  }
+  .op-desc a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+
+  /* ---------------- Beitragsliste ---------------- */
+
+  .op-posts { margin-top: 10px; }
+
+  .op-post {
+    padding-block: 26px;
+    border-bottom: 1px solid var(--line);
+  }
+  .op-post:last-child { border-bottom: none; }
+
+  .op-cat {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 99px;
+    background: rgba(255, 77, 109, 0.14);
+    color: #ff8fa3;
+    border: 1px solid rgba(255, 77, 109, 0.3);
+    margin-bottom: 11px;
+  }
+
+  .op-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(20px, 3.4vw, 26px);
+    line-height: 1.17;
+    letter-spacing: -0.024em;
+    text-wrap: balance;
+    margin: 0 0 10px;
+  }
+  .op-title a { transition: color 0.16s ease; }
+  .op-title a:hover { color: var(--accent); }
+
+  /* Der Fließtext eines NPF-Posts. Das erste Bild wird zum Cover links. */
+  .op-body { color: var(--muted); font-size: 15.5px; }
+  .op-body > *:first-child { margin-top: 0; }
+  .op-body > *:last-child { margin-bottom: 0; }
+  .op-body p { margin: 0 0 11px; }
+  .op-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+
+  /* Kicker: der Social-Agent setzt die Kategorie ("Simulcast", "News", "Guide")
+     als ersten Textblock nach dem Cover. Im gerenderten Body ist das der erste
+     Absatz — der wird zur Kategorie-Pille. */
+  .op-body > p:first-of-type {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 99px;
+    background: rgba(255, 77, 109, 0.14);
+    color: #ff8fa3;
+    border: 1px solid rgba(255, 77, 109, 0.3);
+    margin: 0 0 11px;
+  }
+
+  /* NPF schreibt die Schlagzeile als <h2> in den Body, weil {Title} bei
+     NPF-Text-Posts leer bleibt. Also hier genauso behandeln wie .op-title. */
+  .op-body h1, .op-body h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(19px, 3.2vw, 24px);
+    line-height: 1.18;
+    letter-spacing: -0.022em;
+    text-wrap: balance;
+    color: var(--fg);
+    margin: 0 0 9px;
+  }
+  .op-body h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 17px;
+    color: var(--fg);
+    margin: 18px 0 7px;
+  }
+
+  .op-body blockquote {
+    margin: 14px 0;
+    padding-left: 15px;
+    border-left: 2px solid var(--accent-2);
+    color: var(--muted);
+  }
+
+  .op-body figure { margin: 0 0 13px; }
+
+  /* Cover-Behandlung: erstes Bild im Body nach links, Text läuft daneben.
+     Ab 560px Breite; darunter bleibt das Bild volle Breite oben. */
+  @media (min-width: 560px) {
+    .op-body > figure:first-child,
+    .op-body > p:first-child:has(img),
+    .op-body > .npf_row:first-child {
+      float: left;
+      width: 132px;
+      margin: 2px 18px 8px 0;
+    }
+    .op-body > figure:first-child img,
+    .op-body > p:first-child:has(img) img,
+    .op-body > .npf_row:first-child img {
+      border-radius: 5px;
+      aspect-ratio: 3 / 4;
+      object-fit: cover;
+      width: 100%;
+    }
+  }
+  .op-post::after { content: ""; display: block; clear: both; }
+
+  /* Legacy-Foto-Post (manuell erstellt) */
+  .op-photo { margin-bottom: 14px; }
+  .op-photo img { border-radius: 7px; }
+
+  /* Legacy-Zitat / Link / Video */
+  .op-quote {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: clamp(19px, 3.4vw, 24px);
+    line-height: 1.28;
+    letter-spacing: -0.02em;
+    margin: 0 0 10px;
+  }
+  .op-quote-src { font-size: 14px; color: var(--muted); }
+
+  .op-linkcard {
+    display: block;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 15px 17px;
+    transition: border-color 0.16s ease;
+  }
+  .op-linkcard:hover { border-color: var(--accent); }
+  .op-linkcard .h {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -0.018em;
+    margin-bottom: 5px;
+  }
+  .op-linkcard .u {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    word-break: break-all;
+  }
+
+  .op-video { margin-bottom: 14px; }
+  .op-video iframe, .op-video video { max-width: 100%; border-radius: 7px; }
+
+  /* ---------------- Quellenzeile, Tags, Fuß ---------------- */
+
+  .op-source {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--dim);
+    margin-top: 12px;
+  }
+  .op-source a { color: var(--accent); }
+  .op-source a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+  .op-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 13px;
+  }
+  .op-tags a {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: #c4b5fd;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    background: rgba(139, 92, 246, 0.08);
+    border-radius: 99px;
+    padding: 3px 10px;
+    transition: border-color 0.16s ease, color 0.16s ease;
+  }
+  .op-tags a:hover { border-color: var(--accent-2); color: #ddd0ff; }
+
+  .op-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px 14px;
+    margin-top: 14px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .op-meta a:hover { color: var(--fg); }
+  .op-meta .dot { color: var(--line); }
+
+  /* ---------------- Notizen & Blättern ---------------- */
+
+  .op-notes {
+    margin-top: 34px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .op-notes ol { list-style: none; margin: 0; padding: 0; }
+  .op-notes li { padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .op-notes img.avatar { width: 18px; height: 18px; border-radius: 4px; display: inline-block; vertical-align: -3px; margin-right: 6px; }
+  .op-notes a { color: var(--fg); }
+  .op-notes blockquote { margin: 7px 0 0 24px; color: var(--dim); }
+
+  .op-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 42px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+  .op-pager a {
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    padding: 8px 16px;
+    color: var(--muted);
+    transition: border-color 0.16s ease, color 0.16s ease;
+  }
+  .op-pager a:hover { border-color: var(--accent); color: var(--fg); }
+  .op-pager .count { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .op-pager .spacer { flex: 1; }
+
+  .op-foot {
+    margin-top: 46px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+  .op-foot a:hover { color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+
+  {CustomCSS}
+
+</style>
+</head>
+
+<body>
+
+<div class="op-shell">
+
+  <header class="op-head">
+    {block:IfShowAvatar}
+      <a href="/" class="op-avatar" aria-label="{Title}"><img src="{PortraitURL-128}" alt=""></a>
+    {/block:IfShowAvatar}
+    <div>
+      <div class="op-name"><a href="/">{Title}</a></div>
+      <div class="op-kicker">{text:Kicker}</div>
+    </div>
+    <a class="op-head-link" href="{text:Site Link}">{text:Site Label}</a>
+  </header>
+
+  {block:IndexPage}
+    {block:Description}<p class="op-desc">{Description}</p>{/block:Description}
+  {/block:IndexPage}
+
+  {block:TagPage}
+    <p class="op-desc">Beiträge mit dem Tag <strong style="color:var(--fg)">#{Tag}</strong></p>
+  {/block:TagPage}
+
+  {block:SearchPage}
+    <p class="op-desc">Suche nach <strong style="color:var(--fg)">{SearchQuery}</strong></p>
+  {/block:SearchPage}
+
+  <main class="op-posts">
+  {block:Posts}
+
+    <article class="op-post" id="post-{PostID}">
+
+      {block:Text}
+        {block:Title}
+          <h2 class="op-title"><a href="{Permalink}">{Title}</a></h2>
+        {/block:Title}
+        <div class="op-body">{Body}</div>
+      {/block:Text}
+
+      {block:Photo}
+        <div class="op-photo">
+          {LinkOpenTag}<img src="{PhotoURL-HighRes}" alt="{PhotoAlt}">{LinkCloseTag}
+        </div>
+        {block:Caption}<div class="op-body">{Caption}</div>{/block:Caption}
+      {/block:Photo}
+
+      {block:Photoset}
+        <div class="op-photo">{Photoset}</div>
+        {block:Caption}<div class="op-body">{Caption}</div>{/block:Caption}
+      {/block:Photoset}
+
+      {block:Quote}
+        <blockquote class="op-quote">{Quote}</blockquote>
+        {block:Source}<div class="op-quote-src">— {Source}</div>{/block:Source}
+      {/block:Quote}
+
+      {block:Link}
+        <a class="op-linkcard" href="{URL}" {Target}>
+          <div class="h">{Name}</div>
+          <div class="u">{URL}</div>
+        </a>
+        {block:Description}<div class="op-body" style="margin-top:12px">{Description}</div>{/block:Description}
+      {/block:Link}
+
+      {block:Video}
+        <div class="op-video">{Video-500}</div>
+        {block:Caption}<div class="op-body">{Caption}</div>{/block:Caption}
+      {/block:Video}
+
+      {block:Audio}
+        <div class="op-video">{AudioEmbed-500}</div>
+        {block:Caption}<div class="op-body">{Caption}</div>{/block:Caption}
+      {/block:Audio}
+
+      {block:Chat}
+        <div class="op-body">
+          {block:Lines}<p><strong style="color:var(--fg)">{block:Label}{Label}{/block:Label}</strong> {Line}</p>{/block:Lines}
+        </div>
+      {/block:Chat}
+
+      {block:Answer}
+        <div class="op-body">
+          <blockquote><strong style="color:var(--fg)">{Asker}</strong> fragt: {Question}</blockquote>
+          {Answer}
+        </div>
+      {/block:Answer}
+
+      <div class="op-source">
+        Quelle: <a href="{text:Site Link}">{text:Site Label}</a>
+      </div>
+
+      {block:HasTags}
+        <div class="op-tags">
+          {block:Tags}<a href="{TagURL}">#{Tag}</a>{/block:Tags}
+        </div>
+      {/block:HasTags}
+
+      <div class="op-meta">
+        {block:Date}<a href="{Permalink}">{TimeAgo}</a>{/block:Date}
+        {block:NoteCount}<span class="dot">·</span><a href="{Permalink}">{NoteCountWithLabel}</a>{/block:NoteCount}
+        {block:RebloggedFrom}<span class="dot">·</span><a href="{ReblogParentURL}">via {ReblogParentName}</a>{/block:RebloggedFrom}
+        <span class="dot">·</span><a href="{ReblogURL}" target="_blank" rel="noopener">reblog</a>
+      </div>
+
+      {block:PermalinkPage}
+        {block:IfShowNotes}
+          {block:PostNotes}
+            <div class="op-notes">{PostNotes}</div>
+          {/block:PostNotes}
+        {/block:IfShowNotes}
+      {/block:PermalinkPage}
+
+    </article>
+
+  {/block:Posts}
+  </main>
+
+  {block:Pagination}
+    <nav class="op-pager">
+      {block:PreviousPage}<a href="{PreviousPage}">&larr; Neuer</a>{/block:PreviousPage}
+      <span class="spacer"></span>
+      <span class="count">{CurrentPage} / {TotalPages}</span>
+      <span class="spacer"></span>
+      {block:NextPage}<a href="{NextPage}">Älter &rarr;</a>{/block:NextPage}
+    </nav>
+  {/block:Pagination}
+
+  {block:PermalinkPagination}
+    <nav class="op-pager">
+      {block:PreviousPost}<a href="{PreviousPost}">&larr; Neuerer Beitrag</a>{/block:PreviousPost}
+      <span class="spacer"></span>
+      {block:NextPost}<a href="{NextPost}">Älterer Beitrag &rarr;</a>{/block:NextPost}
+    </nav>
+  {/block:PermalinkPagination}
+
+  <footer class="op-foot">
+    <a href="{text:Site Link}">{text:Site Label}</a>
+    <a href="/archive">Archiv</a>
+    <a href="{RSS}">RSS</a>
+    <span>{CopyrightYears} {Title}</span>
+  </footer>
+
+</div>
+
+</body>
+</html>
