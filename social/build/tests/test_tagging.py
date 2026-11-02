@@ -134,3 +134,21 @@ def test_tags_for_ecchi_ohne_serientag():
                    {"Ecchi": 815, "Comedy": 4867})
     assert "irgendein ecchi anime" not in out
     assert "ecchi" not in out
+
+
+def test_normalize_mehrstellige_zahl_bleibt_im_namen():
+    assert normalize_series_title("Mob Psycho 100") == "mob psycho 100"
+    assert normalize_series_title("Eyeshield 21") == "eyeshield 21"
+
+
+def test_normalize_ziffern_0_und_1_bleiben():
+    assert normalize_series_title("Steins;Gate 0") == "steins;gate 0"
+
+
+def test_normalize_einstellige_zahl_2_bis_9_wird_gekuerzt():
+    assert normalize_series_title("Ao no Hako 2") == "ao no hako"
+
+
+def test_normalize_season_suffixe_weiter_entfernt():
+    assert normalize_series_title("Ao no Hako Season 2") == "ao no hako"
+    assert normalize_series_title("Tensei Kizoku 3rd Season") == "tensei kizoku"

@@ -70,7 +70,7 @@ _SUFFIX_RE = re.compile(
     r"[\s\-–:]*(?:"
     r"season\s+\d+|\d+(?:st|nd|rd|th)\s+season|final\s+season"
     r"|part\s+\d+|cour\s+\d+"
-    r"|\d+|(?<=\s)(?:ii|iii|iv)"
+    r"|(?<=\s)(?:[2-9]|ii|iii|iv)"  # nur einstellige Zahl 2-9 ist Staffelmarker
     r")\s*$"
 )
 
