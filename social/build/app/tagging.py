@@ -68,9 +68,12 @@ SERIES_TAG_OVERRIDES: dict[str, str | None] = {}
 # Staffel-/Teil-Suffixe, die am Titelende abgeschnitten werden
 _SUFFIX_RE = re.compile(
     r"[\s\-–:]*(?:"
-    r"season\s+\d+|\d+(?:st|nd|rd|th)\s+season|final\s+season"
-    r"|part\s+\d+|cour\s+\d+"
-    r"|(?<=\s)(?:[2-9]|ii|iii|iv)"  # nur einstellige Zahl 2-9 ist Staffelmarker
+    # Wortgrenze vorn, damit "Counterpart 2" nicht mitten im Wort greift
+    r"(?<![a-z])(?:season\s+\d+|\d+(?:st|nd|rd|th)\s+season|final\s+season"
+    r"|part\s+\d+|cour\s+\d+)"
+    # einstellige Zahl 2-9 ist Staffelmarker, aber nicht hinter einem Punkt ("Kaiju No. 8")
+    r"|(?<=[^.\s]\s)[2-9]"
+    r"|(?<=\s)(?:ii|iii|iv)"
     r")\s*$"
 )
 
@@ -94,7 +97,7 @@ def normalize_series_title(title: str | None) -> str | None:
         if neu == t:
             break
         t = neu
-    t = t.strip(" \t-–—_.!?・~")
+    t = t.strip(" \t-–—_.!?・~[]()")
     t = re.sub(r"\s+", " ", t)
     return t if len(t) >= _MIN_SERIES_LEN else None
 

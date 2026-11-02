@@ -132,8 +132,7 @@ def test_tags_for_ohne_daten_nur_feste_slots():
 def test_tags_for_ecchi_ohne_serientag():
     out = tags_for(["Ecchi", "Comedy"], [], "Irgendein Ecchi Anime",
                    {"Ecchi": 815, "Comedy": 4867})
-    assert "irgendein ecchi anime" not in out
-    assert "ecchi" not in out
+    assert out == ["anime", "otakupulse", "comedy"]
 
 
 def test_normalize_mehrstellige_zahl_bleibt_im_namen():
@@ -152,3 +151,49 @@ def test_normalize_einstellige_zahl_2_bis_9_wird_gekuerzt():
 def test_normalize_season_suffixe_weiter_entfernt():
     assert normalize_series_title("Ao no Hako Season 2") == "ao no hako"
     assert normalize_series_title("Tensei Kizoku 3rd Season") == "tensei kizoku"
+
+
+def test_normalize_roemische_suffixe_werden_entfernt():
+    assert normalize_series_title("Overlord II") == "overlord"
+    assert normalize_series_title("Overlord III") == "overlord"
+    assert normalize_series_title("Overlord IV") == "overlord"
+
+
+def test_normalize_mehrfach_suffix_wird_vollstaendig_bereinigt():
+    assert normalize_series_title("Boku no Hero Season 2 Part 2") == "boku no hero"
+
+
+def test_normalize_nummer_hinter_punkt_bleibt():
+    assert normalize_series_title("Kaiju No. 8") == "kaiju no. 8"
+    assert normalize_series_title("Kaiju No. 8 Season 2") == "kaiju no. 8"
+    assert normalize_series_title("Kaiju No. 8: Mission Recon") == "kaiju no. 8"
+    assert normalize_series_title("Kaiju No.8: Hoshina's Day Off") == "kaiju no.8"
+
+
+def test_normalize_raender_ohne_klammern():
+    assert normalize_series_title("[Oshi no Ko]") == "oshi no ko"
+    assert normalize_series_title("(Oshi no Ko)") == "oshi no ko"
+
+
+def test_normalize_suffix_nur_an_wortgrenze():
+    assert normalize_series_title("Counterpart 2") == "counterpart"
+    assert normalize_series_title("Counterpart Season 2") == "counterpart"
+    assert normalize_series_title("Xpart 3") == "xpart"
+    assert normalize_series_title("Wallpart 12") == "wallpart 12"
+
+
+def test_tags_for_komma_im_tag_wird_entfernt():
+    out = tags_for(["Drama"], [("Boys, Love", "theme", 80)], "Foo, Bar", {"Drama": 1})
+    assert out == ["anime", "otakupulse", "drama", "boys love", "foo"]
+    assert all("," not in t for t in out)
+
+
+def test_tags_for_komma_im_serientitel_override_wird_entfernt(monkeypatch):
+    monkeypatch.setitem(tagging.SERIES_TAG_OVERRIDES, "X", "a, b")
+    out = tags_for([], [], "X", {})
+    assert out == ["anime", "otakupulse", "a b"]
+
+
+def test_tags_for_hentai_ohne_serientag():
+    out = tags_for(["Hentai", "Comedy"], [], "Irgendein Titel", {"Hentai": 788, "Comedy": 4867})
+    assert out == ["anime", "otakupulse", "comedy"]
