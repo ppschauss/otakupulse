@@ -113,9 +113,17 @@ Tumblr:
 Feintuning:
 `SITE_BASE_URL`, `BATCH_HOUR`, `BATCH_MINUTE`, `MAX_DRAFTS_PER_BATCH`, `PERISHABLE_HOURS`
 
-Im Fragment fest gesetzt bzw. nicht in `secrets.env.example`, aber vom Code gelesen:
-`TZ`, `DB_PATH` (beide im Fragment oben), `ALERT_CHAT_ID` (optional, Ausweich-Chat für
-Meldungen), `MASTODON_CHAR_LIMIT` (optional, nur Fallback, wenn die Instanz kein Limit meldet).
+Zustand und Zeit:
+`DB_PATH`, `TZ`. Beide stehen schon im Compose-Fragment (`/data/social.sqlite3` und
+`Europe/Berlin`) und müssen **nicht** zusätzlich als Service-Variable gepflegt werden. Wer sie
+doch als Service-Variable anlegt, muss `DB_PATH` auf einen Pfad **unter `/data`** zeigen lassen:
+das ist die Variable, die auf das persistente Volume zeigt. Ein anderer Pfad schreibt in die
+Container-Schicht und verliert den Zustand beim Redeploy, ohne Fehlermeldung.
+
+Optionale Rückfälle:
+`ALERT_CHAT_ID` (wird nur genutzt, wenn `SOCIAL_APPROVAL_CHAT_ID` leer ist),
+`MASTODON_CHAR_LIMIT` (Rückfall, wenn die Instanz kein Zeichenlimit meldet; Code-Default 500).
+Beide stehen in `secrets.env.example` und müssen in Coolify nur gesetzt werden, wenn man sie braucht.
 
 Beim Eintragen auf Platzhalter achten: `secrets.env.example` enthält Beispielwerte wie
 `HIER_SOCIAL_RO_PASSWORT`. Die gehören nicht in Coolify.
