@@ -4,6 +4,8 @@ Formuliert Social-Media-Posts aus neuen OtakuPulse-Artikeln und schickt sie **ei
 als Freigabe-Batch** per Telegram. Du tippst ✅ (posten), ✏️ (umschreiben) oder ❌ (verwerfen).
 Es wird **ausschließlich auf eigenen Kanälen** gepostet; nichts geht ungeprüft raus.
 
+**Ausgeliefert wird über Coolify, nicht über `manage.sh`** — siehe [`DEPLOY.md`](DEPLOY.md) (Compose-Fragment, Volume, Variablen, Inbetriebnahme-Reihenfolge). `manage.sh` ist nur für lokale Entwicklung und Tests.
+
 Ersetzt den nie funktionierenden n8n-Autoposter. Muster nach `../../habitbot` (Python-Container,
 `docker run` via `manage.sh`, kein compose-Plugin auf dem Unraid-Host).
 
