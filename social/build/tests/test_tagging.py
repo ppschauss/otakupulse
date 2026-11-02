@@ -170,9 +170,11 @@ def test_normalize_nummer_hinter_punkt_bleibt():
     assert normalize_series_title("Kaiju No.8: Hoshina's Day Off") == "kaiju no.8"
 
 
-def test_normalize_raender_ohne_klammern():
-    assert normalize_series_title("[Oshi no Ko]") == "oshi no ko"
-    assert normalize_series_title("(Oshi no Ko)") == "oshi no ko"
+def test_normalize_entfernt_abschliessende_klammergruppen():
+    assert normalize_series_title("Doraemon (2005)") == "doraemon"
+    assert normalize_series_title("BUZZER BEATER (2007)") == "buzzer beater"
+    assert normalize_series_title("Foo Bar (TV) (2011)") == "foo bar"
+    assert normalize_series_title("Foo Bar (2011) Season 2") == "foo bar"
 
 
 def test_normalize_suffix_nur_an_wortgrenze():

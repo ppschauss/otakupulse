@@ -74,6 +74,8 @@ _SUFFIX_RE = re.compile(
     # einstellige Zahl 2-9 ist Staffelmarker, aber nicht hinter einem Punkt ("Kaiju No. 8")
     r"|(?<=[^.\s]\s)[2-9]"
     r"|(?<=\s)(?:ii|iii|iv)"
+    # abschließende Klammergruppe, z. B. Jahr oder Format: "(2005)", "(TV)"
+    r"|\([^()]*\)"
     r")\s*$"
 )
 
@@ -97,7 +99,7 @@ def normalize_series_title(title: str | None) -> str | None:
         if neu == t:
             break
         t = neu
-    t = t.strip(" \t-–—_.!?・~[]()")
+    t = t.strip(" \t-–—_.!?・~")
     t = re.sub(r"\s+", " ", t)
     return t if len(t) >= _MIN_SERIES_LEN else None
 
