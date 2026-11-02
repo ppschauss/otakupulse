@@ -3,6 +3,7 @@
 env liefert nur den Bootstrap; Laufzeit-Settings (z.B. Freigabe-Chat) liegen in der DB.
 Pflicht-Variablen fehlen laut = harter KeyError beim Start (fail-fast, kein stiller Default).
 """
+import logging
 import os
 
 
@@ -11,6 +12,27 @@ def _req(key: str) -> str:
     if not v:
         raise KeyError(f"Pflicht-Umgebungsvariable {key} fehlt (siehe secrets.env.example)")
     return v
+
+
+def _int(key: str, default: int, minimum: int | None = None) -> int:
+    """Ganzzahl aus der Umgebung. Leer oder unlesbar -> Default; unter `minimum` -> Default + Warnung.
+
+    Ein Tippfehler in der env-Datei soll den Start nicht abbrechen und nichts still verfallen lassen.
+    """
+    raw = os.environ.get(key)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        wert = int(raw.strip())
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "%s=%r ist keine Ganzzahl — Default %d gilt.", key, raw, default)
+        return default
+    if minimum is not None and wert < minimum:
+        logging.getLogger(__name__).warning(
+            "%s=%d liegt unter %d — Default %d gilt.", key, wert, minimum, default)
+        return default
+    return wert
 
 
 def _bool(key: str, default: bool) -> bool:
@@ -119,7 +141,7 @@ TUMBLR_OAUTH_TOKEN = os.environ.get("TUMBLR_OAUTH_TOKEN", "").strip()
 TUMBLR_OAUTH_TOKEN_SECRET = os.environ.get("TUMBLR_OAUTH_TOKEN_SECRET", "").strip()
 # Sicherheitsnetz, kein Steuerinstrument: der Ingest erzeugt ohnehin höchstens MAX_DRAFTS_PER_BATCH
 # Entwürfe je Kanal und Tag. Ist das Limit erreicht, verfällt der Entwurf (kein Aufschieben).
-TUMBLR_MAX_POSTS_PER_DAY = int(os.environ.get("TUMBLR_MAX_POSTS_PER_DAY", "6"))
+TUMBLR_MAX_POSTS_PER_DAY = _int("TUMBLR_MAX_POSTS_PER_DAY", 6, minimum=1)
 
 
 def validate_dry_config(bekannte_kanaele) -> list[str]:

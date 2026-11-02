@@ -4,6 +4,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 CHANNEL_LABEL = {
     "bluesky": "Bluesky",
     "mastodon": "Mastodon",
+    "tumblr": "Tumblr",
     "discord": "Discord",
     "reddit": "Reddit",
     "facebook": "Facebook",
@@ -91,6 +92,13 @@ def outcome_unknown_note(channel: str, url: str, error: str) -> str:
     return (f"❓ Ausgang unbekannt bei {ch}: Der Post wurde möglicherweise veröffentlicht. "
             f"Es gibt KEINEN automatischen neuen Versuch (Doppelpost-Gefahr). "
             f"Bitte auf dem Blog nachsehen.\n{url}\nFehler: {error[:200]}")
+
+
+def tageslimit_note(channel: str, anzahl: int, limit: int) -> str:
+    ch = CHANNEL_LABEL.get(channel, channel)
+    return (f"⚠️ Tageslimit für {ch} erreicht ({limit} Posts): {anzahl} freigegebene(r) Entwurf/"
+            f"Entwürfe verworfen, nicht aufgeschoben. Das Limit ist nur ein Sicherheitsnetz — "
+            f"bitte prüfen, warum so viele Entwürfe anfielen.")
 
 
 def channel_down(channel: str, error: str) -> str:

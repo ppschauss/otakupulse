@@ -1,11 +1,11 @@
 """Tumblr ohne Einzelfreigabe: Auto-Freigabe, Tageslimit, eigener Verfall (SQLite, ohne Postgres)."""
-import importlib
+import logging
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from app import batch, compose, config, db, models, poster, util
+from app import batch, breaker, compose, config, db, models, poster, util
 from app.channels import registry
 from app.channels.base import PostResult
 from app.sources import articles
@@ -45,17 +45,20 @@ class _Fake:
 
 @pytest.fixture
 def live(monkeypatch):
-    """Alle Kanäle live, Adapter sind Fakes je Kanal, Telegram-Meldungen werden verschluckt."""
+    """Alle Kanäle live, Adapter sind Fakes je Kanal; Telegram-Meldungen landen in live["meldungen"]."""
     adapter = {"bluesky": _Fake(), "mastodon": _Fake(), "tumblr": _Fake()}
 
-    async def keine_meldung(text):
-        pass
+    meldungen = []
+
+    async def merken(text):
+        meldungen.append(text)
 
     monkeypatch.setattr(config, "DRY_RUN", False)
     monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset())
     monkeypatch.setattr(config, "CHANNELS_ENABLED", ["bluesky", "mastodon", "tumblr"])
     monkeypatch.setattr(registry, "get", lambda name: adapter.get(name))
-    monkeypatch.setattr(poster, "_notify", keine_meldung)
+    monkeypatch.setattr(poster, "_notify", merken)
+    adapter["meldungen"] = meldungen
     return adapter
 
 
@@ -227,11 +230,94 @@ async def test_limit_zaehlt_nur_heute(tmp_db, live, monkeypatch):
     assert (await models.get_draft(did))["state"] == "posted"
 
 
-def test_tageslimit_default_ist_sechs_und_aus_der_umgebung_lesbar(monkeypatch):
-    assert config.TUMBLR_MAX_POSTS_PER_DAY == 6
-    monkeypatch.setenv("TUMBLR_MAX_POSTS_PER_DAY", "3")
-    try:
-        assert importlib.reload(config).TUMBLR_MAX_POSTS_PER_DAY == 3
-    finally:
-        monkeypatch.delenv("TUMBLR_MAX_POSTS_PER_DAY")
-        importlib.reload(config)
+# ---------- Konfiguration: robustes Lesen ----------
+
+def test_tageslimit_default_ist_sechs():
+    assert config._int("TUMBLR_TEST_NICHT_GESETZT", 6) == 6
+
+
+def test_int_liest_wert_aus_der_umgebung(monkeypatch):
+    monkeypatch.setenv("TUMBLR_TEST_INT", " 3 ")
+    assert config._int("TUMBLR_TEST_INT", 6) == 3
+
+
+@pytest.mark.parametrize("roh", ["", "   ", "abc", "3.5"])
+def test_int_leer_oder_unlesbar_faellt_auf_default(monkeypatch, roh):
+    monkeypatch.setenv("TUMBLR_TEST_INT", roh)
+    assert config._int("TUMBLR_TEST_INT", 6) == 6
+
+
+@pytest.mark.parametrize("roh", ["0", "-2"])
+def test_int_unter_minimum_faellt_auf_default_mit_warnung(monkeypatch, caplog, roh):
+    monkeypatch.setenv("TUMBLR_TEST_INT", roh)
+    with caplog.at_level(logging.WARNING):
+        assert config._int("TUMBLR_TEST_INT", 6, minimum=1) == 6
+    assert any("TUMBLR_TEST_INT" in r.getMessage() for r in caplog.records)
+
+
+def test_int_ohne_minimum_laesst_kleine_werte_zu(monkeypatch):
+    monkeypatch.setenv("TUMBLR_TEST_INT", "0")
+    assert config._int("TUMBLR_TEST_INT", 6) == 0
+
+
+# ---------- Verfall nur fuer Tumblr bei freigegebenen Entwuerfen ----------
+
+async def test_approved_bluesky_und_mastodon_verfallen_nicht(tmp_db):
+    """Bestehendes Verhalten: von Hand freigegebene Entwuerfe warten (Pause, Breaker) und gehen raus."""
+    bsky = await _entwurf("bluesky", "1")
+    mast = await _entwurf("mastodon", "2")
+    tumblr = await _entwurf("tumblr", "3")
+    for did in (bsky, mast, tumblr):
+        await _perishable_at_setzen(did, -1)
+
+    assert await models.expire_due() == 1
+    assert (await models.get_draft(bsky))["state"] == "approved"
+    assert (await models.get_draft(mast))["state"] == "approved"
+    assert (await models.get_draft(tumblr))["state"] == "expired"
+
+
+# ---------- Limit: Meldung, Trockenlauf, Breaker ----------
+
+async def test_limit_meldet_einmal_je_durchlauf_nicht_je_entwurf(tmp_db, live, monkeypatch):
+    monkeypatch.setattr(config, "TUMBLR_MAX_POSTS_PER_DAY", 0)
+    ids = [await _entwurf("tumblr", str(i)) for i in range(3)]
+    await poster.run_post_pass()
+    for did in ids:
+        assert (await models.get_draft(did))["state"] == "expired"
+    assert len(live["meldungen"]) == 1
+    assert "3" in live["meldungen"][0] and "Tumblr" in live["meldungen"][0]
+    await poster.run_post_pass()  # nichts mehr zu verwerfen: keine weitere Meldung
+    assert len(live["meldungen"]) == 1
+
+
+async def test_ohne_limit_treffer_keine_limit_meldung(tmp_db, live):
+    await _entwurf("tumblr", "1")
+    await poster.run_post_pass()
+    assert not any("Tageslimit" in m for m in live["meldungen"])
+
+
+async def test_trockenlaeufe_zaehlen_im_tageslimit_mit(tmp_db, live, monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset({"tumblr"}))
+    monkeypatch.setattr(config, "TUMBLR_MAX_POSTS_PER_DAY", 1)
+    erster = await _entwurf("tumblr", "1")
+    zweiter = await _entwurf("tumblr", "2")
+    await poster.run_post_pass()
+    assert (await models.get_draft(erster))["external_id"] == f"dry-{erster}"
+    await poster.run_post_pass()
+    assert (await models.get_draft(zweiter))["state"] == "expired"
+    assert live["tumblr"].posts == []  # nie echt gepostet
+
+
+async def test_offener_tumblr_breaker_fuehrt_nicht_zum_verwerfen(tmp_db, live, monkeypatch):
+    monkeypatch.setattr(config, "TUMBLR_MAX_POSTS_PER_DAY", 0)  # Limit waere sofort erreicht
+    did = await _entwurf("tumblr", "1")
+    await db.conn().execute("INSERT INTO channel_state(channel) VALUES('tumblr')")
+    await db.conn().execute(
+        "UPDATE channel_state SET open_until=? WHERE channel='tumblr'",
+        ((datetime.now(timezone.utc) + timedelta(hours=6)).isoformat(),))
+    await db.conn().commit()
+    assert await breaker.guard("tumblr") is False
+
+    await poster.run_post_pass()
+    assert (await models.get_draft(did))["state"] == "approved"  # wartet, wird nicht verworfen
+    assert live["meldungen"] == []

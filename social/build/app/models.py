@@ -155,14 +155,14 @@ async def expire_draft(draft_id: int) -> None:
 async def expire_due() -> int:
     """Verderbliche Entwürfe (News) über perishable_at hinaus verfallen lassen.
 
-    Auch freigegebene: Tumblr-Entwürfe sind ab Erzeugung 'approved' und fielen sonst aus dem
-    Verfall heraus. Bei Bluesky/Mastodon folgenlos, deren Entwürfe werden erst kurz vor dem
-    Posten freigegeben.
+    Offene Entwürfe aller Kanäle; freigegebene nur bei Tumblr: Dessen Entwürfe sind ab Erzeugung
+    'approved' und fielen sonst aus dem Verfall heraus. Bluesky/Mastodon werden von Hand
+    freigegeben und warten danach ggf. (Pause, Breaker, Retry-After) — das bleibt wie es war.
     """
     now = now_utc_iso()
     cur = await db.conn().execute(
         """UPDATE drafts SET state='expired'
-           WHERE state IN ('pending','approved')
+           WHERE (state='pending' OR (state='approved' AND channel='tumblr'))
              AND perishable_at IS NOT NULL AND perishable_at < ?""",
         (now,),
     )

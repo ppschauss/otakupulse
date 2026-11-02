@@ -3,8 +3,9 @@
 Kein blindes Feuern: guard(channel) fragt den Breaker, bei Fehler wird zurückgestellt,
 nach 3 Versuchen 'failed' + Telegram-Meldung. Trockene Kanäle (DRY_RUN global oder
 DRY_RUN_CHANNELS je Kanal) kurzschließen den echten Post. Tumblr: höchstens ein Entwurf je
-Durchlauf, und nur bis TUMBLR_MAX_POSTS_PER_DAY; darüber verfällt der Entwurf. Entwürfe für Kanäle, die nicht in
-CHANNELS_ENABLED stehen, bleiben unangetastet liegen.
+Durchlauf, und nur bis TUMBLR_MAX_POSTS_PER_DAY; darüber verfällt der Entwurf (eine
+Telegram-Meldung je Durchlauf). Entwürfe für Kanäle, die nicht in CHANNELS_ENABLED stehen,
+bleiben unangetastet liegen.
 """
 import json
 import logging
@@ -24,6 +25,7 @@ async def run_post_pass() -> None:
         return
     drafts = await models.approved_drafts()
     uebersprungen: dict[str, int] = {}
+    limit_verworfen = 0  # wegen Tageslimit verfallene Tumblr-Entwürfe dieses Durchlaufs
     tumblr_drin = False  # höchstens ein Tumblr-Entwurf je Durchlauf (Abstand durch den 2-min-Takt)
     for d in drafts:
         channel = d["channel"]
@@ -39,6 +41,7 @@ async def run_post_pass() -> None:
             if await models.posted_today(TUMBLR) >= config.TUMBLR_MAX_POSTS_PER_DAY:
                 # Verfallen statt aufschieben: eine Halde wäre schlimmer als ein verpasster Post.
                 await models.expire_draft(d["id"])
+                limit_verworfen += 1
                 log.warning("Tumblr-Tageslimit (%d) erreicht — Entwurf %s verfällt.",
                             config.TUMBLR_MAX_POSTS_PER_DAY, d["id"])
                 continue
@@ -97,6 +100,9 @@ async def run_post_pass() -> None:
             if give_up:
                 await _notify(f"⚠️ Post auf {T.CHANNEL_LABEL.get(channel, channel)} "
                               f"nach {MAX_ATTEMPTS} Versuchen aufgegeben.\n{d['url']}")
+
+    if limit_verworfen:
+        await _notify(T.tageslimit_note(TUMBLR, limit_verworfen, config.TUMBLR_MAX_POSTS_PER_DAY))
 
     for channel, n in uebersprungen.items():
         log.warning("Kanal %s ist nicht in CHANNELS_ENABLED — %d freigegebene(r) Entwurf/Entwürfe "
