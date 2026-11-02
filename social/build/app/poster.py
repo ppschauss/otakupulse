@@ -46,7 +46,7 @@ async def run_post_pass() -> None:
             category=d["category"],
         )
 
-        if config.DRY_RUN:
+        if config.is_dry(channel):
             ext = f"dry-{d['id']}"
             await models.mark_posted(d["id"], ext, channel, d["source_kind"], d["source_ref"])
             await breaker.record_ok(channel)

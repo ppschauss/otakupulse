@@ -41,6 +41,17 @@ MODEL = os.environ.get("SOCIAL_MODEL", "claude-sonnet-5")
 # --- Kanäle ---
 CHANNELS_ENABLED = [c.strip() for c in os.environ.get("CHANNELS_ENABLED", "").split(",") if c.strip()]
 
+# Kanalweiser Trockenmodus: diese Kanäle posten nie echt, auch wenn DRY_RUN=0.
+# Default leer; so lässt sich ein einzelner Kanal live schalten, ohne die anderen mitzureißen.
+DRY_RUN_CHANNELS = frozenset(
+    c.strip().lower() for c in os.environ.get("DRY_RUN_CHANNELS", "").split(",") if c.strip()
+)
+
+
+def is_dry(channel: str) -> bool:
+    """True, wenn für diesen Kanal nur simuliert wird (global oder kanalweise)."""
+    return DRY_RUN or channel in DRY_RUN_CHANNELS
+
 # --- Quellen / Batch ---
 SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "https://www.otakupulse.de").rstrip("/")
 BATCH_HOUR = int(os.environ.get("BATCH_HOUR", "18"))
