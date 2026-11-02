@@ -20,15 +20,18 @@ def _pct(wert) -> str:
 
 def oauth1_header(
     method: str, url: str, *, consumer_key: str, consumer_secret: str, token: str = "",
-    token_secret: str = "", extra_params: dict | None = None, nonce: str | None = None,
-    timestamp: str | None = None,
+    token_secret: str = "", extra_params: dict | None = None,
+    protocol_params: dict | None = None, nonce: str | None = None, timestamp: str | None = None,
 ) -> str:
     """OAuth-1.0a-Authorization-Header (HMAC-SHA1).
 
     `extra_params` sind formularkodierte Body-Parameter, die in die Signatur gehoeren (ohne in den
     Header zu wandern). Bei einem JSON-Body (Tumblr-NPF) bleibt es leer: dann zaehlen nur Query-
-    und oauth_*-Parameter. Beim Dreisprung der Autorisierung stehen hier `oauth_callback` bzw.
-    `oauth_verifier`.
+    und oauth_*-Parameter.
+
+    `protocol_params` sind zusaetzliche oauth_*-Parameter (beim Dreisprung der Autorisierung
+    `oauth_callback` bzw. `oauth_verifier`): sie fliessen in die Signatur UND stehen im Header, der
+    Body bleibt leer. Die Signatur ist dieselbe wie bei `extra_params`.
 
     Ein leeres `token` heisst "noch kein Token" (erster Schritt des Dreisprungs): dann entfaellt
     `oauth_token` in Signatur und Header ganz.
@@ -42,6 +45,7 @@ def oauth1_header(
     }
     if token:
         oauth["oauth_token"] = token
+    oauth.update(protocol_params or {})
     teile = urlsplit(url)
     basis_url = f"{teile.scheme.lower()}://{teile.netloc.lower()}{teile.path}"
     alle = list(oauth.items()) + parse_qsl(teile.query, keep_blank_values=True)

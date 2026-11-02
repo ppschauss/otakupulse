@@ -5,10 +5,10 @@ Laeuft auf DEINEM Rechner (nicht im Container, nicht auf dem VPS) und braucht nu
 und diesen Repo-Checkout. Es ist ein eigenstaendiges Werkzeug, kein Teil des Container-Codes.
 
 Ablauf (der klassische Dreisprung):
-  1. POST https://www.tumblr.com/oauth/request_token   (mit oauth_callback)
+  1. POST https://www.tumblr.com/oauth/request_token   (mit oauth_callback im Authorization-Header)
   2. Du oeffnest die ausgegebene Autorisierungs-URL im Browser und bestaetigst bei Tumblr.
      Tumblr leitet auf http://localhost:8808/callback weiter; dort lauscht kurz dieses Skript.
-  3. POST https://www.tumblr.com/oauth/access_token    (mit oauth_verifier)
+  3. POST https://www.tumblr.com/oauth/access_token    (mit oauth_verifier im Authorization-Header)
      -> oauth_token + oauth_token_secret, die als secrets.env-Zeilen ausgegeben werden.
 
 Voraussetzung: In der Tumblr-App (https://www.tumblr.com/oauth/apps) ist als Callback exakt
@@ -31,14 +31,16 @@ dass weder Config noch httpx noetig sind). Das Skript findet sie relativ zu sein
 import argparse
 import getpass
 import html
+import ipaddress
 import os
+import socket
 import sys
 import time
 from email.utils import parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, quote, urlencode, urlsplit
+from urllib.parse import parse_qsl, quote, urlsplit
 from urllib.request import Request, urlopen
 
 if sys.version_info < (3, 10):
@@ -85,19 +87,30 @@ def build_authorize_url(oauth_token: str) -> str:
 
 def build_signed_post(
     url: str, *, consumer_key: str, consumer_secret: str, token: str, token_secret: str,
-    form: dict, nonce: str | None = None, timestamp: str | None = None,
+    oauth_params: dict, nonce: str | None = None, timestamp: str | None = None,
 ) -> tuple[str, bytes]:
-    """Authorization-Header und Formular-Body für einen Schritt des Dreisprungs.
+    """Authorization-Header und Body für einen Schritt des Dreisprungs.
 
-    Die oauth_*-Parameter des Schritts (oauth_callback, oauth_verifier) stehen als Formular im
-    Body UND fließen in die Signatur ein (anders als beim Posten mit JSON-Body).
+    Die oauth_*-Parameter des Schritts (oauth_callback, oauth_verifier) stehen im Header und in
+    der Signatur; der Body bleibt leer (die konventionelle Form nach RFC 5849, Abschnitt 3.5.1).
     """
     kopf = oauth1_header(
         "POST", url, consumer_key=consumer_key, consumer_secret=consumer_secret,
-        token=token, token_secret=token_secret, extra_params=form, nonce=nonce,
+        token=token, token_secret=token_secret, protocol_params=oauth_params, nonce=nonce,
         timestamp=timestamp,
     )
-    return kopf, urlencode(form, quote_via=quote).encode()
+    return kopf, b""
+
+
+def ist_loopback(adresse: str) -> bool:
+    """True für 127.0.0.0/8 und ::1, auch in der IPv4-in-IPv6-Schreibweise des Dual-Stack-Sockets."""
+    try:
+        ip = ipaddress.ip_address(adresse)
+    except ValueError:
+        return False
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback
 
 
 def parse_callback(request_target: str, erwartetes_token: str) -> str | None:
@@ -220,9 +233,9 @@ def _post_form(url: str, kopf: str, body: bytes) -> tuple[int, str, str | None]:
 
 
 def _schritt(url: str, schritt: str, *, ck: str, cs: str, token: str, token_secret: str,
-             form: dict) -> tuple[str, str]:
+             oauth_params: dict) -> tuple[str, str]:
     kopf, body = build_signed_post(url, consumer_key=ck, consumer_secret=cs, token=token,
-                                   token_secret=token_secret, form=form)
+                                   token_secret=token_secret, oauth_params=oauth_params)
     status, text, datum = _post_form(url, kopf, body)
     if status != 200:
         raise AuthFehler(erklaere_http_fehler(status, text, schritt=schritt, date_header=datum))
@@ -255,6 +268,10 @@ def _seite(titel: str, text: str) -> bytes:
 def _handler(sitzung: _Sitzung):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802 (Name von http.server vorgegeben)
+            if not ist_loopback(self.client_address[0]):
+                # Der Socket hört dual-stack auf allen Adressen; angenommen wird nur der eigene Rechner.
+                self._antwort(403, _seite("Verboten", "Nur vom eigenen Rechner erreichbar."))
+                return
             try:
                 verifier = parse_callback(self.path, sitzung.erwartetes_token)
             except AuthFehler as e:
@@ -281,13 +298,28 @@ def _handler(sitzung: _Sitzung):
     return Handler
 
 
+class _DualStackServer(HTTPServer):
+    """Hört auf :: mit IPV6_V6ONLY=0, also auf IPv4 und IPv6 zugleich. Der Browser löst `localhost`
+    je nach System zu ::1 oder 127.0.0.1 auf; so klappt beides."""
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+
 def _hoere_zu(sitzung: _Sitzung) -> HTTPServer:
+    handler = _handler(sitzung)
     try:
-        server = HTTPServer(("127.0.0.1", PORT), _handler(sitzung))
-    except OSError as e:
-        raise AuthFehler(f"Port {PORT} lässt sich nicht öffnen ({e.strerror or type(e).__name__}). "
-                         "Läuft das Skript schon, oder belegt ein anderes Programm den Port? "
-                         "Die Callback-URL ist bei Tumblr fest auf diesen Port eingetragen.") from None
+        server = _DualStackServer(("::", PORT), handler)
+    except OSError:
+        # Kein IPv6 (oder Dual-Stack nicht möglich): auf reines IPv4 zurückfallen.
+        try:
+            server = HTTPServer(("127.0.0.1", PORT), handler)
+        except OSError as e:
+            raise AuthFehler(f"Port {PORT} lässt sich nicht öffnen ({e.strerror or type(e).__name__}). "
+                             "Läuft das Skript schon, oder belegt ein anderes Programm den Port? "
+                             "Die Callback-URL ist bei Tumblr fest auf diesen Port eingetragen.") from None
     server.timeout = 1.0
     return server
 
@@ -319,7 +351,7 @@ def autorisiere(ck: str, cs: str, wartezeit: float = WARTEZEIT_SEKUNDEN) -> tupl
     try:
         req_token, req_secret = _schritt(
             REQUEST_TOKEN_URL, "request_token", ck=ck, cs=cs, token="", token_secret="",
-            form={"oauth_callback": CALLBACK_URL})
+            oauth_params={"oauth_callback": CALLBACK_URL})
         sitzung.erwartetes_token = req_token
         _info("Öffne diese Adresse im Browser und bestätige bei Tumblr (Strg+Klick):")
         _info()
@@ -332,7 +364,7 @@ def autorisiere(ck: str, cs: str, wartezeit: float = WARTEZEIT_SEKUNDEN) -> tupl
     verifier = _warte_auf_callback(server, sitzung, wartezeit)
     _info("Bestätigung erhalten, hole das Zugriffs-Token ...")
     return _schritt(ACCESS_TOKEN_URL, "access_token", ck=ck, cs=cs, token=req_token,
-                    token_secret=req_secret, form={"oauth_verifier": verifier})
+                    token_secret=req_secret, oauth_params={"oauth_verifier": verifier})
 
 
 def main(argv=None) -> int:

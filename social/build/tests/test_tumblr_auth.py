@@ -76,23 +76,50 @@ def test_oauth1_mit_token_unveraendert():
 def test_request_token_signatur_gegen_oauthlib(auth):
     kopf, body = auth.build_signed_post(
         auth.REQUEST_TOKEN_URL, consumer_key="ck", consumer_secret="cs", token="",
-        token_secret="", form={"oauth_callback": auth.CALLBACK_URL},
+        token_secret="", oauth_params={"oauth_callback": auth.CALLBACK_URL},
         nonce="n0nce", timestamp="1700000000",
     )
     assert 'oauth_signature="SlAGuPWvqwj373w7G1VFc5HE0RQ%3D"' in kopf
+    assert 'oauth_callback="http%3A%2F%2Flocalhost%3A8808%2Fcallback"' in kopf
     assert "oauth_token" not in kopf
-    assert body == b"oauth_callback=http%3A%2F%2Flocalhost%3A8808%2Fcallback"
+    assert body == b""
 
 
 def test_access_token_signatur_gegen_oauthlib(auth):
     kopf, body = auth.build_signed_post(
         auth.ACCESS_TOKEN_URL, consumer_key="ck", consumer_secret="cs", token="rtok",
-        token_secret="rsec", form={"oauth_verifier": "ver1"},
+        token_secret="rsec", oauth_params={"oauth_verifier": "ver1"},
         nonce="n0nce", timestamp="1700000000",
     )
     assert 'oauth_signature="q3txechXeAmSN5hYzsJmKpkF500%3D"' in kopf
     assert 'oauth_token="rtok"' in kopf
-    assert body == b"oauth_verifier=ver1"
+    assert 'oauth_verifier="ver1"' in kopf
+    assert body == b""
+
+
+def test_protocol_params_stehen_im_header_extra_params_nicht():
+    """oauth_*-Protokollparameter gehoeren in den Header; formularkodierte Body-Parameter nur
+    in die Signatur (die Signatur selbst ist in beiden Faellen dieselbe)."""
+    from app.oauth1 import oauth1_header
+    basis = dict(consumer_key="ck", consumer_secret="cs", token="", token_secret="",
+                 nonce="n0nce", timestamp="1700000000")
+    url = "https://www.tumblr.com/oauth/request_token"
+    cb = "http://localhost:8808/callback"
+    im_header = oauth1_header("POST", url, protocol_params={"oauth_callback": cb}, **basis)
+    nur_signiert = oauth1_header("POST", url, extra_params={"oauth_callback": cb}, **basis)
+    assert "oauth_callback=" in im_header
+    assert "oauth_callback" not in nur_signiert
+    sig = 'oauth_signature="SlAGuPWvqwj373w7G1VFc5HE0RQ%3D"'
+    assert sig in im_header and sig in nur_signiert
+
+
+# --- Listener ---
+
+def test_nur_loopback_clients_sind_erlaubt(auth):
+    for ok in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+        assert auth.ist_loopback(ok), ok
+    for nein in ("192.168.1.5", "10.0.0.1", "::ffff:192.168.1.5", "2001:db8::1", "kaputt", ""):
+        assert not auth.ist_loopback(nein), nein
 
 
 def test_feste_adressen(auth):
