@@ -110,6 +110,14 @@ MASTODON_BASE_URL = os.environ.get("MASTODON_BASE_URL", "").rstrip("/")
 MASTODON_ACCESS_TOKEN = os.environ.get("MASTODON_ACCESS_TOKEN", "").strip()
 MASTODON_CHAR_LIMIT = int(os.environ.get("MASTODON_CHAR_LIMIT", "500"))
 
+# Tumblr (OAuth 1.0a, siehe Modulkopf von channels/tumblr.py). Fehlende Werte sind kein Startfehler:
+# der Adapter meldet sie erst beim Posten, damit ein deaktivierter Kanal nichts erzwingt.
+TUMBLR_BLOG_IDENTIFIER = os.environ.get("TUMBLR_BLOG_IDENTIFIER", "").strip()
+TUMBLR_CONSUMER_KEY = os.environ.get("TUMBLR_CONSUMER_KEY", "").strip()
+TUMBLR_CONSUMER_SECRET = os.environ.get("TUMBLR_CONSUMER_SECRET", "").strip()
+TUMBLR_OAUTH_TOKEN = os.environ.get("TUMBLR_OAUTH_TOKEN", "").strip()
+TUMBLR_OAUTH_TOKEN_SECRET = os.environ.get("TUMBLR_OAUTH_TOKEN_SECRET", "").strip()
+
 
 def validate_dry_config(bekannte_kanaele) -> list[str]:
     """Prüft DRY_RUN_CHANNELS gegen die bekannten Kanäle; liefert Warnungen (leer = alles gut).
