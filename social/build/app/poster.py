@@ -3,6 +3,7 @@
 Kein blindes Feuern: guard(channel) fragt den Breaker, bei Fehler wird zurückgestellt,
 nach 3 Versuchen 'failed' + Telegram-Meldung. DRY_RUN kurzschließt den echten Post.
 """
+import json
 import logging
 
 from . import config, models, breaker, runtime, settings, texts_de as T
@@ -28,6 +29,8 @@ async def run_post_pass() -> None:
             url=d["url"],
             title=d["title"],
             image_url=d["image_url"],
+            tags=json.loads(d["tags"] or "[]"),
+            category=d["category"],
         )
 
         if config.DRY_RUN:

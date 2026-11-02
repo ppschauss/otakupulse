@@ -1,6 +1,6 @@
 """Gemeinsames Kanal-Interface. Ein neuer Kanal ist damit ~50 Zeilen."""
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -18,6 +18,8 @@ class Post:
     url: str
     title: str | None = None
     image_url: str | None = None
+    tags: list[str] = field(default_factory=list)  # fertige Tags (nur Tumblr nutzt sie)
+    category: str | None = None  # Artikelkategorie (news, simulcast, ...)
 
 
 class Channel(ABC):

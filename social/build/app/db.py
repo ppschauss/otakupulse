@@ -5,11 +5,19 @@ Zwei tragende Verträge:
   zweimal auf denselben Kanal, egal wie oft der Container neu startet.
 - seen_sources: pro Quelle wird nur EINMAL formuliert (Ingest-Dedup über alle Kanäle).
 """
+import sqlite3
+
 import aiosqlite
 
 from . import config
 
 _conn: aiosqlite.Connection | None = None
+
+# Spalten, die nach dem ersten Release dazukamen: eine bestehende DB bekommt sie per ALTER TABLE.
+_NACHGERUESTETE_SPALTEN = (
+    "ALTER TABLE drafts ADD COLUMN tags TEXT",
+    "ALTER TABLE drafts ADD COLUMN category TEXT",
+)
 
 SCHEMA = """
 -- Ein Entwurf je (Quelle × Kanal).
@@ -32,7 +40,9 @@ CREATE TABLE IF NOT EXISTS drafts (
     posted_at     TEXT,
     external_id   TEXT,
     attempts      INTEGER NOT NULL DEFAULT 0,
-    last_error    TEXT
+    last_error    TEXT,
+    tags          TEXT,                        -- JSON-Liste, nur für Tumblr gesetzt
+    category      TEXT                         -- Artikelkategorie
 );
 CREATE INDEX IF NOT EXISTS idx_drafts_state ON drafts(state, batch_day);
 CREATE INDEX IF NOT EXISTS idx_drafts_ext   ON drafts(channel, external_id);
@@ -82,6 +92,11 @@ async def init() -> None:
     await _conn.execute("PRAGMA foreign_keys=ON;")
     await _conn.execute("PRAGMA busy_timeout=5000;")
     await _conn.executescript(SCHEMA)
+    for stmt in _NACHGERUESTETE_SPALTEN:
+        try:
+            await _conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass  # "duplicate column name": Spalte existiert schon (frische DB oder zweiter Lauf)
     await _conn.commit()
 
 

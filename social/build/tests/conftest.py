@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest_asyncio
+
 # /app (bzw. build/) in den Suchpfad, damit `import app.…` funktioniert
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -15,3 +17,14 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 def pytest_configure(config):
     # entspricht `asyncio_mode = "auto"` für pytest-asyncio
     config.option.asyncio_mode = "auto"
+
+
+@pytest_asyncio.fixture
+async def tmp_db(tmp_path, monkeypatch):
+    """Frische SQLite-Datei je Test (kein Postgres nötig); wird danach wieder geschlossen."""
+    from app import config, db
+
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "social.sqlite3"))
+    await db.init()
+    yield
+    await db.close()

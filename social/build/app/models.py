@@ -1,4 +1,5 @@
 """Datenzugriff auf die Entwurfs-Queue, das Post-Log und die Ingest-Dedup-Tabelle."""
+import json
 from datetime import timedelta
 
 from . import db, config
@@ -30,7 +31,8 @@ async def seen_count() -> int:
 # ---------- Entwürfe ----------
 
 async def enqueue(*, batch_day, channel, source_kind, source_ref, url, image_url,
-                  title, body, perishable: bool) -> int:
+                  title, body, perishable: bool,
+                  tags: list[str] | None = None, category: str | None = None) -> int:
     now = now_utc()
     perishable_at = (
         (now + timedelta(hours=config.PERISHABLE_HOURS)).isoformat() if perishable else None
@@ -38,10 +40,11 @@ async def enqueue(*, batch_day, channel, source_kind, source_ref, url, image_url
     cur = await db.conn().execute(
         """INSERT INTO drafts
            (batch_day, channel, source_kind, source_ref, url, image_url, title, body,
-            perishable_at, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            perishable_at, created_at, tags, category)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (batch_day, channel, source_kind, source_ref, url, image_url, title, body,
-         perishable_at, now.isoformat()),
+         perishable_at, now.isoformat(),
+         json.dumps(tags, ensure_ascii=False) if tags is not None else None, category),
     )
     await db.conn().commit()
     return cur.lastrowid

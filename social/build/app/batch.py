@@ -7,12 +7,20 @@ import logging
 
 from telegram.constants import ParseMode
 
-from . import config, models, settings, runtime, compose, texts_de as T
+from . import config, models, settings, runtime, compose, tagging, texts_de as T
 from .sources import articles
 from .channels import registry
 from .util import today_str, now_utc, parse_iso
 
 log = logging.getLogger(__name__)
+
+TUMBLR = "tumblr"
+
+
+def _fuer_tumblr(item) -> bool:
+    """Darf dieser Artikel auf den Tumblr-Blog? Kategorie-Filter plus Adult-Ausschluss."""
+    return (item.category in articles.TUMBLR_CATEGORIES
+            and not tagging.is_excluded(item.genres, item.is_hentai))
 
 
 async def ingest(limit: int) -> int:
@@ -24,22 +32,34 @@ async def ingest(limit: int) -> int:
         return 0
 
     items = await articles.fetch_new(limit)
+    # Genre-Häufigkeit einmal je Lauf (nur für Tumblr-Tags nötig)
+    rarity = await articles.genre_rarity() if TUMBLR in channels and items else {}
     day = today_str()
     created = 0
     for item in items:
+        # Tumblr nimmt nur ausgewählte Kategorien und keine Adult-Titel; die anderen
+        # Kanäle bekommen den Artikel unverändert.
+        item_channels = [ch for ch in channels if ch != TUMBLR or _fuer_tumblr(item)]
+        if not item_channels:  # nur Tumblr aktiv und Artikel ausgeschlossen: nichts zu formulieren
+            await models.mark_seen(item.kind, item.ref)
+            continue
         try:
-            texts = await compose.compose_for(item, channels)
+            texts = await compose.compose_for(item, item_channels)
         except Exception:
             log.exception("Formulierung fehlgeschlagen für %s", item.ref)
             continue
-        for ch in channels:
+        for ch in item_channels:
             body = texts.get(ch)
             if not body:
                 continue
+            # Tags sind Daten, kein Modelltext: hier aus den Rohdaten abgeleitet
+            tags = (tagging.tags_for(item.genres, item.anime_tags, item.series_title, rarity)
+                    if ch == TUMBLR else None)
             await models.enqueue(
                 batch_day=day, channel=ch, source_kind=item.kind, source_ref=item.ref,
                 url=item.url, image_url=item.image_url, title=item.title,
                 body=body, perishable=item.perishable,
+                tags=tags, category=item.category if ch == TUMBLR else None,
             )
             created += 1
         await models.mark_seen(item.kind, item.ref)
