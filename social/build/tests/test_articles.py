@@ -35,9 +35,11 @@ def test_einzelner_anime_liefert_alle_felder():
     assert it.is_hentai is False
 
 
-def test_mehrere_anime_leeren_genres_tags_und_titel():
+def test_mehrere_anime_behalten_genres_und_tags_ohne_serientitel():
     it = row_to_item(_row(anime_count=3))
-    assert it.genres == [] and it.anime_tags == [] and it.series_title is None
+    assert it.genres == ["Sports", "Romance"]
+    assert it.anime_tags == [("Blue Box", "theme", 1), ("School", "setting", 2)]
+    assert it.series_title is None
     assert it.anime_count == 3
 
 
@@ -63,9 +65,9 @@ def test_is_hentai_none_wird_false():
     assert row_to_item(_row(is_hentai=None)).is_hentai is False
 
 
-def test_tag_rank_none_wird_zu_hoher_zahl():
+def test_tag_rank_none_wird_zu_null():
     it = row_to_item(_row(tag_names=["A"], tag_categories=["mood"], tag_ranks=[None]))
-    assert it.anime_tags == [("A", "mood", 999)]
+    assert it.anime_tags == [("A", "mood", 0)]
 
 
 def test_leerer_titel_und_excerpt_werden_leerstring():

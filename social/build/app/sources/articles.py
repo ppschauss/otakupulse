@@ -32,8 +32,8 @@ class SourceItem:
 # Nur diese Kategorien gehen auf Tumblr.
 TUMBLR_CATEGORIES: frozenset[str] = frozenset({"news", "simulcast"})
 
-# Rang für Tags ohne Rang: sortiert ans Ende.
-_RANG_UNBEKANNT = 999
+# Rang ist eine Stärke (höher = besser). Tags ohne Rang zählen 0 und fallen unter die Schwelle.
+_RANG_UNBEKANNT = 0
 
 # Eine Zeile je Artikel: alle Verknüpfungen werden in korrelierten Unterabfragen zu
 # Arrays aggregiert, es gibt keinen Join auf die Hauptabfrage und damit keine
@@ -57,21 +57,21 @@ SELECT a.id, a.slug, a.title, a.excerpt, a.cover_image_url, a.category,
        t.tag_names, t.tag_categories, t.tag_ranks
 FROM articles a
 LEFT JOIN LATERAL (
-    -- je Tag genau einmal (bester Rang), nach Rang sortiert
-    SELECT array_agg(x.name ORDER BY x.rank, x.name) AS tag_names,
-           array_agg(x.category ORDER BY x.rank, x.name) AS tag_categories,
-           array_agg(x.rank ORDER BY x.rank, x.name) AS tag_ranks
+    -- je Tag genau einmal (stärkster Rang: höher ist besser), absteigend sortiert
+    SELECT array_agg(x.name ORDER BY x.rank DESC NULLS LAST, x.name) AS tag_names,
+           array_agg(x.category ORDER BY x.rank DESC NULLS LAST, x.name) AS tag_categories,
+           array_agg(x.rank ORDER BY x.rank DESC NULLS LAST, x.name) AS tag_ranks
       FROM (
-        SELECT tg.name, tg.category, min(atg.rank) AS rank
+        SELECT tg.name, tg.category::text AS category, max(atg.rank) AS rank
           FROM articles_rels ar
           JOIN anime_tags atg ON atg._parent_id = ar.anime_id
           JOIN tags tg ON tg.id = atg.tag_id
          WHERE ar.parent_id = a.id AND ar.anime_id IS NOT NULL
-         GROUP BY tg.name, tg.category
+         GROUP BY tg.name, tg.category::text
       ) x
 ) t ON true
 WHERE a._status = 'published' AND a.slug IS NOT NULL
-  AND a.category = ANY($1::text[])
+  AND a.category::text = ANY($1::text[])
 ORDER BY a.publish_date DESC NULLS LAST
 LIMIT $2
 """
@@ -99,14 +99,15 @@ async def genre_rarity() -> dict[str, int]:
 def row_to_item(r) -> SourceItem:
     """Bildet eine aggregierte Zeile aus ARTICLES_SQL auf ein SourceItem ab (ohne DB-Zugriff).
 
-    Bei mehr als einem verknüpften Anime (oder keinem) bleiben Genres, Anime-Tags und
-    Serientitel leer, damit die Tag-Slots 3-6 entfallen. `is_hentai` bleibt erhalten,
-    damit der Ausschluss auch bei Sammelartikeln greift.
+    Ohne verknüpften Anime sind Genres, Anime-Tags und Serientitel leer. Bei mehreren
+    Anime bleiben Genres und Tags (aggregiert über alle) erhalten; nur der Serientitel
+    entfällt, damit kein falscher Serientag unter einem Sammelartikel steht.
+    `is_hentai` bleibt immer erhalten, damit der Ausschluss auch bei Sammelartikeln greift.
     """
     anzahl = int(r["anime_count"] or 0)
-    einzeln = anzahl == 1
+    hat_anime = anzahl >= 1
     genres, tags, serie = [], [], None
-    if einzeln:
+    if hat_anime:
         genres = list(r["genres"] or [])
         namen = r["tag_names"] or []
         kategorien = r["tag_categories"] or []
@@ -115,7 +116,8 @@ def row_to_item(r) -> SourceItem:
             (n, c, _RANG_UNBEKANNT if rk is None else int(rk))
             for n, c, rk in zip(namen, kategorien, raenge)
         ]
-        serie = r["series_title"] or None
+        if anzahl == 1:
+            serie = r["series_title"] or None
     return SourceItem(
         kind="article",
         ref=str(r["id"]),
