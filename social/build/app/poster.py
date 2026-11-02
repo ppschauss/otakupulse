@@ -2,7 +2,8 @@
 
 Kein blindes Feuern: guard(channel) fragt den Breaker, bei Fehler wird zurückgestellt,
 nach 3 Versuchen 'failed' + Telegram-Meldung. Trockene Kanäle (DRY_RUN global oder
-DRY_RUN_CHANNELS je Kanal) kurzschließen den echten Post. Entwürfe für Kanäle, die nicht in
+DRY_RUN_CHANNELS je Kanal) kurzschließen den echten Post. Tumblr: höchstens ein Entwurf je
+Durchlauf, und nur bis TUMBLR_MAX_POSTS_PER_DAY; darüber verfällt der Entwurf. Entwürfe für Kanäle, die nicht in
 CHANNELS_ENABLED stehen, bleiben unangetastet liegen.
 """
 import json
@@ -15,6 +16,7 @@ from .channels.base import Post
 log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
+TUMBLR = "tumblr"
 
 
 async def run_post_pass() -> None:
@@ -22,14 +24,25 @@ async def run_post_pass() -> None:
         return
     drafts = await models.approved_drafts()
     uebersprungen: dict[str, int] = {}
+    tumblr_drin = False  # höchstens ein Tumblr-Entwurf je Durchlauf (Abstand durch den 2-min-Takt)
     for d in drafts:
         channel = d["channel"]
         if channel not in config.CHANNELS_ENABLED:
             # Weder posten noch trocken verbuchen: bleibt 'approved', falls der Kanal zurückkommt.
             uebersprungen[channel] = uebersprungen.get(channel, 0) + 1
             continue
+        if channel == TUMBLR and tumblr_drin:
+            continue  # bleibt 'approved' für den nächsten Durchlauf
         if not await breaker.guard(channel):
             continue  # Kanal stillgelegt / Retry-After noch nicht abgelaufen
+        if channel == TUMBLR:
+            if await models.posted_today(TUMBLR) >= config.TUMBLR_MAX_POSTS_PER_DAY:
+                # Verfallen statt aufschieben: eine Halde wäre schlimmer als ein verpasster Post.
+                await models.expire_draft(d["id"])
+                log.warning("Tumblr-Tageslimit (%d) erreicht — Entwurf %s verfällt.",
+                            config.TUMBLR_MAX_POSTS_PER_DAY, d["id"])
+                continue
+            tumblr_drin = True
 
         try:
             tags = json.loads(d["tags"] or "[]")

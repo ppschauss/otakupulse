@@ -77,13 +77,16 @@ async def ingest(limit: int) -> int:
             body = texts.get(ch)
             if not body:
                 continue
-            await models.enqueue(
+            draft_id = await models.enqueue(
                 batch_day=day, channel=ch, source_kind=item.kind, source_ref=item.ref,
                 url=item.url, image_url=item.image_url, title=item.title,
                 body=body, perishable=item.perishable,
                 tags=tumblr_tags if ch == TUMBLR else None,
                 category=item.category if ch == TUMBLR else None,
             )
+            if ch == TUMBLR:
+                # Tumblr überspringt die Telegram-Einzelfreigabe; der Poster dosiert (ein Post je Lauf).
+                await models.approve(draft_id)
             created += 1
         await models.mark_seen(item.kind, item.ref)
     return created

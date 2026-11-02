@@ -117,6 +117,9 @@ TUMBLR_CONSUMER_KEY = os.environ.get("TUMBLR_CONSUMER_KEY", "").strip()
 TUMBLR_CONSUMER_SECRET = os.environ.get("TUMBLR_CONSUMER_SECRET", "").strip()
 TUMBLR_OAUTH_TOKEN = os.environ.get("TUMBLR_OAUTH_TOKEN", "").strip()
 TUMBLR_OAUTH_TOKEN_SECRET = os.environ.get("TUMBLR_OAUTH_TOKEN_SECRET", "").strip()
+# Sicherheitsnetz, kein Steuerinstrument: der Ingest erzeugt ohnehin höchstens MAX_DRAFTS_PER_BATCH
+# Entwürfe je Kanal und Tag. Ist das Limit erreicht, verfällt der Entwurf (kein Aufschieben).
+TUMBLR_MAX_POSTS_PER_DAY = int(os.environ.get("TUMBLR_MAX_POSTS_PER_DAY", "6"))
 
 
 def validate_dry_config(bekannte_kanaele) -> list[str]:

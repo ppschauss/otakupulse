@@ -1,8 +1,8 @@
 """Datenzugriff auf die Entwurfs-Queue, das Post-Log und die Ingest-Dedup-Tabelle."""
 import json
-from datetime import timedelta
+from datetime import datetime, time, timedelta, timezone
 
-from . import db, config
+from . import db, config, util
 from .util import now_utc, now_utc_iso, parse_iso
 
 
@@ -126,12 +126,44 @@ async def record_attempt_failure(draft_id: int, error: str, give_up: bool) -> No
     await db.conn().commit()
 
 
+async def posted_today(channel: str) -> int:
+    """Zahl der heute (lokaler Tag nach config.TZ, nicht UTC) auf diesem Kanal geposteten Einträge.
+
+    posted_at liegt als UTC-ISO ("...+00:00") vor; die lokalen Tagesgrenzen werden daher in
+    dasselbe Format umgerechnet und als Bereich verglichen (Sommerzeitwechsel inklusive).
+    """
+    heute = util.now_local()
+    morgen = heute.date() + timedelta(days=1)
+    beginn = datetime.combine(heute.date(), time.min, tzinfo=heute.tzinfo)
+    ende = datetime.combine(morgen, time.min, tzinfo=heute.tzinfo)
+    cur = await db.conn().execute(
+        "SELECT COUNT(*) AS n FROM posted_log WHERE channel=? AND posted_at >= ? AND posted_at < ?",
+        (channel, beginn.astimezone(timezone.utc).isoformat(),
+         ende.astimezone(timezone.utc).isoformat()),
+    )
+    return (await cur.fetchone())["n"]
+
+
+async def expire_draft(draft_id: int) -> None:
+    """Einen freigegebenen Entwurf verfallen lassen (z.B. Tageslimit erreicht)."""
+    await db.conn().execute(
+        "UPDATE drafts SET state='expired' WHERE id=? AND state='approved'", (draft_id,)
+    )
+    await db.conn().commit()
+
+
 async def expire_due() -> int:
-    """Verderbliche Entwürfe (News) über perishable_at hinaus verfallen lassen."""
+    """Verderbliche Entwürfe (News) über perishable_at hinaus verfallen lassen.
+
+    Auch freigegebene: Tumblr-Entwürfe sind ab Erzeugung 'approved' und fielen sonst aus dem
+    Verfall heraus. Bei Bluesky/Mastodon folgenlos, deren Entwürfe werden erst kurz vor dem
+    Posten freigegeben.
+    """
     now = now_utc_iso()
     cur = await db.conn().execute(
         """UPDATE drafts SET state='expired'
-           WHERE state='pending' AND perishable_at IS NOT NULL AND perishable_at < ?""",
+           WHERE state IN ('pending','approved')
+             AND perishable_at IS NOT NULL AND perishable_at < ?""",
         (now,),
     )
     await db.conn().commit()
