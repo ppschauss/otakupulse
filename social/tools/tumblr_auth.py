@@ -29,11 +29,15 @@ dass weder Config noch httpx noetig sind). Das Skript findet sie relativ zu sein
 <repo>/social/tools/ -> <repo>/social/build/app/oauth1.py.
 """
 import argparse
+import errno
 import getpass
 import html
 import ipaddress
 import os
+import selectors
 import socket
+import socketserver
+import ssl
 import sys
 import time
 from email.utils import parsedate_to_datetime
@@ -66,10 +70,16 @@ REQUEST_TOKEN_URL = "https://www.tumblr.com/oauth/request_token"
 AUTHORIZE_URL = "https://www.tumblr.com/oauth/authorize"
 ACCESS_TOKEN_URL = "https://www.tumblr.com/oauth/access_token"
 WARTEZEIT_SEKUNDEN = 300  # so lange wartet der Listener auf deine Bestätigung im Browser
+ANFRAGE_TIMEOUT = 5  # Sekunden, die der Listener auf eine einzelne Anfrage wartet (Idle-Verbindungen)
 
 
 class AuthFehler(Exception):
     """Fehler mit fertigem deutschem Text; enthält nie Secrets oder Token."""
+
+
+class CallbackUnpassend(AuthFehler):
+    """Ein Aufruf von /callback, der nicht zu dieser Sitzung gehört (alter Tab, fremdes Token).
+    Der Listener antwortet 400 und wartet weiter, statt den ganzen Lauf abzubrechen."""
 
 
 # --- reine Funktionen (getestet in social/build/tests/test_tumblr_auth.py) ---
@@ -103,9 +113,9 @@ def build_signed_post(
 
 
 def ist_loopback(adresse: str) -> bool:
-    """True für 127.0.0.0/8 und ::1, auch in der IPv4-in-IPv6-Schreibweise des Dual-Stack-Sockets."""
+    """True für 127.0.0.0/8 und ::1, auch in der IPv4-in-IPv6-Schreibweise (::ffff:127.0.0.1)."""
     try:
-        ip = ipaddress.ip_address(adresse)
+        ip = ipaddress.ip_address(adresse.split("%")[0])
     except ValueError:
         return False
     if ip.version == 6 and ip.ipv4_mapped is not None:
@@ -116,23 +126,30 @@ def ist_loopback(adresse: str) -> bool:
 def parse_callback(request_target: str, erwartetes_token: str) -> str | None:
     """Prüft einen Aufruf des Listeners und liefert den oauth_verifier.
 
-    None: anderer Pfad (z. B. /favicon.ico), einfach ignorieren. AuthFehler: der Callback ist
-    da, aber unbrauchbar (abgelehnt, ohne Verifier, fremdes Token).
+    None: anderer Pfad (z. B. /favicon.ico), einfach ignorieren.
+    CallbackUnpassend: /callback, aber nicht zu dieser Sitzung (noch kein Token erwartet, Token
+    fehlt oder passt nicht); der Lauf geht weiter. AuthFehler: der Callback gehört zur Sitzung, ist
+    aber unbrauchbar (von Tumblr abgelehnt, ohne Verifier); der Lauf endet.
     """
     teile = urlsplit(request_target)
     if teile.path != CALLBACK_PATH:
         return None
+    if not erwartetes_token:
+        # Der Listener läuft schon vor dem request_token-Schritt; ohne Erwartungswert gäbe
+        # "" == "" sonst jedem Aufruf ohne oauth_token recht.
+        raise CallbackUnpassend("Noch keine Autorisierung gestartet; dieser Aufruf wird ignoriert.")
     q = dict(parse_qsl(teile.query, keep_blank_values=True))
     if "denied" in q:
         raise AuthFehler("Die Autorisierung wurde bei Tumblr abgelehnt. "
                          "Skript neu starten und im Browser auf „Erlauben“ klicken.")
+    if q.get("oauth_token", "") != erwartetes_token:
+        raise CallbackUnpassend("Dieser Aufruf gehört nicht zur laufenden Autorisierung "
+                                "(oauth_token fehlt oder passt nicht), etwa ein alter Browser-Tab. "
+                                "Nur die zuletzt im Terminal ausgegebene Adresse öffnen.")
     verifier = q.get("oauth_verifier", "").strip()
     if not verifier:
         raise AuthFehler("Tumblr hat keinen oauth_verifier mitgeschickt – die Bestätigung im "
                          "Browser fehlt oder ist unvollständig. Skript neu starten.")
-    if q.get("oauth_token", "") != erwartetes_token:
-        raise AuthFehler("Der Callback gehört nicht zu dieser Sitzung (oauth_token passt nicht). "
-                         "Skript neu starten und nur die neu ausgegebene URL öffnen.")
     return verifier
 
 
@@ -212,7 +229,28 @@ def erklaere_http_fehler(status: int, body, *, schritt: str, date_header=None,
     return kopf + " Unerwarteter Status; Skript neu starten und Key/Secret/Callback prüfen."
 
 
-# --- Netzwerk (ungetestet: braucht echte Zugangsdaten) ---
+def erklaere_netzfehler(ursache) -> str:
+    """Deutscher Text zu einem Verbindungsfehler. Nennt nur die Art des Fehlers, nie seinen Text
+    oder seine Argumente (die könnten URL-Teile oder Kopfzeilen enthalten)."""
+    if isinstance(ursache, ssl.SSLError):
+        return ("Das TLS-Zertifikat von Tumblr wird nicht akzeptiert. Die Systemuhr (falsches Datum) "
+                "oder einen Proxy bzw. eine Firewall mit TLS-Prüfung kontrollieren.")
+    if isinstance(ursache, socket.gaierror):
+        return "Der Name www.tumblr.com lässt sich nicht auflösen. Internetverbindung oder DNS prüfen."
+    if isinstance(ursache, TimeoutError):
+        return "Zeitüberschreitung bei Tumblr. Verbindung prüfen und neu versuchen."
+    if isinstance(ursache, ConnectionRefusedError):
+        return "Tumblr hat die Verbindung verweigert. Proxy oder Firewall prüfen."
+    name = type(ursache).__name__ if isinstance(ursache, BaseException) else "unbekannt"
+    return f"Keine Verbindung zu Tumblr ({name}). Internetverbindung und Proxy prüfen."
+
+
+def _unerwartet(e: BaseException, wo: str) -> str:
+    # Bewusst nur der Typname: nie repr/args, damit nichts Sensibles in der Meldung landet.
+    return f"Unerwarteter Fehler ({type(e).__name__}) {wo}. Bitte das Skript neu starten."
+
+
+# --- Netzwerk (der echte Austausch mit Tumblr ist ungetestet: braucht echte Zugangsdaten) ---
 
 def _post_form(url: str, kopf: str, body: bytes) -> tuple[int, str, str | None]:
     req = Request(url, data=body, method="POST", headers={
@@ -226,10 +264,11 @@ def _post_form(url: str, kopf: str, body: bytes) -> tuple[int, str, str | None]:
     except HTTPError as e:
         return e.code, e.read().decode("utf-8", "replace"), e.headers.get("Date")
     except URLError as e:
-        raise AuthFehler(f"Keine Verbindung zu Tumblr ({type(e.reason).__name__}). "
-                         "Internetverbindung und Proxy prüfen.") from None
-    except TimeoutError:
-        raise AuthFehler("Zeitüberschreitung bei Tumblr. Neu versuchen.") from None
+        raise AuthFehler(erklaere_netzfehler(e.reason)) from None
+    except OSError as e:  # schließt TimeoutError, ConnectionError, ssl.SSLError ein
+        raise AuthFehler(erklaere_netzfehler(e)) from None
+    except Exception as e:  # noqa: BLE001 (RemoteDisconnected, IncompleteRead, ... beim Lesen)
+        raise AuthFehler(_unerwartet(e, "bei der Verbindung zu Tumblr")) from None
 
 
 def _schritt(url: str, schritt: str, *, ck: str, cs: str, token: str, token_secret: str,
@@ -242,13 +281,15 @@ def _schritt(url: str, schritt: str, *, ck: str, cs: str, token: str, token_secr
     return parse_token_response(text)
 
 
-# --- Listener (ungetestet: Browser und Port) ---
+# --- Listener ---
 
 class _Sitzung:
     """Gemeinsamer Zustand zwischen Hauptablauf und Request-Handler."""
-    erwartetes_token = ""
-    verifier: str | None = None
-    fehler: str | None = None
+
+    def __init__(self):
+        self.erwartetes_token = ""
+        self.verifier: str | None = None
+        self.fehler: str | None = None
 
     @property
     def fertig(self) -> bool:
@@ -267,13 +308,18 @@ def _seite(titel: str, text: str) -> bytes:
 
 def _handler(sitzung: _Sitzung):
     class Handler(BaseHTTPRequestHandler):
+        timeout = ANFRAGE_TIMEOUT  # eine Verbindung, die nichts sendet, hält den Server nur kurz auf
+
         def do_GET(self):  # noqa: N802 (Name von http.server vorgegeben)
             if not ist_loopback(self.client_address[0]):
-                # Der Socket hört dual-stack auf allen Adressen; angenommen wird nur der eigene Rechner.
+                # Zweite Schicht; der Server weist fremde Peers schon vor dem Lesen ab.
                 self._antwort(403, _seite("Verboten", "Nur vom eigenen Rechner erreichbar."))
                 return
             try:
                 verifier = parse_callback(self.path, sitzung.erwartetes_token)
+            except CallbackUnpassend as e:
+                self._antwort(400, _seite("Nicht die laufende Autorisierung", str(e)))
+                return
             except AuthFehler as e:
                 sitzung.fehler = str(e)
                 self._antwort(400, _seite("Das hat nicht geklappt", str(e)))
@@ -298,39 +344,79 @@ def _handler(sitzung: _Sitzung):
     return Handler
 
 
-class _DualStackServer(HTTPServer):
-    """Hört auf :: mit IPV6_V6ONLY=0, also auf IPv4 und IPv6 zugleich. Der Browser löst `localhost`
-    je nach System zu ::1 oder 127.0.0.1 auf; so klappt beides."""
-    address_family = socket.AF_INET6
+class _V4Server(HTTPServer):
+    """Hört nur auf 127.0.0.1. Fremde Peers werden geschlossen, bevor etwas gelesen wird."""
+    ADRESSE = "127.0.0.1"
+
+    def verify_request(self, request, client_address):
+        return ist_loopback(client_address[0])
 
     def server_bind(self):
-        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        # Nicht HTTPServer.server_bind: es löst per getfqdn den Hostnamen auf (unnötig, evtl. langsam).
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
+class _V6Server(_V4Server):
+    """Hört nur auf ::1. Eigener Socket statt Dual-Stack auf ::, damit nichts außerhalb des
+    eigenen Rechners die Adresse erreicht."""
+    address_family = socket.AF_INET6
+    ADRESSE = "::1"
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
         super().server_bind()
 
 
-def _hoere_zu(sitzung: _Sitzung) -> HTTPServer:
+def _hoere_zu(sitzung: _Sitzung, port: int = PORT) -> list[HTTPServer]:
+    """Öffnet je einen Loopback-Socket für IPv4 und IPv6 (`localhost` löst je nach System und
+    Browser zu 127.0.0.1 oder ::1 auf). Fehlt IPv6, genügt IPv4; ein belegter Port bricht ab."""
     handler = _handler(sitzung)
+    server: list[HTTPServer] = []
+    letzter: OSError | None = None
     try:
-        server = _DualStackServer(("::", PORT), handler)
-    except OSError:
-        # Kein IPv6 (oder Dual-Stack nicht möglich): auf reines IPv4 zurückfallen.
-        try:
-            server = HTTPServer(("127.0.0.1", PORT), handler)
-        except OSError as e:
-            raise AuthFehler(f"Port {PORT} lässt sich nicht öffnen ({e.strerror or type(e).__name__}). "
-                             "Läuft das Skript schon, oder belegt ein anderes Programm den Port? "
-                             "Die Callback-URL ist bei Tumblr fest auf diesen Port eingetragen.") from None
-    server.timeout = 1.0
+        for klasse in (_V4Server, _V6Server):
+            try:
+                server.append(klasse((klasse.ADRESSE, port), handler))
+            except OSError as e:
+                if e.errno == errno.EADDRINUSE:
+                    raise AuthFehler(
+                        f"Port {PORT} ist belegt. Bei Tumblr ist die Callback-URL fest auf diesen "
+                        "Port eingetragen. Das andere Programm beenden (oft ein noch laufendes "
+                        "Exemplar dieses Skripts) und neu starten.") from None
+                letzter = e  # z. B. kein IPv6 auf diesem System: still weglassen
+        if not server:
+            grund = (letzter.strerror if letzter else None) or "unbekannter Grund"
+            raise AuthFehler(f"Port {PORT} lässt sich auf dem eigenen Rechner nicht öffnen "
+                             f"({grund}). Die Callback-URL ist bei Tumblr fest auf diesen Port "
+                             "eingetragen.")
+    except BaseException:
+        for s in server:
+            s.server_close()
+        raise
+    for s in server:
+        s.timeout = 0  # handle_request kehrt sofort zurück; gewartet wird per selectors
     return server
 
 
-def _warte_auf_callback(server: HTTPServer, sitzung: _Sitzung, wartezeit: float) -> str:
+def _warte_auf_callback(servers: list[HTTPServer], sitzung: _Sitzung, wartezeit: float) -> str:
     ende = time.monotonic() + wartezeit
+    sel = selectors.DefaultSelector()
     try:
-        while not sitzung.fertig and time.monotonic() < ende:
-            server.handle_request()  # kehrt nach höchstens server.timeout zurück
+        for s in servers:
+            sel.register(s, selectors.EVENT_READ)
+        while not sitzung.fertig:
+            rest = ende - time.monotonic()
+            if rest <= 0:
+                break
+            for key, _ in sel.select(timeout=min(1.0, rest)):
+                key.fileobj.handle_request()
+                if sitzung.fertig:
+                    break
     finally:
-        server.server_close()  # der Server lebt nur bis zum Callback
+        sel.close()
+        for s in servers:
+            s.server_close()  # der Server lebt nur bis zum Callback
     if sitzung.fehler:
         raise AuthFehler(sitzung.fehler)
     if sitzung.verifier is None:
@@ -345,9 +431,10 @@ def _info(text: str = "") -> None:
     print(text, file=sys.stderr)
 
 
-def autorisiere(ck: str, cs: str, wartezeit: float = WARTEZEIT_SEKUNDEN) -> tuple[str, str]:
+def autorisiere(ck: str, cs: str, wartezeit: float = WARTEZEIT_SEKUNDEN,
+                port: int = PORT) -> tuple[str, str]:
     sitzung = _Sitzung()
-    server = _hoere_zu(sitzung)  # zuerst: ein belegter Port soll vor dem Netz scheitern
+    servers = _hoere_zu(sitzung, port)  # zuerst: ein belegter Port soll vor dem Netz scheitern
     try:
         req_token, req_secret = _schritt(
             REQUEST_TOKEN_URL, "request_token", ck=ck, cs=cs, token="", token_secret="",
@@ -359,9 +446,10 @@ def autorisiere(ck: str, cs: str, wartezeit: float = WARTEZEIT_SEKUNDEN) -> tupl
         _info()
         _info(f"Warte auf die Weiterleitung nach {CALLBACK_URL} (höchstens {int(wartezeit)} s) ...")
     except BaseException:
-        server.server_close()
+        for s in servers:
+            s.server_close()
         raise
-    verifier = _warte_auf_callback(server, sitzung, wartezeit)
+    verifier = _warte_auf_callback(servers, sitzung, wartezeit)
     _info("Bestätigung erhalten, hole das Zugriffs-Token ...")
     return _schritt(ACCESS_TOKEN_URL, "access_token", ck=ck, cs=cs, token=req_token,
                     token_secret=req_secret, oauth_params={"oauth_verifier": verifier})
@@ -380,7 +468,8 @@ def main(argv=None) -> int:
     ck, cs = resolve_credentials(args.consumer_key, args.consumer_secret, os.environ)
     if sys.stdin.isatty():
         if not ck:
-            ck = input("Consumer Key: ").strip()
+            print("Consumer Key: ", end="", file=sys.stderr, flush=True)  # stdout bleibt sauber
+            ck = input().strip()
         if not cs:
             cs = getpass.getpass("Consumer Secret (Eingabe bleibt unsichtbar): ").strip()
     if not ck or not cs:
@@ -397,6 +486,9 @@ def main(argv=None) -> int:
     except KeyboardInterrupt:
         _info("\nAbgebrochen.")
         return 130
+    except Exception as e:  # noqa: BLE001
+        _info("\nFehler: " + _unerwartet(e, "im Ablauf"))
+        return 1
 
     _info("\nFertig. Diese zwei Zeilen in social/secrets.env eintragen (nicht in Chats, Tickets "
           "oder Logs kopieren):\n")
