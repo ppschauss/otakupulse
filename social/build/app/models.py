@@ -103,10 +103,21 @@ async def set_edit_and_approve(draft_id: int, text: str) -> None:
 
 async def mark_posted(draft_id: int, external_id: str | None, channel: str,
                       source_kind: str, source_ref: str) -> None:
+    """Erfolgreichen Post verbuchen: Entwurf auf 'posted' und Eintrag im posted_log.
+
+    Räumt `last_error` mit auf — das ist die einzige Stelle, die den Erfolg kennt. Sonst stünde
+    bei jedem gelungenen Tumblr-Post die Vormerkung "Ausgang unbekannt: Versand begonnen" in der
+    Zeile (und bei allen Kanälen die Meldung eines vorangegangenen Fehlversuchs). Wer die
+    Entwürfe von Hand ansieht (DEPLOY.md Schritt 7), liest dort sonst eine Fehlermeldung an
+    einem geglückten Post und gewöhnt sich an, sie zu übersehen. `attempts` bleibt stehen: dass
+    es Versuche brauchte, ist richtige Information, und der Fehlertext selbst steht im Log
+    (breaker.record_fail).
+    """
     now = now_utc_iso()
     c = db.conn()
     await c.execute(
-        "UPDATE drafts SET state='posted', posted_at=?, external_id=? WHERE id=?",
+        "UPDATE drafts SET state='posted', posted_at=?, external_id=?, last_error=NULL "
+        "WHERE id=?",
         (now, external_id, draft_id),
     )
     await c.execute(

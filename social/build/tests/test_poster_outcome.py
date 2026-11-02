@@ -207,6 +207,63 @@ async def test_erfolg_ueberschreibt_die_vormerkung(tmp_db, monkeypatch, meldunge
     await poster.run_post_pass()
     d = await models.get_draft(did)
     assert d["state"] == "posted" and d["external_id"] == "ext-1"
+    # Kein "Ausgang unbekannt" an einem geglückten Post: wer die Entwürfe von Hand ansieht
+    # (DEPLOY.md Schritt 7), soll dort keine Fehlermeldung lesen.
+    assert d["last_error"] is None
+
+
+async def test_geglueckter_post_raeumt_den_fehler_des_vorversuchs_auf(tmp_db, monkeypatch,
+                                                                     meldungen):
+    """Erst ein wiederholbarer Fehlschlag, dann Erfolg — die alte Meldung bleibt nicht stehen."""
+    fake = _Fake(PostResult(ok=False, error="ConnectError: kein Netz"))
+    monkeypatch.setattr(registry, "get", lambda name: fake)
+    did = await _entwurf()
+    await poster.run_post_pass()
+    d = await models.get_draft(did)
+    assert d["state"] == "approved" and "ConnectError" in d["last_error"]
+
+    fake.result = PostResult(ok=True, external_id="ext-1")
+    await _breaker_freigeben()
+    await poster.run_post_pass()
+    d = await models.get_draft(did)
+    assert d["state"] == "posted" and d["last_error"] is None
+    assert d["attempts"] == 2  # dass es Versuche brauchte, bleibt sichtbar
+
+
+async def test_aufraeumen_gilt_auch_fuer_mastodon(tmp_db, monkeypatch, meldungen):
+    """Bluesky/Mastodon: dort stand die alte Meldung bisher nach einem Fehlversuch weiter da."""
+    fake = _Fake(PostResult(ok=False, error="HTTP 502: Bad Gateway"))
+    monkeypatch.setattr(registry, "get", lambda name: fake)
+    did = await _entwurf("mastodon", "2")
+    await poster.run_post_pass()
+    assert (await models.get_draft(did))["last_error"] == "HTTP 502: Bad Gateway"
+
+    fake.result = PostResult(ok=True, external_id="ext-1")
+    await _breaker_freigeben("mastodon")
+    await poster.run_post_pass()
+    d = await models.get_draft(did)
+    assert d["state"] == "posted" and d["last_error"] is None
+
+
+async def test_aufraeumen_versteckt_keine_tagesmeldungs_eintraege(tmp_db, monkeypatch, meldungen):
+    """Die beiden Abfragen auf last_error filtern auf 'expired' bzw. 'failed' — nie auf 'posted'."""
+    from app import batch
+
+    verworfen = await _entwurf("tumblr", "v1")
+    await models.expire_draft(verworfen)
+    unklar = await _entwurf("tumblr", "u1")
+    await models.record_attempt_failure(
+        unklar, f"{models.AUSGANG_UNBEKANNT}: ReadTimeout", give_up=True)
+
+    fake = _Fake(PostResult(ok=True, external_id="ext-1"))
+    monkeypatch.setattr(registry, "get", lambda name: fake)
+    await _entwurf("tumblr", "ok1")
+    await poster.run_post_pass()
+
+    text = await batch.tumblr_summary()
+    assert "Wegen des Tageslimits verworfen: 1" in text
+    assert "Ausgang unbekannt: 1" in text
+    assert "1 Post " in text
 
 
 async def _breaker_freigeben(channel="tumblr"):
