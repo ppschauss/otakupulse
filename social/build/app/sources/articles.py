@@ -120,8 +120,10 @@ def bild_url(roh) -> str | None:
     """Bildpfad absolut machen — dieselbe Quelle (SITE_BASE_URL) wie die Artikel-URL.
 
     `articles.cover_image_url` steht in der Produktionsdatenbank als RELATIVER Pfad
-    ("/media/anime/banner/195/195604.jpg"); gemessen über alle publizierten Artikel: 1158 relativ,
-    0 absolut. Unverändert durchgereicht landet dieser Wert als `media[0].url` im NPF-Bildblock,
+    ("/media/anime/banner/195/195604.jpg"). Gemessen wurde es über alle publizierten Artikel:
+    jeder einzelne relativ, keiner absolut — das ist die Form der Spalte, keine Momentaufnahme
+    (eine absolute Zahl stünde hier ohne Messdatum und veraltete mit dem nächsten Artikel).
+    Unverändert durchgereicht landet dieser Wert als `media[0].url` im NPF-Bildblock,
     und jeder Tumblr-Post hätte ein kaputtes Cover (das Theme holt es per
     `.op-body > figure:first-child` nach links und fände nichts). Bluesky nutzt denselben Wert
     für die externe Karte und profitiert mit.
