@@ -598,3 +598,35 @@ async def test_fenster_laeuft_nie_rueckwaerts(tmp_db, telegram, monkeypatch):
     await batch.send_tumblr_summary()
     assert len(telegram.gesendet) == 1
     assert await settings.get("tumblr_summary_bis") == spaeter  # nicht zurückgesetzt
+
+
+async def test_auch_ausgang_unbekannt_ist_begrenzt_und_das_senden_gelingt(tmp_db, telegram, caplog):
+    for i in range(80):
+        d = await _entwurf("tumblr", f"u{i}")
+        await models.record_attempt_failure(d, "Ausgang unbekannt: ReadTimeout", give_up=True)
+    for i in range(80):
+        await _gepostet(f"p{i}", titel="T" * 100)
+    await db.conn().execute("UPDATE drafts SET title=? WHERE state='failed'", ("U" * 100,))
+    await db.conn().commit()
+    # Auch das Tageslimit-Feld ist belegt: alle drei Abschnitte voll.
+    for i in range(3):
+        d = await _entwurf("tumblr", f"l{i}")
+        await models.expire_draft(d)
+
+    with caplog.at_level(logging.WARNING):
+        await batch.send_tumblr_summary()
+
+    assert len(telegram.gesendet) == 1  # Senden gelang
+    text = telegram.gesendet[0]
+    assert len(text) <= 4096
+    assert "Ausgang unbekannt: 80" in text
+    gezeigt = sum(1 for i in range(80) if f"news/u{i}\n" in text + "\n")
+    assert 0 < gezeigt < 80
+    assert f"… und {80 - gezeigt} weitere" in text
+    assert "Wegen des Tageslimits verworfen: 3" in text
+    assert "80 Posts veröffentlicht" in text
+    # Die gekürzten Einträge stehen vollständig im Log.
+    meldung = " ".join(r.getMessage() for r in caplog.records)
+    for i in range(gezeigt, 80):
+        assert f"news/u{i}" in meldung
+    assert await settings.get("tumblr_summary_bis") != ""  # Zeitraum rückt vor

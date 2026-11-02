@@ -1,5 +1,9 @@
 """Alle deutschen Texte + Inline-Keyboards zentral."""
+import logging
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+log = logging.getLogger(__name__)
 
 CHANNEL_LABEL = {
     "bluesky": "Bluesky",
@@ -101,41 +105,58 @@ def tageslimit_note(channel: str, anzahl: int, limit: int) -> str:
             f"bitte prüfen, warum so viele Entwürfe anfielen.")
 
 
+def _eintrag_zeilen(p, blog: str = "") -> list[str]:
+    zeilen = [f"• {p['title'] or p['url']}", f"  {p['url']}"]
+    ext = p["external_id"]
+    if blog and ext and ext.isdigit():
+        zeilen.append(f"  https://{blog}/post/{ext}")
+    return zeilen
+
+
+def _anhaengen(text: str, eintraege, grenze: int, blog: str = "") -> tuple[str, int]:
+    """Hängt Einträge an, solange Text samt Hinweis "… und N weitere" unter der Grenze bleibt.
+    Gibt den Text und die Zahl der nicht mehr gezeigten Einträge zurück (Hinweis hängt der Aufrufer an)."""
+    reserve = len("\n… und 9999 weitere")
+    eintraege = list(eintraege)
+    for i, p in enumerate(eintraege):
+        neu = text + "\n" + "\n".join(_eintrag_zeilen(p, blog))
+        if len(neu) + reserve > grenze:
+            return text, len(eintraege) - i
+        text = neu
+    return text, 0
+
+
 def tumblr_tagesmeldung(posts, limit_verworfen, unbekannt, blog: str = "", banner: str = "",
                         max_zeichen: int = 4000) -> str:
     """Tagesmeldung für Tumblr: unklare Ausgänge, Tageslimit-Verwürfe, veröffentlichte Posts.
 
     posts/unbekannt sind Entwurfs-Zeilen (title, url, external_id), limit_verworfen eine Zahl.
     Bei null Posts steht das ausdrücklich da — Schweigen ließe offen, ob der Kanal lief.
+
     Reihenfolge mit Absicht: "Ausgang unbekannt" zuerst, denn nur dort muss jemand auf dem Blog
-    nachsehen; bei einem langen Zeitraum wird die Postliste gekürzt ("… und N weitere"), nie dieser
-    Abschnitt.
+    nachsehen; die Kürzung greift am unwichtigsten Ende zuerst. Jede Liste endet bei Überlänge mit
+    "… und N weitere"; auch "Ausgang unbekannt" hat eine Obergrenze (halbe Meldung), sonst könnte
+    die Meldung bei einem langen Zeitraum so lang werden, dass Telegram sie ablehnt, der Zeitraum
+    nie vorrückt und sie nie wieder ankommt. Gekürzte unklare Ausgänge stehen vollständig im Log.
     """
-    kopf = [f"{banner}📊 Tumblr — Rückblick seit der letzten Meldung"]
+    text = f"{banner}📊 Tumblr — Rückblick seit der letzten Meldung"
     if unbekannt:
-        kopf.append(f"\n❓ Ausgang unbekannt: {len(unbekannt)}")
-        for p in unbekannt:
-            kopf.append(f"• {p['title'] or p['url']}")
-            kopf.append(f"  {p['url']}")
+        text += f"\n\n❓ Ausgang unbekannt: {len(unbekannt)}"
+        text, rest = _anhaengen(text, unbekannt, max_zeichen // 2, blog="")
+        if rest:
+            text += f"\n… und {rest} weitere"
+            log.warning("Tumblr-Tagesmeldung: %d Ausgang-unbekannt-Einträge gekürzt: %s", rest,
+                        ", ".join(p["url"] for p in list(unbekannt)[len(unbekannt) - rest:]))
     if limit_verworfen:
-        kopf.append(f"\n⚠️ Wegen des Tageslimits verworfen: {limit_verworfen}")
+        text += f"\n\n⚠️ Wegen des Tageslimits verworfen: {limit_verworfen}"
     if not posts:
-        kopf.append("\nEs wurde kein Post auf Tumblr veröffentlicht.")
-        return "\n".join(kopf)
+        return text + "\n\nEs wurde kein Post auf Tumblr veröffentlicht."
 
     n = len(posts)
-    kopf.append(f"\n📤 {n} {'Post' if n == 1 else 'Posts'} veröffentlicht:")
-    text = "\n".join(kopf)
-    reserve = len("\n… und 999 weitere")
-    for i, p in enumerate(posts):
-        eintrag = [f"• {p['title'] or p['url']}", f"  {p['url']}"]
-        ext = p["external_id"]
-        if blog and ext and ext.isdigit():
-            eintrag.append(f"  https://{blog}/post/{ext}")
-        neu = text + "\n" + "\n".join(eintrag)
-        if len(neu) + reserve > max_zeichen:
-            return text + f"\n… und {n - i} weitere"
-        text = neu
+    text += f"\n\n📤 {n} {'Post' if n == 1 else 'Posts'} veröffentlicht:"
+    text, rest = _anhaengen(text, posts, max_zeichen, blog)
+    if rest:
+        text += f"\n… und {rest} weitere"
     return text
 
 
