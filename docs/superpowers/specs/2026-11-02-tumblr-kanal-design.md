@@ -22,7 +22,7 @@ OtakuPulse als Quelle nennen.
   Entdeckung auf Tumblr läuft.
 - Der Kanal reiht sich in den bestehenden Social-Agent ein, statt ein zweites
   System zu sein.
-- Die Blog-Seite `otakupulse.tumblr.com` sieht nach OtakuPulse aus.
+- Die Blog-Seite `otakupulse-de.tumblr.com` sieht nach OtakuPulse aus.
 
 ## Nicht-Ziele
 
@@ -97,7 +97,7 @@ Grund `#09090b`, Akzent `#ff4d6d`, Zweitakzent `#8b5cf6`, Zinc-Graustufen.
 
 Mockup: <https://claude.ai/artifact/UWAJgqaFis4HdUNB7CXfnh>
 
-Das Theme betrifft nur die Seite `otakupulse.tumblr.com`. Im Dashboard und in
+Das Theme betrifft nur die Seite `otakupulse-de.tumblr.com`. Im Dashboard und in
 der App — wo die Reichweite entsteht — wird kein Theme gerendert, sondern nur
 der einzelne Post. Deshalb ist der Post-Aufbau (Bild, Schlagzeile, Tags) der
 wichtigere Teil, und das Theme ein einmaliger Nebenschauplatz.
@@ -509,7 +509,7 @@ für Mehrfach-Anime-Artikel. Das ist ausdrücklich nicht Teil dieser Runde.
 
 ## Offen, außerhalb des Codes
 
-- **Blog-Name/Handle**: `otakupulse.tumblr.com` muss registriert werden oder
+- **Blog-Name/Handle**: `otakupulse-de.tumblr.com` muss registriert werden oder
   ist schon vergeben. Das Handle wandert in `TUMBLR_BLOG_IDENTIFIER`.
 - **Tumblr-App registriert** (2026-11-02). Consumer Key und Secret liegen in
   `social/secrets.env`; die Platzhalter stehen in `secrets.env.example`. Der

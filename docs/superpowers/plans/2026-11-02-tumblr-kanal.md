@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Der OtakuPulse-Social-Agent postet neue `news`- und `simulcast`-Artikel automatisch auf `otakupulse.tumblr.com`, mit dem festgelegten Sechs-Slot-Tag-Schema.
+**Goal:** Der OtakuPulse-Social-Agent postet neue `news`- und `simulcast`-Artikel automatisch auf `otakupulse-de.tumblr.com`, mit dem festgelegten Sechs-Slot-Tag-Schema.
 
 **Architecture:** Tumblr reiht sich als weiterer `Channel`-Adapter in den bestehenden Agent ein und hängt am vorhandenen Tagesbatch (18:00, max. 6 Artikel). Die Tag-Herleitung ist eine reine, testbare Funktion in einem eigenen Modul; die Rohdaten dafür liefert die erweiterte Postgres-Abfrage. Tumblr-Entwürfe überspringen die Telegram-Einzelfreigabe, bleiben aber über ein neues kanalweises Trockenflag vom Live-Gang von Bluesky und Mastodon getrennt.
 

@@ -66,7 +66,7 @@ sources/articles ─▶ compose (LLM) ─▶ Queue (drafts) ─▶ Batch (Telegr
 - **Erststart ohne `seed`** = 590 Entwürfe. Immer erst seeden.
 
 ## Tumblr-Kanal
-Zusätzlicher Kanal `tumblr` (Blog `otakupulse.tumblr.com`). Nur Artikel der Kategorien `news` und
+Zusätzlicher Kanal `tumblr` (Blog `otakupulse-de.tumblr.com`). Nur Artikel der Kategorien `news` und
 `simulcast`. Anders als Bluesky/Mastodon gibt es **keine Einzelfreigabe** je Entwurf, dafür ein
 Tageslimit (`TUMBLR_MAX_POSTS_PER_DAY`, Default 6) und einen eigenen Verfall. Tumblr hat keinen
 Idempotency-Key: bei unklarem Ausgang gibt der Poster auf und meldet es, statt doppelt zu posten.

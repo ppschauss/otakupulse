@@ -1,6 +1,6 @@
 # OtakuPulse-Tumblr-Theme „Editorial Dark"
 
-Theme für `otakupulse.tumblr.com`. Eine Datei: [`theme.html`](theme.html).
+Theme für `otakupulse-de.tumblr.com`. Eine Datei: [`theme.html`](theme.html).
 Entwurf und Begründung: `docs/superpowers/specs/2026-11-02-tumblr-kanal-design.md`.
 
 ## Einsetzen
