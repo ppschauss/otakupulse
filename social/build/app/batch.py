@@ -47,7 +47,12 @@ async def ingest(limit: int) -> int:
     for item in items:
         # Tumblr nimmt nur ausgewählte Kategorien und keine Adult-Titel; die anderen
         # Kanäle bekommen den Artikel unverändert.
-        item_channels = [ch for ch in channels if ch != TUMBLR or _fuer_tumblr(item)]
+        try:
+            tumblr_ok = TUMBLR in channels and _fuer_tumblr(item)
+        except Exception:
+            log.exception("Tumblr-Prüfung fehlgeschlagen für %s — kein Tumblr-Entwurf", item.ref)
+            tumblr_ok = False
+        item_channels = [ch for ch in channels if ch != TUMBLR or tumblr_ok]
         # Tags sind Daten, kein Modelltext: aus den Rohdaten abgeleitet, vor dem Modellaufruf.
         # Scheitert das (oder fehlt rarity), entfällt nur der Tumblr-Entwurf dieses Artikels.
         tumblr_tags: list[str] | None = None

@@ -5,8 +5,6 @@ Zwei tragende Verträge:
   zweimal auf denselben Kanal, egal wie oft der Container neu startet.
 - seen_sources: pro Quelle wird nur EINMAL formuliert (Ingest-Dedup über alle Kanäle).
 """
-import sqlite3
-
 import aiosqlite
 
 from . import config
@@ -15,8 +13,8 @@ _conn: aiosqlite.Connection | None = None
 
 # Spalten, die nach dem ersten Release dazukamen: eine bestehende DB bekommt sie per ALTER TABLE.
 _NACHGERUESTETE_SPALTEN = (
-    "ALTER TABLE drafts ADD COLUMN tags TEXT",
-    "ALTER TABLE drafts ADD COLUMN category TEXT",
+    ("tags", "TEXT"),
+    ("category", "TEXT"),
 )
 
 SCHEMA = """
@@ -92,11 +90,13 @@ async def init() -> None:
     await _conn.execute("PRAGMA foreign_keys=ON;")
     await _conn.execute("PRAGMA busy_timeout=5000;")
     await _conn.executescript(SCHEMA)
-    for stmt in _NACHGERUESTETE_SPALTEN:
-        try:
-            await _conn.execute(stmt)
-        except sqlite3.OperationalError:
-            pass  # "duplicate column name": Spalte existiert schon (frische DB oder zweiter Lauf)
+    # Nur fehlende Spalten ergänzen. Bewusst kein breites except: ein echter Fehler
+    # (gesperrt, readonly, I/O) muss laut hochschlagen, sonst scheitert später jedes enqueue.
+    cur = await _conn.execute("PRAGMA table_info(drafts)")
+    vorhanden = {r["name"] for r in await cur.fetchall()}
+    for name, typ in _NACHGERUESTETE_SPALTEN:
+        if name not in vorhanden:
+            await _conn.execute(f"ALTER TABLE drafts ADD COLUMN {name} {typ}")
     await _conn.commit()
 
 

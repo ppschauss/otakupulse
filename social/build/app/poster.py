@@ -24,12 +24,25 @@ async def run_post_pass() -> None:
         if not await breaker.guard(channel):
             continue  # Kanal stillgelegt / Retry-After noch nicht abgelaufen
 
+        try:
+            tags = json.loads(d["tags"] or "[]")
+            if not isinstance(tags, list):
+                raise ValueError("tags ist keine Liste")
+        except (ValueError, TypeError):
+            # Kaputte Tags nie still durch [] ersetzen: sonst ginge ein Tumblr-Post ohne Tags raus.
+            log.exception("Entwurf %s hat unlesbare Tags — als gescheitert markiert.", d["id"])
+            await models.record_attempt_failure(d["id"], "Tags unlesbar (kein gültiges JSON)",
+                                                give_up=True)
+            await _notify(f"⚠️ Entwurf für {T.CHANNEL_LABEL.get(channel, channel)} hat unlesbare "
+                          f"Tags und wurde nicht gepostet.\n{d['url']}")
+            continue
+
         post = Post(
             text=models.effective_body(d),
             url=d["url"],
             title=d["title"],
             image_url=d["image_url"],
-            tags=json.loads(d["tags"] or "[]"),
+            tags=tags,
             category=d["category"],
         )
 

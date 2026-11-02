@@ -95,6 +95,40 @@ async def test_migration_ist_idempotent_auf_bestehender_db(tmp_path, monkeypatch
     assert row["body"] == "alt" and row["tags"] is None and row["category"] is None
 
 
+async def test_halb_migrierte_db_wird_vervollstaendigt(tmp_path, monkeypatch):
+    pfad = str(tmp_path / "halb.sqlite3")
+    c = sqlite3.connect(pfad)
+    c.executescript(_ALTES_SCHEMA)
+    c.execute("ALTER TABLE drafts ADD COLUMN tags TEXT")  # category fehlt noch
+    c.commit()
+    c.close()
+
+    monkeypatch.setattr(config, "DB_PATH", pfad)
+    await db.init()
+    await db.close()
+    assert {"tags", "category"} <= _spalten(pfad)
+
+
+async def test_migration_laesst_echte_fehler_hochschlagen(tmp_path, monkeypatch):
+    """Kein breites except: ein Fehler beim ALTER darf nicht verschluckt werden."""
+    pfad = str(tmp_path / "alt.sqlite3")
+    c = sqlite3.connect(pfad)
+    c.executescript(_ALTES_SCHEMA)
+    c.commit()
+    c.close()
+    monkeypatch.setattr(config, "DB_PATH", pfad)
+    # NOT NULL ohne Default: SQLite lehnt das ALTER auf einer Tabelle mit Zeilen ab
+    monkeypatch.setattr(db, "_NACHGERUESTETE_SPALTEN", (("tags", "TEXT NOT NULL"),))
+    fehler = None
+    try:
+        await db.init()
+    except sqlite3.OperationalError as e:
+        fehler = e
+    finally:
+        await db.close()
+    assert fehler is not None
+
+
 # ---------- Ingest: Verdrahtung ----------
 
 def _item(ref, **kw):
@@ -142,8 +176,9 @@ async def test_ingest_tumblr_bekommt_tags_und_kategorie(tmp_db, monkeypatch):
         "anime", "otakupulse", "sports", "school", "ao no hako"]
     assert per_kanal["tumblr"]["category"] == "simulcast"
     # Bluesky und Mastodon bleiben ohne Tags
-    assert per_kanal["bluesky"]["tags"] is None
-    assert per_kanal["mastodon"]["tags"] is None
+    for kanal in ("bluesky", "mastodon"):
+        assert per_kanal[kanal]["tags"] is None
+        assert per_kanal[kanal]["category"] is None
 
 
 async def test_ingest_fremde_kategorie_entfaellt_nur_fuer_tumblr(tmp_db, monkeypatch):
@@ -186,6 +221,7 @@ async def test_ingest_ohne_tumblr_kanal_braucht_keine_rarity(tmp_db, monkeypatch
     aufrufe = _patch_ingest(monkeypatch, [_item("1")], kanaele=("bluesky",))
     assert await batch.ingest(6) == 1
     assert aufrufe["rarity"] == 0
+    assert aufrufe["compose"] == [("1", ["bluesky"])]  # Bluesky-Aufruf exakt wie vor Tumblr
 
 
 # ---------- Ingest: Tumblr-Pfad degradiert, reißt nichts mit ----------
@@ -228,6 +264,20 @@ async def test_ingest_tags_for_wirft_nur_dieser_artikel_ohne_tumblr(
     assert any(r.levelname == "ERROR" and "1" in r.getMessage() for r in caplog.records)
 
 
+async def test_ingest_fuer_tumblr_wirft_nur_tumblr_entfaellt(tmp_db, monkeypatch, caplog):
+    _patch_ingest(monkeypatch, [_item("1")])
+
+    def kaputt(item):
+        raise AttributeError("kaputtes Item")
+
+    monkeypatch.setattr(batch, "_fuer_tumblr", kaputt)
+    with caplog.at_level("ERROR"):
+        assert await batch.ingest(6) == 2
+    assert sorted(d["channel"] for d in await _drafts()) == ["bluesky", "mastodon"]
+    assert await models.is_seen("article", "1")
+    assert any(r.levelname == "ERROR" for r in caplog.records)
+
+
 # ---------- Poster: Post-Aufbau ----------
 
 class _FakeChannel:
@@ -265,3 +315,17 @@ async def test_poster_ohne_tags_ergibt_leere_liste(tmp_db, monkeypatch):
     (post,) = await _poste(monkeypatch, did)
     assert post.tags == []
     assert post.category is None
+
+
+async def test_poster_kaputte_tags_markieren_entwurf_failed_und_weiter(tmp_db, monkeypatch):
+    kaputt = await _enqueue(source_ref="1", tags=["anime"])
+    await db.conn().execute("UPDATE drafts SET tags='{kein json' WHERE id=?", (kaputt,))
+    await db.conn().commit()
+    gut = await _enqueue(source_ref="2", channel="bluesky")
+    await models.approve(kaputt)
+    posts = await _poste(monkeypatch, gut)  # gibt `gut` frei und läuft durch
+    assert len(posts) == 1  # nur der gute Entwurf geht raus
+    d = await models.get_draft(kaputt)
+    assert d["state"] == "failed"
+    assert "tags" in (d["last_error"] or "").lower()
+    assert (await models.get_draft(gut))["state"] == "posted"
