@@ -22,5 +22,10 @@ case "$1" in
   # CLI-Helfer: laufen im gestarteten Container (teilen sich DB + Env).
   seed)      docker exec "$NAME" python -m app.cli seed "${@:2}" ;;
   cli)       docker exec "$NAME" python -m app.cli "${@:2}" ;;
-  *) echo "Nutzung: $0 {build|up|rebuild|down|restart|logs|seed|cli <cmd>}" ;;
+  # Tests: eigener Wegwerf-Container; Quellcode und Tests werden eingehängt, nur nach
+  # Änderungen an requirements.txt ist ein `build` nötig. Keine DB, kein Netz.
+  test)      docker run --rm -e TZ=Europe/Berlin \
+               -v "$(pwd)/build/app:/app/app:ro" -v "$(pwd)/build/tests:/app/tests:ro" \
+               "$IMAGE" python -m pytest /app/tests -v "${@:2}" ;;
+  *) echo "Nutzung: $0 {build|up|rebuild|down|restart|logs|seed|cli <cmd>|test}" ;;
 esac
