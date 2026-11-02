@@ -119,15 +119,17 @@ async def mark_posted(draft_id: int, external_id: str | None, channel: str,
 
 async def record_attempt_failure(draft_id: int, error: str, give_up: bool) -> None:
     state = "failed" if give_up else "approved"
+    # Beim endgültigen Aufgeben den Zeitpunkt festhalten (für die Tagesmeldung).
     await db.conn().execute(
-        "UPDATE drafts SET attempts=attempts+1, last_error=?, state=? WHERE id=?",
-        (error[:500], state, draft_id),
+        "UPDATE drafts SET attempts=attempts+1, last_error=?, state=?, "
+        "decided_at=CASE WHEN ? THEN ? ELSE decided_at END WHERE id=?",
+        (error[:500], state, 1 if give_up else 0, now_utc_iso(), draft_id),
     )
     await db.conn().commit()
 
 
-async def posted_today(channel: str) -> int:
-    """Zahl der heute (lokaler Tag nach config.TZ, nicht UTC) auf diesem Kanal geposteten Einträge.
+def _heute_bereich_utc() -> tuple[str, str]:
+    """Beginn und Ende des lokalen Tages (config.TZ, nicht UTC) als UTC-ISO-Strings.
 
     posted_at liegt als UTC-ISO ("...+00:00") vor; die lokalen Tagesgrenzen werden daher in
     dasselbe Format umgerechnet und als Bereich verglichen (Sommerzeitwechsel inklusive).
@@ -136,18 +138,69 @@ async def posted_today(channel: str) -> int:
     morgen = heute.date() + timedelta(days=1)
     beginn = datetime.combine(heute.date(), time.min, tzinfo=heute.tzinfo)
     ende = datetime.combine(morgen, time.min, tzinfo=heute.tzinfo)
+    return (beginn.astimezone(timezone.utc).isoformat(),
+            ende.astimezone(timezone.utc).isoformat())
+
+
+def tagesbeginn_utc() -> str:
+    """Beginn des lokalen Tages als UTC-ISO (gleiche Grenze wie posted_today)."""
+    return _heute_bereich_utc()[0]
+
+
+async def posted_today(channel: str) -> int:
+    """Zahl der heute (lokaler Tag nach config.TZ, nicht UTC) auf diesem Kanal geposteten Einträge."""
+    beginn, ende = _heute_bereich_utc()
     cur = await db.conn().execute(
         "SELECT COUNT(*) AS n FROM posted_log WHERE channel=? AND posted_at >= ? AND posted_at < ?",
-        (channel, beginn.astimezone(timezone.utc).isoformat(),
-         ende.astimezone(timezone.utc).isoformat()),
+        (channel, beginn, ende),
     )
     return (await cur.fetchone())["n"]
 
 
+LIMIT_VERWORFEN = "Tageslimit erreicht"  # Markierung in last_error, damit der Verwurf erkennbar bleibt
+AUSGANG_UNBEKANNT = "Ausgang unbekannt"   # Präfix in last_error (siehe poster.run_post_pass)
+
+
+async def posted_between(channel: str, von: str, bis: str):
+    """Im Zeitraum [von, bis) auf diesem Kanal geposteten Entwürfe (UTC-ISO), älteste zuerst."""
+    cur = await db.conn().execute(
+        """SELECT * FROM drafts WHERE channel=? AND state='posted'
+           AND posted_at >= ? AND posted_at < ? ORDER BY posted_at, id""",
+        (channel, von, bis),
+    )
+    return await cur.fetchall()
+
+
+async def limit_discarded_between(channel: str, von: str, bis: str):
+    """Im Zeitraum wegen Tageslimit verworfene Entwürfe (nicht: normal verfallene News)."""
+    cur = await db.conn().execute(
+        """SELECT * FROM drafts WHERE channel=? AND state='expired' AND last_error=?
+           AND decided_at >= ? AND decided_at < ? ORDER BY decided_at, id""",
+        (channel, LIMIT_VERWORFEN, von, bis),
+    )
+    return await cur.fetchall()
+
+
+async def outcome_unknown_between(channel: str, von: str, bis: str):
+    """Im Zeitraum mit 'Ausgang unbekannt' aufgegebene Entwürfe."""
+    cur = await db.conn().execute(
+        """SELECT * FROM drafts WHERE channel=? AND state='failed' AND last_error LIKE ?
+           AND decided_at >= ? AND decided_at < ? ORDER BY decided_at, id""",
+        (channel, AUSGANG_UNBEKANNT + "%", von, bis),
+    )
+    return await cur.fetchall()
+
+
 async def expire_draft(draft_id: int) -> None:
-    """Einen freigegebenen Entwurf verfallen lassen (z.B. Tageslimit erreicht)."""
+    """Einen freigegebenen Entwurf wegen Tageslimit verfallen lassen.
+
+    Zeitpunkt (decided_at) und Grund (last_error) werden festgehalten, damit die Tagesmeldung
+    diese Fälle von normal verfallenen News unterscheiden kann.
+    """
     await db.conn().execute(
-        "UPDATE drafts SET state='expired' WHERE id=? AND state='approved'", (draft_id,)
+        "UPDATE drafts SET state='expired', decided_at=?, last_error=? "
+        "WHERE id=? AND state='approved'",
+        (now_utc_iso(), LIMIT_VERWORFEN, draft_id),
     )
     await db.conn().commit()
 

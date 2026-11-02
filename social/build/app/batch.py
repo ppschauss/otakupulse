@@ -4,12 +4,14 @@
 News verfallen nach 48 h (Queue kann nicht zur Halde werden). Der Nudge kommt genau einmal.
 """
 import logging
+from datetime import timezone
 
 from telegram.constants import ParseMode
 
 from . import config, models, settings, runtime, compose, tagging, texts_de as T
 from .sources import articles
 from .channels import registry
+from . import util
 from .util import today_str, now_utc, parse_iso
 
 log = logging.getLogger(__name__)
@@ -97,6 +99,7 @@ async def run_daily() -> None:
     await expire_pass()
     await ingest(config.MAX_DRAFTS_PER_BATCH)
     await send_batch()
+    await send_tumblr_summary()
 
 
 async def send_batch() -> None:
@@ -124,6 +127,48 @@ async def send_batch() -> None:
     )
     await settings.set("last_batch_day", day)
     await settings.set("last_batch_nudged", "0")
+
+
+SUMMARY_BIS_KEY = "tumblr_summary_bis"  # Ende des zuletzt gemeldeten Zeitraums (UTC-ISO)
+
+
+async def _tumblr_bilanz() -> tuple[str, str]:
+    """Text der Tumblr-Tagesmeldung und das Ende des darin abgedeckten Zeitraums.
+
+    Zeitraum: seit der letzten erfolgreich gesendeten Meldung, beim allerersten Mal ab Beginn
+    des lokalen Tages (dieselbe Grenze wie models.posted_today). Ein reiner 'heute'-Ausschnitt
+    wäre hier falsch: der Batch läuft um 18 Uhr, die Posts des Ingests gehen erst danach raus
+    und fielen sonst nie in eine Meldung.
+    """
+    bis = util.now_local().astimezone(timezone.utc).isoformat()  # gleiche Uhr wie die Tagesgrenze
+    von = await settings.get(SUMMARY_BIS_KEY) or models.tagesbeginn_utc()
+    posts = await models.posted_between(TUMBLR, von, bis)
+    limit = await models.limit_discarded_between(TUMBLR, von, bis)
+    unbekannt = await models.outcome_unknown_between(TUMBLR, von, bis)
+    banner = T.dry_banner(config.dry_channels(), config.all_dry()) if config.is_dry(TUMBLR) else ""
+    return (T.tumblr_tagesmeldung(posts, len(limit), unbekannt,
+                                  blog=config.TUMBLR_BLOG_IDENTIFIER, banner=banner), bis)
+
+
+async def tumblr_summary() -> str:
+    """Tagesmeldung für den Tumblr-Kanal (nie leer); sendet nichts und merkt sich nichts."""
+    return (await _tumblr_bilanz())[0]
+
+
+async def send_tumblr_summary() -> None:
+    """Tumblr-Tagesmeldung an den Freigabe-Chat; der Zeitraum rückt nur nach erfolgreichem Senden vor."""
+    if TUMBLR not in config.CHANNELS_ENABLED:
+        return
+    chat_id = await settings.approval_chat_id()
+    if not chat_id or not runtime.bot:
+        return
+    try:
+        text, bis = await _tumblr_bilanz()
+        await runtime.bot.send_message(chat_id=chat_id, text=text[:4000],
+                                       disable_web_page_preview=True)
+        await settings.set(SUMMARY_BIS_KEY, bis)
+    except Exception:
+        log.exception("Tumblr-Tagesmeldung nicht gesendet — der Zeitraum bleibt offen.")
 
 
 async def expire_pass() -> int:

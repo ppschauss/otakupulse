@@ -101,6 +101,35 @@ def tageslimit_note(channel: str, anzahl: int, limit: int) -> str:
             f"bitte prüfen, warum so viele Entwürfe anfielen.")
 
 
+def tumblr_tagesmeldung(posts, limit_verworfen, unbekannt, blog: str = "", banner: str = "") -> str:
+    """Tagesmeldung für Tumblr: veröffentlichte Posts, Tageslimit-Verwürfe, unklare Ausgänge.
+
+    posts/unbekannt sind Entwurfs-Zeilen (title, url, external_id), limit_verworfen eine Zahl.
+    Bei null Posts steht das ausdrücklich da — Schweigen ließe offen, ob der Kanal lief.
+    """
+    zeilen = [f"{banner}📊 Tumblr — Rückblick seit der letzten Meldung"]
+    if posts:
+        n = len(posts)
+        zeilen.append(f"\n📤 {n} {'Post' if n == 1 else 'Posts'} veröffentlicht:")
+        for p in posts:
+            zeilen.append(f"• {p['title'] or p['url']}")
+            zeilen.append(f"  {p['url']}")
+            ext = p["external_id"]
+            if blog and ext and ext.isdigit():
+                zeilen.append(f"  https://{blog}/post/{ext}")
+    else:
+        zeilen.append("\nEs wurde kein Post auf Tumblr veröffentlicht.")
+    if limit_verworfen:
+        zeilen.append(f"\n⚠️ Wegen des Tageslimits verworfen: {limit_verworfen}")
+    if unbekannt:
+        zeilen.append(f"\n❓ Ausgang unbekannt: {len(unbekannt)} — möglicherweise veröffentlicht, "
+                      f"kein automatischer neuer Versuch. Bitte auf dem Blog nachsehen:")
+        for p in unbekannt:
+            zeilen.append(f"• {p['title'] or p['url']}")
+            zeilen.append(f"  {p['url']}")
+    return "\n".join(zeilen)
+
+
 def channel_down(channel: str, error: str) -> str:
     ch = CHANNEL_LABEL.get(channel, channel)
     return f"🚨 {ch} macht Probleme — Kanal für 6 h stillgelegt.\nFehler: {error[:200]}"

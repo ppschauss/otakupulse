@@ -4,7 +4,8 @@ Kein blindes Feuern: guard(channel) fragt den Breaker, bei Fehler wird zurückge
 nach 3 Versuchen 'failed' + Telegram-Meldung. Trockene Kanäle (DRY_RUN global oder
 DRY_RUN_CHANNELS je Kanal) kurzschließen den echten Post. Tumblr: höchstens ein Entwurf je
 Durchlauf, und nur bis TUMBLR_MAX_POSTS_PER_DAY; darüber verfällt der Entwurf (eine
-Telegram-Meldung je Durchlauf). Entwürfe für Kanäle, die nicht in CHANNELS_ENABLED stehen,
+Telegram-Meldung je Durchlauf). Erfolgreiche Tumblr-Posts werden nicht einzeln gemeldet,
+sondern in der Tagesmeldung (batch.tumblr_summary). Entwürfe für Kanäle, die nicht in CHANNELS_ENABLED stehen,
 bleiben unangetastet liegen.
 """
 import json
@@ -92,7 +93,7 @@ async def run_post_pass() -> None:
             if result.outcome_unknown:
                 # Kein Retry: der Post könnte schon draußen sein, ein zweiter wäre ein Doppelpost.
                 await models.record_attempt_failure(
-                    d["id"], f"Ausgang unbekannt: {result.error or 'unbekannt'}", give_up=True)
+                    d["id"], f"{models.AUSGANG_UNBEKANNT}: {result.error or 'unbekannt'}", give_up=True)
                 await _notify(T.outcome_unknown_note(channel, d["url"], result.error or "unbekannt"))
                 continue
             give_up = int(d["attempts"]) + 1 >= MAX_ATTEMPTS
@@ -110,6 +111,8 @@ async def run_post_pass() -> None:
 
 
 async def _note_posted(channel, url, ext) -> None:
+    if channel == TUMBLR:
+        return  # Tumblr: bis zu 6 Posts am Tag wären Lärm — die tägliche Sammelmeldung (batch) deckt es ab
     await _notify(T.posted_note(channel, url, ext))
 
 

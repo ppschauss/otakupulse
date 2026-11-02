@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from app import batch, breaker, compose, config, db, models, poster, util
+from app import batch, breaker, compose, config, db, models, poster, settings, util
 from app.channels import registry
 from app.channels.base import PostResult
 from app.sources import articles
@@ -321,3 +321,199 @@ async def test_offener_tumblr_breaker_fuehrt_nicht_zum_verwerfen(tmp_db, live, m
     await poster.run_post_pass()
     assert (await models.get_draft(did))["state"] == "approved"  # wartet, wird nicht verworfen
     assert live["meldungen"] == []
+
+
+# ---------- Tagesmeldung statt Einzelmeldung ----------
+
+async def test_einzelmeldung_entfaellt_fuer_tumblr(tmp_db, live):
+    await _entwurf("tumblr", "1")
+    await poster.run_post_pass()
+    assert len(live["tumblr"].posts) == 1
+    assert live["meldungen"] == []  # die Tagesmeldung deckt es ab
+
+
+async def test_einzelmeldung_bleibt_fuer_bluesky_und_mastodon(tmp_db, live):
+    await _entwurf("bluesky", "1")
+    await _entwurf("mastodon", "2")
+    await poster.run_post_pass()
+    assert len(live["meldungen"]) == 2
+    assert any("Bluesky" in m and "/news/1" in m for m in live["meldungen"])
+    assert any("Mastodon" in m and "/news/2" in m for m in live["meldungen"])
+
+
+async def test_einzelmeldung_entfaellt_auch_im_trockenlauf_fuer_tumblr(tmp_db, live, monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset({"tumblr", "bluesky"}))
+    await _entwurf("tumblr", "1")
+    await _entwurf("bluesky", "2")
+    await poster.run_post_pass()
+    assert len(live["meldungen"]) == 1 and "Bluesky" in live["meldungen"][0]
+
+
+async def _gepostet(ref, titel="Titel", url=None, ext="111", channel="tumblr", zeit=None):
+    did = await models.enqueue(
+        batch_day="2026-11-02", channel=channel, source_kind="article", source_ref=ref,
+        url=url or f"https://otakupulse.de/news/{ref}", image_url=None, title=titel,
+        body="B", perishable=True)
+    await models.approve(did)
+    await models.mark_posted(did, ext, channel, "article", ref)
+    if zeit:
+        await db.conn().execute("UPDATE drafts SET posted_at=? WHERE id=?", (zeit, did))
+        await db.conn().execute("UPDATE posted_log SET posted_at=? WHERE draft_id=?", (zeit, did))
+        await db.conn().commit()
+    return did
+
+
+async def test_tagesmeldung_zaehlt_posts_und_nennt_links(tmp_db):
+    await _gepostet("a", titel="Erste Meldung")
+    await _gepostet("b", titel="Zweite Meldung")
+    text = await batch.tumblr_summary()
+    assert "2 Posts" in text
+    assert "Erste Meldung" in text and "Zweite Meldung" in text
+    assert "https://otakupulse.de/news/a" in text
+    assert "https://otakupulse.de/news/b" in text
+
+
+async def test_tagesmeldung_bei_null_posts(tmp_db):
+    text = await batch.tumblr_summary()
+    assert text.strip()  # kein leerer String
+    assert "Tumblr" in text and "kein" in text.lower()
+    assert "0 Posts" not in text
+
+
+async def test_tagesmeldung_ein_post_steht_im_singular(tmp_db):
+    await _gepostet("a")
+    text = await batch.tumblr_summary()
+    assert "1 Post " in text
+    assert "1 Posts" not in text
+
+
+async def test_tagesmeldung_nennt_verworfene_und_unbekannte(tmp_db, live, monkeypatch):
+    # Verwurf wegen Tageslimit: ueber den echten Poster-Weg, damit die Markierung stimmt.
+    monkeypatch.setattr(config, "TUMBLR_MAX_POSTS_PER_DAY", 0)
+    await _entwurf("tumblr", "v1")
+    await _entwurf("tumblr", "v2")
+    await poster.run_post_pass()
+    monkeypatch.setattr(config, "TUMBLR_MAX_POSTS_PER_DAY", 6)
+
+    # Ausgang unbekannt: ebenfalls ueber den Poster-Weg.
+    class _Unklar:
+        async def post(self, post):
+            return PostResult(ok=False, error="ReadTimeout: ", outcome_unknown=True)
+
+    live["tumblr"] = _Unklar()
+    await _entwurf("tumblr", "unklar-1")
+    await poster.run_post_pass()
+
+    text = await batch.tumblr_summary()
+    assert "Tageslimit" in text and "2" in text
+    assert "Ausgang unbekannt" in text
+    assert "https://otakupulse.de/news/unklar-1" in text
+    assert "auf dem Blog nachsehen" in text
+
+
+async def test_tagesmeldung_zaehlt_nur_echte_tageslimit_verwuerfe(tmp_db):
+    # Verderbliche, ueberfaellige Entwuerfe und sonstige Fehlschlaege sind keine Limit-Verwuerfe
+    # bzw. keine unklaren Ausgaenge und stehen daher nicht in der Meldung.
+    alt = await _entwurf("tumblr", "alt")
+    await _perishable_at_setzen(alt, -1)
+    await models.expire_due()
+    kaputt = await _entwurf("tumblr", "kaputt")
+    await models.record_attempt_failure(kaputt, "HTTP 403: nope", give_up=True)
+    text = await batch.tumblr_summary()
+    assert "Tageslimit" not in text
+    assert "Ausgang unbekannt" not in text
+    assert "kein" in text.lower()
+
+
+async def test_tagesmeldung_ignoriert_andere_kanaele(tmp_db):
+    await _gepostet("b1", channel="bluesky")
+    await _gepostet("m1", channel="mastodon")
+    text = await batch.tumblr_summary()
+    assert "news/b1" not in text and "news/m1" not in text
+    assert "kein" in text.lower()
+
+
+async def test_tagesmeldung_wiederholt_nichts_aus_dem_letzten_zeitraum(tmp_db, monkeypatch):
+    _jetzt(monkeypatch, datetime(2026, 11, 2, 18, 0, tzinfo=ZoneInfo("Europe/Berlin")))
+    await _gepostet("alt", zeit="2026-11-02T10:00:00+00:00")
+    await settings.set("tumblr_summary_bis", "2026-11-02T12:00:00+00:00")
+    await _gepostet("neu", zeit="2026-11-02T15:00:00+00:00")
+    text = await batch.tumblr_summary()
+    assert "news/neu" in text and "news/alt" not in text
+
+
+async def test_tagesmeldung_ohne_vorherige_meldung_beginnt_am_lokalen_tag(tmp_db, monkeypatch):
+    # Gleiche Tagesgrenzen wie posted_today: Berlin im November = UTC+1.
+    _jetzt(monkeypatch, datetime(2026, 11, 2, 12, 0, tzinfo=ZoneInfo("Europe/Berlin")))
+    await _gepostet("gestern", zeit="2026-11-01T22:30:00+00:00")  # 23:30 lokal gestern
+    await _gepostet("heute", zeit="2026-11-01T23:30:00+00:00")    # 00:30 lokal heute
+    text = await batch.tumblr_summary()
+    assert "news/heute" in text and "news/gestern" not in text
+
+
+class _Bot:
+    """Falscher Telegram-Bot: merkt sich Texte, kann auf Wunsch scheitern."""
+
+    def __init__(self):
+        self.gesendet = []
+        self.kaputt = False  # True: die Tagesmeldung (Tumblr) scheitert, der Batch-Kopf nicht
+
+    async def send_message(self, **kw):
+        if self.kaputt and "Tumblr" in kw["text"]:
+            raise RuntimeError("Telegram weg")
+        self.gesendet.append(kw["text"])
+
+
+@pytest.fixture
+def telegram(monkeypatch):
+    from app import runtime
+
+    bot = _Bot()
+
+    async def chat():
+        return 42
+
+    async def nichts_ingesten(limit):
+        return 0
+
+    monkeypatch.setattr(runtime, "bot", bot)
+    monkeypatch.setattr(settings, "approval_chat_id", chat)
+    monkeypatch.setattr(batch, "ingest", nichts_ingesten)
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", ["bluesky", "mastodon", "tumblr"])
+    return bot
+
+
+async def test_run_daily_haengt_tagesmeldung_an_den_batch(tmp_db, telegram):
+    await _gepostet("a", titel="Erste Meldung")
+    await batch.run_daily()
+    assert len(telegram.gesendet) == 2  # Batch-Kopf (keine Entwuerfe) + Tagesmeldung
+    assert "Keine neuen Entwürfe" in telegram.gesendet[0]
+    assert "Erste Meldung" in telegram.gesendet[1]
+
+
+async def test_run_daily_meldet_ausdruecklich_bei_null_posts(tmp_db, telegram):
+    await batch.run_daily()
+    assert len(telegram.gesendet) == 2
+    assert "Tumblr" in telegram.gesendet[1] and "kein" in telegram.gesendet[1].lower()
+
+
+async def test_run_daily_zweimal_meldet_posts_nur_einmal(tmp_db, telegram):
+    await _gepostet("a", titel="Erste Meldung")
+    await batch.run_daily()
+    await batch.run_daily()
+    assert sum("Erste Meldung" in t for t in telegram.gesendet) == 1
+
+
+async def test_run_daily_ohne_tumblr_kanal_keine_tagesmeldung(tmp_db, telegram, monkeypatch):
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", ["bluesky", "mastodon"])
+    await batch.run_daily()
+    assert len(telegram.gesendet) == 1 and not any("Tumblr" in t for t in telegram.gesendet)
+
+
+async def test_fehlgeschlagener_versand_schiebt_den_zeitraum_nicht_weiter(tmp_db, telegram):
+    await _gepostet("a", titel="Erste Meldung")
+    telegram.kaputt = True
+    await batch.run_daily()  # darf nicht werfen
+    telegram.kaputt = False
+    await batch.run_daily()
+    assert any("Erste Meldung" in t for t in telegram.gesendet)
