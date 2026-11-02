@@ -247,7 +247,12 @@ Reihenfolge einhalten. Die Punkte stammen aus den Reviews der Tasks 1 bis 9.
 6. **Seeden.** `docker exec otakupulse-social python -m app.cli seed` markiert alle bereits
    publizierten Artikel als gesehen. **Ohne diesen Schritt zieht jeder Lauf 6 Altartikel nach**
    (siehe Schritt 4). Danach `status`: „Bekannte Quellen“ entspricht der Zahl der publizierten
-   Artikel. **Erst jetzt** `CHANNELS_ENABLED=tumblr` setzen (weiter `DRY_RUN=1`) und neu starten;
+   Artikel. **Hinweis:** Der Zähler summiert alle Einträge in `seen_sources`, unabhängig von
+   der Quellenart. Kommt später ein weiterer Seed dazu (etwa für Katalogtitel einer anderen
+   Quellenart), steigt die Zahl entsprechend und dieser Abgleich gilt nur noch für den Anteil
+   der Artikel. Dann besser direkt in der Datenbank nach `kind='article'` zählen.
+
+   **Erst jetzt** `CHANNELS_ENABLED=tumblr` setzen (weiter `DRY_RUN=1`) und neu starten;
    der Zustand bleibt im Volume. Bluesky und Mastodon bleiben draußen, solange sie keine Konten
    haben (siehe „Kanäle“ oben und Schritt 13).
 7. **Einen vollen Tag trocken laufen lassen.** Einen Lauf stößt man mit `/batch` im Bot an
