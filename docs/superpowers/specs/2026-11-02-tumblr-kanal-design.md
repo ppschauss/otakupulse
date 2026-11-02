@@ -30,7 +30,7 @@ OtakuPulse als Quelle nennen.
 - Keine Tumblr-spezifische Redaktion. Die Formulierung kommt aus dem
   bestehenden `compose.py`-Lauf.
 - Keine Migration von Bluesky/Mastodon. Deren Verhalten bleibt unverändert.
-- Kein Backfill der 1129 Altartikel (siehe „Volumen").
+- Kein Backfill der 1161 Altartikel (siehe „Volumen").
 
 ## Anti-Ziele
 
@@ -47,9 +47,22 @@ läuft:
 
 ## Rahmenbedingungen: was schon existiert
 
-Der Social-Agent liegt in `social/` (Python-Container, `manage.sh` mit
-`docker run`, kein compose-Plugin auf dem Unraid-Host). Der Code liegt unter
-`social/build/app/`; die Pfade in der Tabelle sind relativ dazu.
+Der Social-Agent liegt im Repo unter `social/`; der Code unter
+`social/build/app/`, die Pfade in der Tabelle sind relativ dazu.
+
+**Wo das läuft (geprüft 2026-11-02):** OtakuPulse läuft produktiv auf dem VPS
+`onecom-vps` als **Coolify-Service** `otakupulse`
+(uuid `ei9kq0mxqajfydp1vcydbnyg`, Docker-Netz gleichen Namens). Darin unter
+anderem `otakupulse-app` (bedient `www.otakupulse.de`), `otakupulse-enrich`,
+`otakupulse-companion` und `otakupulse-db` (postgres:16-alpine). Die Kopie
+auf dem Unraid-Host ist der Altstand: dortige Container sind gestoppt, und
+die dort noch laufende Postgres ist eingefroren (neuester Artikel
+2026-10-25 gegenüber 2026-11-02 in der Produktion). **Alle Zahlen in diesem
+Dokument stammen aus der Produktionsdatenbank auf dem VPS.**
+
+Der Social-Agent existiert dort noch nicht — er ist auf dem VPS ein
+Neuzugang. `manage.sh` bleibt das Werkzeug für lokale Entwicklung und Tests;
+ausgeliefert wird über Coolify (siehe „Deployment“).
 
 | Datei | Rolle |
 |---|---|
@@ -107,7 +120,7 @@ später eine Zahl darauf stützen.
 
 ### Herleitung von Slot 3–6
 
-Verknüpfung: `articles_rels.anime_id` → `anime`. Bei **1126 von 1129**
+Verknüpfung: `articles_rels.anime_id` → `anime`. Bei **1158 von 1161**
 publizierten Artikeln gesetzt, die Slots sind also praktisch immer füllbar.
 Gibt es keinen verknüpften Anime, entfallen Slot 3–6 und der Post geht mit
 `#anime #otakupulse` raus.
@@ -180,7 +193,7 @@ Verifizierte Beispielausgaben dieser Regeln gegen die Live-Datenbank:
 
 | Artikel | Anime | Ergebnis |
 |---|---|---|
-| Blue Box S2 Episode 4 | Ao no Hako Season 2 | `#anime #otakupulse #sports #school #badminton #blue box` |
+| Blue Box S2 Episode 4 | Ao no Hako Season 2 | `#anime #otakupulse #sports #coming of age #school #blue box` |
 | Dandadan | Dandadan | `#anime #otakupulse #supernatural #urban fantasy #youkai #dandadan` |
 | Overgeared Episode 5 | Tempal: Item no Chikara | `#anime #otakupulse #adventure #virtual world #video games #overgeared` |
 
@@ -189,9 +202,9 @@ Verifizierte Beispielausgaben dieser Regeln gegen die Live-Datenbank:
 Alle gegen die laufende Postgres geprüft, nicht geschätzt. Sie sind der Grund
 für die Regeln oben; wer sie ignoriert, baut etwas Kaputtes.
 
-**Befund 1 — `articles.tags` ist leer.** Belegt bei 6 von 1129 publizierten
+**Befund 1 — `articles.tags` ist leer.** Belegt bei 6 von 1161 publizierten
 Artikeln. Als Quelle für `#tag1 #tag2` fällt das Feld aus. Stattdessen
-`anime_tags` des verknüpften Anime: gefüllt bei 10 201 von 11 057 Anime, und
+`anime_tags` des verknüpften Anime: gefüllt bei 10 202 von 11 058 Anime, und
 mit `rank` zum Sortieren.
 
 **Befund 2 — die höchstgerankten Tags sind unbrauchbar.** Die AniList-Tags
@@ -311,8 +324,8 @@ Offiziell belegte Limits: **250 veröffentlichte Posts pro Tag und Nutzer**,
 
 ### 5. Volumen und Drosselung
 
-Von 1129 publizierten Artikeln sind 637 `simulcast` (Episoden-Meldungen) und
-401 `news`. In einer Simulcast-Nacht entstehen entsprechend viele Artikel
+Von 1161 publizierten Artikeln sind 668 `simulcast` (Episoden-Meldungen) und
+402 `news`. In einer Simulcast-Nacht entstehen entsprechend viele Artikel
 gleichzeitig. Ungebremst sieht das auf Tumblr nach Bot aus, lange bevor das
 250er-Limit greift.
 
@@ -353,6 +366,31 @@ Nach dem Muster von `secrets.env.example`:
 Token-Felder je nach Auth-Verfahren, `TUMBLR_MAX_POSTS_PER_DAY`,
 `TUMBLR_MIN_GAP_MINUTES`. `tumblr` in `CHANNELS_ENABLED` und in
 `registry._FACTORY`.
+
+### 8. Deployment: Coolify-Service auf dem VPS
+
+Der Agent wird **kein** eigener Dienst auf Unraid. Er kommt als weiterer
+Container in das Compose des bestehenden Coolify-Service `otakupulse`
+(uuid `ei9kq0mxqajfydp1vcydbnyg`). Das ist die einzige Stelle, von der aus er
+`otakupulse-db` erreicht, ohne die Datenbank nach außen zu öffnen.
+
+- `PG_HOST=otakupulse-db`, `PG_PORT=5432`, `PG_DB=otakupulse`,
+  `PG_USER=social_ro`. Die Rolle existiert auf der Produktionsdatenbank
+  bereits (geprüft 2026-11-02).
+- Das Image wird aus `social/build/` gebaut. Ob Coolify es selbst baut oder
+  eine Registry nötig ist, hängt an der Service-Konfiguration und gilt beim
+  Bau zu klären.
+- Alle Secrets als Service-Umgebungsvariablen in Coolify, nicht als Datei im
+  Container und nicht im Repo.
+- Die SQLite-Zustandsdatei (`drafts`, `posted_log`, `seen_sources`) braucht ein
+  **persistentes Volume**. Ohne das verliert ein Redeploy den Dedup-Zustand,
+  und der nächste Lauf postet alles erneut.
+- `manage.sh` bleibt für lokale Entwicklung und Tests. Es ist ab jetzt
+  ausdrücklich **kein** Deploy-Weg mehr.
+
+**Eingriff in die Produktion:** Das Compose dieses Service bedient auch
+`www.otakupulse.de`. Eine Änderung daran ist ein Eingriff in die laufende
+Seite und gehört abgestimmt, nicht nebenbei gemacht.
 
 ## Verifikation
 
@@ -431,8 +469,8 @@ bleiben liegen, weil Bluesky und Mastodon trocken bleiben.
 
 ### Umfang: nur `news` und `simulcast`
 
-Auf Tumblr gehen ausschließlich Artikel der Kategorien `news` (401) und
-`simulcast` (637), zusammen 1038 von 1129. Ausgeschlossen sind `ranking` (36),
+Auf Tumblr gehen ausschließlich Artikel der Kategorien `news` (402) und
+`simulcast` (668), zusammen 1070 von 1161. Ausgeschlossen sind `ranking` (36),
 `guide` (20), `editorial` (18), `review` (9) und `seasonal_preview` (8).
 
 Grund: `Articles.relatedAnime` ist `hasMany`, und bei genau diesen Kategorien

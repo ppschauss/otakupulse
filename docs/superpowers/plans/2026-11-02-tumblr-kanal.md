@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- Code liegt unter `social/build/app/`. Der Unraid-Host hat **kein** compose-Plugin; alles läuft über `social/manage.sh` (`docker run`).
+- Code liegt unter `social/build/app/`. `social/manage.sh` ist das Werkzeug für lokale Entwicklung und Tests (`docker run`, kein compose-Plugin vorausgesetzt).
+- **Zielumgebung ist der VPS**, nicht Unraid: OtakuPulse läuft dort als Coolify-Service `otakupulse` (uuid `ei9kq0mxqajfydp1vcydbnyg`). Der Tumblr-Agent kommt als weiterer Container in dieses Service-Compose, damit er `otakupulse-db` über das Service-Netz erreicht. `PG_HOST=otakupulse-db`, Rolle `social_ro` (existiert dort bereits).
 - Kommentare und Log-Meldungen auf Deutsch, wie im bestehenden Code.
 - Secrets ausschließlich in `social/secrets.env` (gitignored). Platzhalter in `secrets.env.example`. Niemals Werte ins Repo.
 - Postgres wird **nur lesend** über die Rolle `social_ro` angesprochen.
@@ -27,7 +28,7 @@
 Fünf Eingaben, die der Entwurf voraussetzt, aber nicht als Testfall benennt. Jede bekommt ihren Test in der Task, der den Code besitzt.
 
 1. **Ein Tag enthält ein Komma.** Tumblr trennt den `tags`-Parameter an Kommas — ein Tag mit Komma zerfällt in zwei falsche Tags. Kommas (und Steuerzeichen) müssen vor dem Senden entfernt werden. → Task 2 und Task 6.
-2. **Anime ohne verwertbare Genres oder Tags.** 856 der 11 057 Anime haben keine Tags. Der Post muss mit weniger als sechs Tags rausgehen, nicht abstürzen. → Task 1.
+2. **Anime ohne verwertbare Genres oder Tags.** 856 der 11 058 Anime haben keine Tags. Der Post muss mit weniger als sechs Tags rausgehen, nicht abstürzen. → Task 1.
 3. **Artikel ohne `cover_image_url`.** Der NPF-Post darf dann keinen leeren Bild-Block enthalten; der Kicker rutscht an die erste Stelle. → Task 6.
 4. **Tumblr antwortet 429 oder das Tageslimit ist erschöpft.** `retry_after` muss aus dem Header kommen, damit der Breaker den Kanal still legt statt zu hämmern. → Task 6.
 5. **Serientitel wird durch die Normalisierung leer oder zu kurz.** Dann entfällt Slot 6, statt einen sinnlosen Tag zu senden. → Task 2.
@@ -669,13 +670,69 @@ git commit -m "feat(social): taegliche Tumblr-Meldung statt Einzelfreigabe"
 
 ---
 
-## Inbetriebnahme (nach Task 9, von Hand)
+### Task 10: Deployment als Coolify-Service
 
-Diese Schritte sind kein Code und gehören nicht in die Tasks, aber ohne sie geht nichts live. Reihenfolge einhalten.
+**Files:**
+- Create: `social/DEPLOY.md`
+- Modify: `social/README.md`
 
-1. `./manage.sh build && ./manage.sh seed` — ohne `seed` erzeugt der erste Lauf über tausend Entwürfe.
-2. `DRY_RUN=1`, einen vollen Tag laufen lassen. Die Tag-Zeilen von mindestens 30 Artikeln quer über `news` und `simulcast` von Hand durchsehen; jeder peinliche oder explizite Tag ist ein Grund, `TAG_BLOCKLIST` zu erweitern und erneut zu prüfen.
-3. `DRY_RUN=0` **mit** `DRY_RUN_CHANNELS=bluesky,mastodon`, und `TUMBLR_BLOG_IDENTIFIER` auf einen **Test-Tumblr** zeigend.
-4. Ersten echten Post im Browser prüfen: sitzt das Cover links? Wenn das erste Bild nicht als erstes Kind in `.op-body` ankommt, den Selektor in `social/tumblr-theme/theme.html` nachziehen (siehe dortige README).
+**Interfaces:**
+- Consumes: das fertige Image aus `social/build/`
+- Produces: kein Code — eine nachvollziehbare Deploy-Anleitung plus die
+  Compose-Erweiterung, die in Coolify eingetragen wird
+
+Dieser Task schreibt **keinen** Python-Code und hat keinen Testzyklus im
+üblichen Sinn. Er ist trotzdem ein eigener Task, weil ohne ihn nichts
+ausgeliefert wird.
+
+- [ ] **Step 1: Compose-Fragment für den Service schreiben**
+
+Ein `social`-Container im Compose des Coolify-Service `otakupulse`
+(uuid `ei9kq0mxqajfydp1vcydbnyg`), im selben Netz wie `otakupulse-db`:
+Image aus `social/build/`, `PG_HOST=otakupulse-db`, `PG_USER=social_ro`,
+`DB_PATH=/data/social.sqlite3` und ein **persistentes Volume auf `/data`**.
+Ohne das Volume verliert jeder Redeploy den Dedup-Zustand und der nächste
+Lauf postet alles erneut.
+
+- [ ] **Step 2: `social/DEPLOY.md` schreiben**
+
+Compose-Fragment, die vollständige Liste der Service-Umgebungsvariablen
+(Namen, keine Werte), der Weg zum Erstdeploy, und wie man Logs liest. Dazu
+ausdrücklich: `manage.sh` ist lokal, Coolify ist produktiv.
+
+- [ ] **Step 3: Prüfen, dass die Datenbank erreichbar ist**
+
+Nach dem Deploy aus dem Container heraus eine Leseabfrage gegen
+`otakupulse-db` als `social_ro`.
+Expected: Zeilenzahl aus `articles`, kein Verbindungsfehler
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add social/DEPLOY.md social/README.md
+git commit -m "docs(social): Deployment als Coolify-Service auf dem VPS"
+```
+
+---
+
+## Inbetriebnahme (nach Task 10, von Hand)
+
+Kein Code, aber ohne diese Schritte geht nichts live. Reihenfolge einhalten.
+
+1. **Deploy mit `DRY_RUN=1`** in den Coolify-Service, Volume auf `/data`
+   gesetzt. Dann `seed` ausführen — ohne `seed` erzeugt der erste Lauf
+   über tausend Entwürfe.
+2. Einen vollen Tag trocken laufen lassen. Die Tag-Zeilen von mindestens 30
+   Artikeln quer über `news` und `simulcast` von Hand durchsehen. Jeder
+   peinliche oder explizite Tag ist ein Grund, `TAG_BLOCKLIST` zu erweitern
+   und erneut zu prüfen.
+3. `DRY_RUN=0` **mit** `DRY_RUN_CHANNELS=bluesky,mastodon`, und
+   `TUMBLR_BLOG_IDENTIFIER` auf einen **Test-Tumblr** zeigend.
+4. Ersten echten Post im Browser prüfen: sitzt das Cover links? Wenn das
+   erste Bild nicht als erstes Kind in `.op-body` ankommt, den Selektor in
+   `social/tumblr-theme/theme.html` nachziehen (siehe dortige README).
 5. `TUMBLR_BLOG_IDENTIFIER` auf den Marken-Blog umstellen.
-6. Den Consumer Secret in der Tumblr-App neu erzeugen — der alte stand in einem Screenshot.
+6. Den Tumblr-Consumer-Secret neu erzeugen — der alte stand in einem
+   Screenshot.
+7. Die App unter `tumblr.com/oauth/apps` von `Otaku` auf `OtakuPulse`
+   umbenennen; der Name erscheint öffentlich als „via <Name>“ an jedem Post.
