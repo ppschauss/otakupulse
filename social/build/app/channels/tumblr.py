@@ -25,8 +25,9 @@ AUTHENTIFIZIERUNG (am 2026-11-02 gegen github.com/tumblr/docs, api.md, geprueft)
     sonst steht der Kanal nach Tagen still.
   Gewaehlt: OAuth 1.0a (HMAC-SHA1) mit festem Token + Token-Secret aus der Umgebung. Das ist
   das einzige Verfahren, das die Doku fuer diese Route ausdruecklich nennt, und es braucht
-  keine Erneuerung zur Laufzeit. Die Signatur ist hier selbst gebaut (kein Zusatzpaket) und
-  gegen einen bekannten Testvektor geprueft.
+  keine Erneuerung zur Laufzeit. Die Signatur ist selbst gebaut (kein Zusatzpaket), liegt in
+  app/oauth1.py (ohne Abhaengigkeiten, damit auch tools/tumblr_auth.py sie nutzt) und ist gegen
+  bekannte Testvektoren geprueft.
   OFFEN (nicht ohne echte Zugangsdaten pruefbar):
   - Ob der Live-Server die Signatur tatsaechlich akzeptiert (JSON-Body, daher fliesst der
     Body nicht in die Signatur ein, nur die oauth_*-Parameter).
@@ -46,17 +47,12 @@ Konfiguration und Fehler beim Bau von Body/Auth-Header). Jeder andere Fehler nac
 jedes 5xx setzt `PostResult.outcome_unknown=True`; poster.py gibt dann sofort auf und meldet es.
 4xx ist ein endgueltiger Fehlschlag, 429 hat seinen eigenen Pfad mit retry_after.
 """
-import base64
-import hashlib
-import hmac
 import logging
-import secrets
-import time
-from urllib.parse import parse_qsl, quote, urlsplit
 
 import httpx
 
 from .. import config
+from ..oauth1 import oauth1_header
 from ..tagging import sanitize_tag
 from .base import Channel, Post, PostResult
 
@@ -69,42 +65,6 @@ _KATEGORIE_ANZEIGE = {
     "news": "News",
     "simulcast": "Simulcast",
 }
-
-
-def _pct(wert) -> str:
-    """Prozent-Kodierung nach RFC 3986, wie OAuth 1.0a sie verlangt."""
-    return quote(str(wert), safe="~")
-
-
-def oauth1_header(
-    method: str, url: str, *, consumer_key: str, consumer_secret: str, token: str,
-    token_secret: str, extra_params: dict | None = None, nonce: str | None = None,
-    timestamp: str | None = None,
-) -> str:
-    """OAuth-1.0a-Authorization-Header (HMAC-SHA1).
-
-    `extra_params` sind formularkodierte Body-Parameter, die in die Signatur gehoeren. Bei einem
-    JSON-Body (Tumblr-NPF) bleibt es leer: dann zaehlen nur Query- und oauth_*-Parameter.
-    """
-    oauth = {
-        "oauth_consumer_key": consumer_key,
-        "oauth_nonce": nonce or secrets.token_hex(16),
-        "oauth_signature_method": "HMAC-SHA1",
-        "oauth_timestamp": timestamp or str(int(time.time())),
-        "oauth_token": token,
-        "oauth_version": "1.0",
-    }
-    teile = urlsplit(url)
-    basis_url = f"{teile.scheme.lower()}://{teile.netloc.lower()}{teile.path}"
-    alle = list(oauth.items()) + parse_qsl(teile.query, keep_blank_values=True)
-    alle += list((extra_params or {}).items())
-    norm = sorted((_pct(k), _pct(v)) for k, v in alle)
-    param_str = "&".join(f"{k}={v}" for k, v in norm)
-    basis = "&".join([method.upper(), _pct(basis_url), _pct(param_str)])
-    schluessel = f"{_pct(consumer_secret)}&{_pct(token_secret)}".encode()
-    sig = base64.b64encode(hmac.new(schluessel, basis.encode(), hashlib.sha1).digest()).decode()
-    oauth["oauth_signature"] = sig
-    return "OAuth " + ", ".join(f'{k}="{_pct(v)}"' for k, v in sorted(oauth.items()))
 
 
 def _kicker(category) -> str | None:

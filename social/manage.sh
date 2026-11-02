@@ -26,6 +26,7 @@ case "$1" in
   # Änderungen an requirements.txt ist ein `build` nötig. Keine DB, kein Netz.
   test)      docker run --rm -e TZ=Europe/Berlin \
                -v "$(pwd)/build/app:/app/app:ro" -v "$(pwd)/build/tests:/app/tests:ro" \
+               -v "$(pwd)/tools:/app/tools:ro" \
                "$IMAGE" python -m pytest /app/tests -v "${@:2}" ;;
   *) echo "Nutzung: $0 {build|up|rebuild|down|restart|logs|seed|cli <cmd>|test}" ;;
 esac
