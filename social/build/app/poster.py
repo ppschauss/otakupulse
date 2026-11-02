@@ -73,6 +73,12 @@ async def run_post_pass() -> None:
             await _note_posted(channel, d["url"], result.external_id)
         else:
             await breaker.record_fail(channel, result.error or "unbekannt", result.retry_after)
+            if result.outcome_unknown:
+                # Kein Retry: der Post könnte schon draußen sein, ein zweiter wäre ein Doppelpost.
+                await models.record_attempt_failure(
+                    d["id"], f"Ausgang unbekannt: {result.error or 'unbekannt'}", give_up=True)
+                await _notify(T.outcome_unknown_note(channel, d["url"], result.error or "unbekannt"))
+                continue
             give_up = int(d["attempts"]) + 1 >= MAX_ATTEMPTS
             await models.record_attempt_failure(d["id"], result.error or "unbekannt", give_up)
             if give_up:

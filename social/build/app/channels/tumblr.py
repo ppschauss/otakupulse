@@ -38,6 +38,10 @@ AUTHENTIFIZIERUNG (am 2026-11-02 gegen github.com/tumblr/docs, api.md, geprueft)
   man auf OAuth2, aendert sich nur diese eine Methode.
 
 Keine eigene Retry-Logik: Wiederholung, Breaker und Versuchszaehler liegen in poster.py.
+Der Adapter markiert aber Ausgaenge, die man nicht wiederholen darf: Tumblr hat keinen
+Idempotency-Key, nach ReadTimeout/WriteTimeout/PoolTimeout und nach 502/503/504 kann der Post
+trotzdem veroeffentlicht sein. Dann steht `PostResult.outcome_unknown=True`, und poster.py gibt
+sofort auf und meldet es. ConnectError/ConnectTimeout bleiben normal wiederholbar.
 """
 import base64
 import hashlib
@@ -153,6 +157,40 @@ def _tags_param(tags) -> str:
     return ",".join(t for t in sauber if t)
 
 
+# Statuscodes und Fehler, nach denen unklar bleibt, ob der Post veröffentlicht wurde.
+_AUSGANG_UNBEKANNT_STATUS = frozenset({502, 503, 504})
+_AUSGANG_UNBEKANNT_FEHLER = (httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout)
+
+_RETRY_AFTER_MAX = 86400  # ein Tag; größere Werte würden im Breaker überlaufen
+
+
+def _retry_after(roh) -> int | None:
+    """Retry-After in Sekunden, auf 1..86400 geklemmt; fehlend oder unlesbar: None."""
+    try:
+        sek = int(roh or "0")
+    except (ValueError, TypeError):
+        return None  # Datumsformat o. ä.: lieber keine Angabe als ein Absturz
+    if sek == 0:
+        return None
+    return max(1, min(sek, _RETRY_AFTER_MAX))
+
+
+def _post_id(r: httpx.Response) -> str | None:
+    """ID des neuen Posts, falls die Antwort sie hergibt; jede andere Form ergibt None."""
+    try:
+        daten = r.json()
+    except ValueError:
+        return None
+    antwort = daten.get("response") if isinstance(daten, dict) else None
+    ext = antwort.get("id") if isinstance(antwort, dict) else None
+    return str(ext) if ext is not None else None
+
+
+def _fehlertext(e: Exception) -> str:
+    """Art + Text: ein ReadTimeout hat oft einen leeren Text, dann stünde nur "unbekannt" in der DB."""
+    return f"{type(e).__name__}: {e}"
+
+
 class Tumblr(Channel):
     name = "tumblr"
     char_limit = 1000  # gleicher Wert wie compose.CHAR_LIMIT["tumblr"]
@@ -187,29 +225,28 @@ class Tumblr(Channel):
         if fehlt:
             return PostResult(ok=False, error="Tumblr-Konfiguration unvollständig: " + ", ".join(fehlt))
         url = f"{API_BASE}/blog/{self._blog}/posts"
-        body = {
-            "content": build_npf_content(post),
-            "tags": _tags_param(post.tags),
-            "state": "published",
-        }
         try:
+            # Der Aufbau steht im try: der Poster verlässt sich darauf, dass post() nie wirft.
+            body = {"content": build_npf_content(post), "state": "published"}
+            tags = _tags_param(post.tags)
+            if tags:
+                body["tags"] = tags  # leere Liste: Schlüssel weglassen statt "" zu senden
             async with httpx.AsyncClient(timeout=30) as client:
                 r = await client.post(url, headers=self._auth_headers("POST", url), json=body)
                 if r.status_code == 429:
-                    try:
-                        ra = int(r.headers.get("retry-after", "0")) or None
-                    except ValueError:
-                        ra = None  # Datumsformat o. ä.: lieber keine Angabe als ein Absturz
-                    return PostResult(ok=False, error="429 rate limited", retry_after=ra)
+                    return PostResult(ok=False, error="429 rate limited",
+                                      retry_after=_retry_after(r.headers.get("retry-after")))
                 r.raise_for_status()
                 # Ein 201 ist ein Erfolg, auch wenn die ID nicht lesbar ist; sonst würde der
                 # Poster einen schon veröffentlichten Beitrag erneut senden.
-                try:
-                    ext = (r.json().get("response") or {}).get("id")
-                except ValueError:
-                    ext = None
-                return PostResult(ok=True, external_id=str(ext) if ext is not None else None)
+                return PostResult(ok=True, external_id=_post_id(r))
         except httpx.HTTPStatusError as e:
-            return PostResult(ok=False, error=f"HTTP {e.response.status_code}: {e.response.text[:200]}")
+            code = e.response.status_code
+            return PostResult(ok=False, error=f"HTTP {code}: {e.response.text[:200]}",
+                              outcome_unknown=code in _AUSGANG_UNBEKANNT_STATUS)
+        except _AUSGANG_UNBEKANNT_FEHLER as e:
+            # Die Anfrage kann schon beim Server angekommen sein; Tumblr hat keinen Idempotency-Key.
+            return PostResult(ok=False, error=_fehlertext(e), outcome_unknown=True)
         except Exception as e:  # noqa: BLE001
-            return PostResult(ok=False, error=str(e))
+            # Dazu gehören ConnectError/ConnectTimeout: da ging nichts raus, Wiederholung ist sicher.
+            return PostResult(ok=False, error=_fehlertext(e))

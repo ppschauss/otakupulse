@@ -116,11 +116,6 @@ async def test_tags_mit_nicht_strings_stuerzen_nicht_ab(httpx_mock):
     assert body["tags"] == "anime,ok"
 
 
-async def test_post_ohne_tags_sendet_leeren_tags_string(httpx_mock):
-    httpx_mock.add_response(status_code=201, json={"response": {"id": 1}})
-    await Tumblr().post(Post(text="T", url="https://u", title="H", tags=[]))
-    assert json.loads(httpx_mock.get_requests()[0].content)["tags"] == ""
-
 
 async def test_post_gibt_retry_after_bei_429(httpx_mock):
     httpx_mock.add_response(status_code=429, headers={"Retry-After": "900"})
@@ -153,7 +148,103 @@ async def test_fehlende_zugangsdaten_senden_nichts(monkeypatch, httpx_mock):
     assert httpx_mock.get_requests() == []
 
 
+# --- Fix-Durchlauf 1: Doppelpost-Risiken ---
+
+@pytest.mark.parametrize("antwort", [
+    {"json": []}, {"json": {"response": [1]}}, {"json": {"response": "x"}},
+    {"json": {"response": None}}, {"json": "text"}, {"text": "<html>kein JSON</html>"},
+])
+async def test_201_mit_unlesbarem_body_bleibt_erfolg(httpx_mock, antwort):
+    """Der Post ist draussen: nie als Fehlschlag melden, sonst postet der Poster doppelt."""
+    httpx_mock.add_response(status_code=201, **antwort)
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is True and r.external_id is None and r.outcome_unknown is False
+
+
+@pytest.mark.parametrize("exc", [
+    httpx.ReadTimeout(""), httpx.WriteTimeout("zu"), httpx.PoolTimeout("voll"),
+])
+async def test_timeout_nach_dem_senden_ist_ausgang_unbekannt(httpx_mock, exc):
+    httpx_mock.add_exception(exc)
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is False and r.outcome_unknown is True
+    assert type(exc).__name__ in r.error  # auch bei leerem Text steht die Art des Fehlers drin
+
+
+@pytest.mark.parametrize("status", [502, 503, 504])
+async def test_gateway_fehler_ist_ausgang_unbekannt(httpx_mock, status):
+    httpx_mock.add_response(status_code=status, text="Bad Gateway")
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is False and r.outcome_unknown is True and str(status) in r.error
+
+
+@pytest.mark.parametrize("exc", [httpx.ConnectError("kein Netz"), httpx.ConnectTimeout("")])
+async def test_verbindungsfehler_ist_sicher_nicht_gesendet(httpx_mock, exc):
+    httpx_mock.add_exception(exc)
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is False and r.outcome_unknown is False
+    assert type(exc).__name__ in r.error
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 500])
+async def test_sonstige_http_fehler_sind_kein_unbekannter_ausgang(httpx_mock, status):
+    httpx_mock.add_response(status_code=status, text="nein")
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is False and r.outcome_unknown is False and str(status) in r.error
+
+
+@pytest.mark.parametrize("roh,erwartet", [
+    ("999999999999", 86400), ("86401", 86400), ("900", 900), ("-5", 1), ("1", 1),
+])
+async def test_retry_after_wird_geklemmt(httpx_mock, roh, erwartet):
+    httpx_mock.add_response(status_code=429, headers={"Retry-After": roh})
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.retry_after == erwartet
+
+
+async def test_429_ganz_ohne_header(httpx_mock):
+    httpx_mock.add_response(status_code=429)
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is False and r.retry_after is None and r.outcome_unknown is False
+
+
+async def test_leere_tag_liste_laesst_tags_schluessel_weg(httpx_mock):
+    httpx_mock.add_response(status_code=201, json={"response": {"id": 1}})
+    await Tumblr().post(Post(text="T", url="https://u", title="H", tags=[]))
+    assert "tags" not in json.loads(httpx_mock.get_requests()[0].content)
+
+
+async def test_tags_die_nach_bereinigung_leer_sind_lassen_den_schluessel_weg(httpx_mock):
+    httpx_mock.add_response(status_code=201, json={"response": {"id": 1}})
+    await Tumblr().post(Post(text="T", url="https://u", title="H", tags=[",", None, " "]))
+    assert "tags" not in json.loads(httpx_mock.get_requests()[0].content)
+
+
+async def test_post_wirft_nie_auch_wenn_der_aufbau_scheitert(monkeypatch, httpx_mock):
+    from app.channels import tumblr as modul
+
+    def kaputt(post):
+        raise RuntimeError("Aufbau kaputt")
+
+    monkeypatch.setattr(modul, "build_npf_content", kaputt)
+    r = await Tumblr().post(Post(text="T", url="https://u", title="H"))
+    assert r.ok is False and "RuntimeError" in r.error and "Aufbau kaputt" in r.error
+    assert httpx_mock.get_requests() == []
+
+
 # --- OAuth 1.0a ---
+
+def test_oauth1_signatur_in_produktionsform():
+    """So senden wir wirklich: POST, api.tumblr.com, keine Query, keine Formular-Parameter.
+
+    Erwartung unabhängig mit oauthlib berechnet (gleiche Schlüssel, Nonce, Zeitstempel).
+    """
+    h = oauth1_header(
+        "POST", "https://api.tumblr.com/v2/blog/blog.example/posts",
+        consumer_key="ck", consumer_secret="cs", token="tok", token_secret="toksec",
+        nonce="abc123nonce", timestamp="1700000000",
+    )
+    assert 'oauth_signature="cERw8uW9itBuyah%2F4N0I9keywmY%3D"' in h
 
 def test_oauth1_signatur_gegen_bekannten_testvektor():
     """Beispiel aus der Twitter-OAuth-Doku (HMAC-SHA1, Query + Formular-Parameter)."""

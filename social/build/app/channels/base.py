@@ -9,6 +9,9 @@ class PostResult:
     external_id: str | None = None
     error: str | None = None
     retry_after: int | None = None  # Sekunden, aus Retry-After-Header
+    # True, wenn unklar ist, ob der Post trotzdem veröffentlicht wurde (Timeout nach dem Senden,
+    # Gateway-Fehler). Der Poster wiederholt dann NICHT, weil das einen Doppelpost riskiert.
+    outcome_unknown: bool = False
 
 
 @dataclass

@@ -86,6 +86,13 @@ def posted_note(channel: str, url: str, external_id: str | None) -> str:
     return f"📤 Auf {ch} gepostet.\n{url}{ref}"
 
 
+def outcome_unknown_note(channel: str, url: str, error: str) -> str:
+    ch = CHANNEL_LABEL.get(channel, channel)
+    return (f"❓ Ausgang unbekannt bei {ch}: Der Post wurde möglicherweise veröffentlicht. "
+            f"Es gibt KEINEN automatischen neuen Versuch (Doppelpost-Gefahr). "
+            f"Bitte auf dem Blog nachsehen.\n{url}\nFehler: {error[:200]}")
+
+
 def channel_down(channel: str, error: str) -> str:
     ch = CHANNEL_LABEL.get(channel, channel)
     return f"🚨 {ch} macht Probleme — Kanal für 6 h stillgelegt.\nFehler: {error[:200]}"
