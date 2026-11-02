@@ -128,13 +128,13 @@ async def record_attempt_failure(draft_id: int, error: str, give_up: bool) -> No
     await db.conn().commit()
 
 
-def _heute_bereich_utc() -> tuple[str, str]:
+def _heute_bereich_utc(jetzt: datetime | None = None) -> tuple[str, str]:
     """Beginn und Ende des lokalen Tages (config.TZ, nicht UTC) als UTC-ISO-Strings.
 
     posted_at liegt als UTC-ISO ("...+00:00") vor; die lokalen Tagesgrenzen werden daher in
     dasselbe Format umgerechnet und als Bereich verglichen (Sommerzeitwechsel inklusive).
     """
-    heute = util.now_local()
+    heute = jetzt or util.now_local()
     morgen = heute.date() + timedelta(days=1)
     beginn = datetime.combine(heute.date(), time.min, tzinfo=heute.tzinfo)
     ende = datetime.combine(morgen, time.min, tzinfo=heute.tzinfo)
@@ -142,9 +142,10 @@ def _heute_bereich_utc() -> tuple[str, str]:
             ende.astimezone(timezone.utc).isoformat())
 
 
-def tagesbeginn_utc() -> str:
-    """Beginn des lokalen Tages als UTC-ISO (gleiche Grenze wie posted_today)."""
-    return _heute_bereich_utc()[0]
+def tagesbeginn_utc(jetzt: datetime | None = None) -> str:
+    """Beginn des lokalen Tages als UTC-ISO (gleiche Grenze wie posted_today); optional zu einem
+    vorgegebenen "jetzt", damit Aufrufer nur eine Uhrablesung verwenden."""
+    return _heute_bereich_utc(jetzt)[0]
 
 
 async def posted_today(channel: str) -> int:

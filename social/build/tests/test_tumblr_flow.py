@@ -405,10 +405,9 @@ async def test_tagesmeldung_nennt_verworfene_und_unbekannte(tmp_db, live, monkey
     await poster.run_post_pass()
 
     text = await batch.tumblr_summary()
-    assert "Tageslimit" in text and "2" in text
-    assert "Ausgang unbekannt" in text
+    assert "Wegen des Tageslimits verworfen: 2" in text
+    assert "Ausgang unbekannt: 1" in text
     assert "https://otakupulse.de/news/unklar-1" in text
-    assert "auf dem Blog nachsehen" in text
 
 
 async def test_tagesmeldung_zaehlt_nur_echte_tageslimit_verwuerfe(tmp_db):
@@ -514,6 +513,88 @@ async def test_fehlgeschlagener_versand_schiebt_den_zeitraum_nicht_weiter(tmp_db
     await _gepostet("a", titel="Erste Meldung")
     telegram.kaputt = True
     await batch.run_daily()  # darf nicht werfen
+    assert await settings.get("tumblr_summary_bis") == ""  # Zeitraum nicht vorgerückt
     telegram.kaputt = False
     await batch.run_daily()
-    assert any("Erste Meldung" in t for t in telegram.gesendet)
+    assert sum("Erste Meldung" in t for t in telegram.gesendet) == 1
+
+
+# ---------- Fix-Durchlauf: Kürzung, Zeitfenster, Absicherungen ----------
+
+async def test_kuerzung_trifft_die_postliste_nie_ausgang_unbekannt(tmp_db):
+    for i in range(100):
+        await _gepostet(f"p{i}", titel="T" * 100)
+    unklar = await _entwurf("tumblr", "unklar-ende")
+    await models.record_attempt_failure(unklar, "Ausgang unbekannt: ReadTimeout", give_up=True)
+    text = await batch.tumblr_summary()
+    assert len(text) <= 4000
+    assert "https://otakupulse.de/news/unklar-ende" in text  # vollständig, nie gekürzt
+    assert "Ausgang unbekannt: 1" in text
+    assert "100 Posts veröffentlicht" in text
+    gezeigt = sum(1 for i in range(100) if f"news/p{i}\n" in text + "\n")
+    assert 0 < gezeigt < 100
+    assert f"und {100 - gezeigt} weitere" in text
+
+
+async def test_ohne_kuerzung_kein_weitere_hinweis(tmp_db):
+    await _gepostet("a")
+    assert "weitere" not in await batch.tumblr_summary()
+
+
+async def test_ausgang_unbekannt_ist_knapp_ohne_hinweistext(tmp_db):
+    d = await _entwurf("tumblr", "u1")
+    await models.record_attempt_failure(d, "Ausgang unbekannt: x", give_up=True)
+    text = await batch.tumblr_summary()
+    assert "Ausgang unbekannt: 1" in text and "news/u1" in text
+    assert "nachsehen" not in text  # stand schon in der Sofortmeldung
+
+
+async def test_give_up_false_laesst_decided_at_unveraendert(tmp_db):
+    did = await _entwurf("bluesky", "1")
+    await db.conn().execute("UPDATE drafts SET decided_at='2020-01-01T00:00:00+00:00' WHERE id=?", (did,))
+    await db.conn().commit()
+    await models.record_attempt_failure(did, "Timeout", give_up=False)
+    d = await models.get_draft(did)
+    assert d["state"] == "approved" and d["attempts"] == 1
+    assert d["decided_at"] == "2020-01-01T00:00:00+00:00"
+    await models.record_attempt_failure(did, "Timeout", give_up=True)
+    d = await models.get_draft(did)
+    assert d["state"] == "failed" and d["decided_at"] != "2020-01-01T00:00:00+00:00"
+
+
+async def test_post_genau_auf_der_grenze_erscheint_in_genau_einer_meldung(tmp_db, telegram, monkeypatch):
+    # 18:00 Berlin = 17:00 UTC; der Post liegt exakt auf dem Ende des ersten Zeitraums.
+    await _gepostet("grenze", titel="Grenzfall", zeit="2026-11-02T17:00:00+00:00")
+    for stunde in (18, 19, 20):
+        _jetzt(monkeypatch, datetime(2026, 11, 2, stunde, 0, tzinfo=ZoneInfo("Europe/Berlin")))
+        await batch.send_tumblr_summary()
+    assert sum("Grenzfall" in t for t in telegram.gesendet) == 1
+    assert "Grenzfall" in telegram.gesendet[1]  # gehört in den Folgezeitraum
+
+
+async def test_ohne_freigabe_chat_rueckt_der_zeitraum_nicht_vor(tmp_db, telegram, monkeypatch):
+    async def kein_chat():
+        return None
+
+    monkeypatch.setattr(settings, "approval_chat_id", kein_chat)
+    await batch.send_tumblr_summary()
+    assert telegram.gesendet == []
+    assert await settings.get("tumblr_summary_bis") == ""
+
+
+async def test_ohne_bot_rueckt_der_zeitraum_nicht_vor(tmp_db, telegram, monkeypatch):
+    from app import runtime
+
+    monkeypatch.setattr(runtime, "bot", None)
+    await batch.send_tumblr_summary()
+    assert await settings.get("tumblr_summary_bis") == ""
+
+
+async def test_fenster_laeuft_nie_rueckwaerts(tmp_db, telegram, monkeypatch):
+    # Uhr zurückgestellt: der gespeicherte Zeitpunkt liegt nach "jetzt".
+    _jetzt(monkeypatch, datetime(2026, 11, 2, 18, 0, tzinfo=ZoneInfo("Europe/Berlin")))
+    spaeter = "2026-11-02T20:00:00+00:00"
+    await settings.set("tumblr_summary_bis", spaeter)
+    await batch.send_tumblr_summary()
+    assert len(telegram.gesendet) == 1
+    assert await settings.get("tumblr_summary_bis") == spaeter  # nicht zurückgesetzt

@@ -140,8 +140,10 @@ async def _tumblr_bilanz() -> tuple[str, str]:
     wäre hier falsch: der Batch läuft um 18 Uhr, die Posts des Ingests gehen erst danach raus
     und fielen sonst nie in eine Meldung.
     """
-    bis = util.now_local().astimezone(timezone.utc).isoformat()  # gleiche Uhr wie die Tagesgrenze
-    von = await settings.get(SUMMARY_BIS_KEY) or models.tagesbeginn_utc()
+    jetzt = util.now_local()  # eine einzige Uhrablesung für Fensterende und Tagesbeginn
+    von = await settings.get(SUMMARY_BIS_KEY) or models.tagesbeginn_utc(jetzt)
+    # Nie rückwärts: bei zurückgestellter Uhr bleibt das Fenster leer statt negativ.
+    bis = max(parse_iso(von), jetzt.astimezone(timezone.utc)).isoformat()
     posts = await models.posted_between(TUMBLR, von, bis)
     limit = await models.limit_discarded_between(TUMBLR, von, bis)
     unbekannt = await models.outcome_unknown_between(TUMBLR, von, bis)
@@ -164,7 +166,7 @@ async def send_tumblr_summary() -> None:
         return
     try:
         text, bis = await _tumblr_bilanz()
-        await runtime.bot.send_message(chat_id=chat_id, text=text[:4000],
+        await runtime.bot.send_message(chat_id=chat_id, text=text,
                                        disable_web_page_preview=True)
         await settings.set(SUMMARY_BIS_KEY, bis)
     except Exception:
