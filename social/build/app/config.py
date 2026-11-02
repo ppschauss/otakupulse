@@ -15,8 +15,8 @@ def _req(key: str) -> str:
 
 def _bool(key: str, default: bool) -> bool:
     raw = os.environ.get(key)
-    if raw is None:
-        return default
+    if raw is None or not raw.strip():
+        return default  # fehlend, leer oder nur Leerzeichen: Default, nie stillschweigend "falsch"
     return raw.strip().lower() not in ("0", "false", "no", "off", "")
 
 
@@ -53,7 +53,7 @@ DRY_RUN_CHANNELS = _csv_set("DRY_RUN_CHANNELS")
 
 def is_dry(channel: str) -> bool:
     """True, wenn für diesen Kanal nur simuliert wird (global oder kanalweise)."""
-    return DRY_RUN or channel in DRY_RUN_CHANNELS
+    return DRY_RUN or channel.strip().lower() in DRY_RUN_CHANNELS
 
 
 def dry_channels() -> list[str]:
@@ -109,3 +109,23 @@ BLUESKY_PDS = os.environ.get("BLUESKY_PDS", "https://bsky.social").rstrip("/")
 MASTODON_BASE_URL = os.environ.get("MASTODON_BASE_URL", "").rstrip("/")
 MASTODON_ACCESS_TOKEN = os.environ.get("MASTODON_ACCESS_TOKEN", "").strip()
 MASTODON_CHAR_LIMIT = int(os.environ.get("MASTODON_CHAR_LIMIT", "500"))
+
+
+def validate_dry_config(bekannte_kanaele) -> list[str]:
+    """Prüft DRY_RUN_CHANNELS gegen die bekannten Kanäle; liefert Warnungen (leer = alles gut).
+
+    Ein Tippfehler oder falscher Trenner ("bluesky mastodon") trocknet sonst still nichts.
+    """
+    warnungen = []
+    for name in sorted(DRY_RUN_CHANNELS - set(bekannte_kanaele)):
+        warnungen.append(
+            f"DRY_RUN_CHANNELS enthält unbekannten Kanal '{name}' (bekannt: "
+            f"{', '.join(sorted(bekannte_kanaele))}). Trennzeichen ist das Komma. "
+            "Dieser Eintrag trocknet NICHTS."
+        )
+    if not DRY_RUN and not DRY_RUN_CHANNELS:
+        warnungen.append(
+            "ACHTUNG: DRY_RUN=0 und DRY_RUN_CHANNELS ist leer — ALLE aktivierten Kanäle "
+            "posten ab jetzt LIVE."
+        )
+    return warnungen

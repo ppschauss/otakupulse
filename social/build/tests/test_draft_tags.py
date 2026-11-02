@@ -296,6 +296,8 @@ async def _poste(monkeypatch, draft_id):
         pass
 
     monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset())
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", ["bluesky", "mastodon", "tumblr"])
     monkeypatch.setattr(registry, "get", lambda name: fake)
     monkeypatch.setattr(poster, "_notify", keine_meldung)
     await models.approve(draft_id)

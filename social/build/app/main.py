@@ -7,6 +7,7 @@ from telegram.ext import (
 )
 
 from . import config, db, pg, settings, scheduler, runtime
+from .channels import registry
 from .handlers import commands, callbacks
 
 logging.basicConfig(
@@ -26,6 +27,8 @@ async def on_startup(app: Application) -> None:
     runtime.set_bot(app.bot)
     await scheduler.setup()
     await commands.set_menu(app)
+    for warnung in config.validate_dry_config(registry.known_channel_names()):
+        log.warning("⚠️ %s", warnung)
     log.info("Startup fertig — %s, Kanäle: %s", config.mode_summary(), config.CHANNELS_ENABLED)
 
 

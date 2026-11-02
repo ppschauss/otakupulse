@@ -52,6 +52,7 @@ async def test_post_pass_ruft_adapter_nur_fuer_nicht_trockene_kanaele(tmp_db, mo
 
     monkeypatch.setattr(config, "DRY_RUN", False)
     monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset({"bluesky"}))
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", ["bluesky", "tumblr"])
     monkeypatch.setattr(registry, "get", lambda name: adapter.get(name))
     monkeypatch.setattr(poster, "_notify", keine_meldung)
 
@@ -129,3 +130,111 @@ def test_csv_set_leerer_wert_und_fehlende_variable(monkeypatch):
     assert config._csv_set("DRY_RUN_CHANNELS") == frozenset()
     monkeypatch.delenv("DRY_RUN_CHANNELS")
     assert config._csv_set("DRY_RUN_CHANNELS") == frozenset()
+
+
+# ---------- I1: Poster respektiert CHANNELS_ENABLED ----------
+
+async def test_post_pass_laesst_entwurf_eines_nicht_aktivierten_kanals_liegen(
+        tmp_db, monkeypatch, caplog):
+    adapter = {"bluesky": _FakeChannel(), "tumblr": _FakeChannel()}
+
+    async def keine_meldung(text):
+        pass
+
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset())
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", ["tumblr"])  # Bluesky nicht aktiviert
+    monkeypatch.setattr(registry, "get", lambda name: adapter.get(name))
+    monkeypatch.setattr(poster, "_notify", keine_meldung)
+
+    bsky1 = await _entwurf("bluesky", "1")
+    bsky2 = await _entwurf("bluesky", "3")
+    tmblr = await _entwurf("tumblr", "2")
+    with caplog.at_level("WARNING"):
+        await poster.run_post_pass()
+
+    assert adapter["bluesky"].posts == []  # nicht echt gepostet
+    assert len(adapter["tumblr"].posts) == 1
+    for did in (bsky1, bsky2):
+        d = await models.get_draft(did)
+        assert d["state"] == "approved"  # liegen lassen, nicht trocken verbucht
+        assert d["external_id"] is None
+    assert (await models.get_draft(tmblr))["state"] == "posted"
+    # eine Log-Meldung pro Lauf und Kanal, nicht je Entwurf
+    meldungen = [r for r in caplog.records if "bluesky" in r.getMessage()
+                 and r.levelname == "WARNING"]
+    assert len(meldungen) == 1
+
+    # Kanal wird spaeter aktiviert: die liegen gebliebenen Entwuerfe laufen dann durch
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", ["bluesky", "tumblr"])
+    await poster.run_post_pass()
+    assert len(adapter["bluesky"].posts) == 2
+
+
+# ---------- I2: Validierung von DRY_RUN_CHANNELS ----------
+
+def test_validate_meldet_unbekannten_kanalnamen(monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset({"blusky", "mastodon"}))
+    warnungen = config.validate_dry_config({"bluesky", "mastodon", "tumblr"})
+    assert len(warnungen) == 1
+    assert "blusky" in warnungen[0]
+
+
+def test_validate_meldet_falschen_trenner(monkeypatch):
+    monkeypatch.setenv("DRY_RUN_CHANNELS", "bluesky mastodon")
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", config._csv_set("DRY_RUN_CHANNELS"))
+    warnungen = config.validate_dry_config({"bluesky", "mastodon", "tumblr"})
+    assert any("bluesky mastodon" in w for w in warnungen)
+
+
+def test_validate_warnt_wenn_alles_live_ist(monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset())
+    warnungen = config.validate_dry_config({"bluesky", "mastodon", "tumblr"})
+    assert len(warnungen) == 1
+    assert "LIVE" in warnungen[0]
+
+
+def test_validate_schweigt_bei_gueltiger_konfiguration(monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset({"bluesky", "mastodon"}))
+    assert config.validate_dry_config({"bluesky", "mastodon", "tumblr"}) == []
+    monkeypatch.setattr(config, "DRY_RUN", True)  # globaler Trockenmodus: Liste egal
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset())
+    assert config.validate_dry_config({"bluesky"}) == []
+
+
+# ---------- I3: leere Bool-Variable faellt auf den Default ----------
+
+def test_bool_leerer_wert_faellt_auf_default(monkeypatch):
+    for leer in ("", "   "):
+        monkeypatch.setenv("DRY_RUN", leer)
+        assert config._bool("DRY_RUN", True) is True
+        assert config._bool("DRY_RUN", False) is False
+
+
+def test_bool_explizite_werte_bleiben_wie_sie_waren(monkeypatch):
+    for roh, erwartet in (("0", False), ("false", False), ("OFF", False), ("1", True), ("yes", True)):
+        monkeypatch.setenv("DRY_RUN", roh)
+        assert config._bool("DRY_RUN", True) is erwartet
+    monkeypatch.delenv("DRY_RUN")
+    assert config._bool("DRY_RUN", True) is True
+
+
+# ---------- Kleinere Absicherungen ----------
+
+def test_is_dry_unbekannter_kanal_und_abweichende_schreibweise(monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset({"bluesky"}))
+    assert config.is_dry("Bluesky") is True  # Schreibweise egal: auf der sicheren Seite
+    assert config.is_dry(" bluesky ") is True
+    assert config.is_dry("blusky") is False  # Tippfehler trocknet nichts (Start-Warnung faengt das ab)
+    assert config.is_dry("irgendwas") is False
+
+
+def test_all_dry_ist_false_ohne_aktivierte_kanaele(monkeypatch):
+    _modus(monkeypatch, False, set(), enabled=())
+    assert config.all_dry() is False
+    assert config.mode_summary() == "keine Kanäle aktiv"

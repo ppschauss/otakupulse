@@ -17,6 +17,10 @@ _FACTORY = {
 _instances: dict = {}
 
 
+def known_channel_names() -> list[str]:
+    return list(_FACTORY)
+
+
 def active_channel_names() -> list[str]:
     return [c for c in config.CHANNELS_ENABLED if c in _FACTORY]
 

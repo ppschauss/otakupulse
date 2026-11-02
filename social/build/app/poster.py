@@ -1,7 +1,9 @@
 """Post-Lauf: freigegebene Entwürfe rausschicken, Breaker + Retry-Limit beachten.
 
 Kein blindes Feuern: guard(channel) fragt den Breaker, bei Fehler wird zurückgestellt,
-nach 3 Versuchen 'failed' + Telegram-Meldung. DRY_RUN kurzschließt den echten Post.
+nach 3 Versuchen 'failed' + Telegram-Meldung. Trockene Kanäle (DRY_RUN global oder
+DRY_RUN_CHANNELS je Kanal) kurzschließen den echten Post. Entwürfe für Kanäle, die nicht in
+CHANNELS_ENABLED stehen, bleiben unangetastet liegen.
 """
 import json
 import logging
@@ -19,8 +21,13 @@ async def run_post_pass() -> None:
     if await settings.is_paused():
         return
     drafts = await models.approved_drafts()
+    uebersprungen: dict[str, int] = {}
     for d in drafts:
         channel = d["channel"]
+        if channel not in config.CHANNELS_ENABLED:
+            # Weder posten noch trocken verbuchen: bleibt 'approved', falls der Kanal zurückkommt.
+            uebersprungen[channel] = uebersprungen.get(channel, 0) + 1
+            continue
         if not await breaker.guard(channel):
             continue  # Kanal stillgelegt / Retry-After noch nicht abgelaufen
 
@@ -71,6 +78,10 @@ async def run_post_pass() -> None:
             if give_up:
                 await _notify(f"⚠️ Post auf {T.CHANNEL_LABEL.get(channel, channel)} "
                               f"nach {MAX_ATTEMPTS} Versuchen aufgegeben.\n{d['url']}")
+
+    for channel, n in uebersprungen.items():
+        log.warning("Kanal %s ist nicht in CHANNELS_ENABLED — %d freigegebene(r) Entwurf/Entwürfe "
+                    "bleiben liegen.", channel, n)
 
 
 async def _note_posted(channel, url, ext) -> None:
