@@ -29,7 +29,8 @@ class SourceItem:
     anime_count: int = 0              # Zahl verknüpfter Anime; > 1 => Tag-Felder leer
 
 
-# Nur diese Kategorien gehen auf Tumblr.
+# Nur diese Kategorien gehen auf Tumblr. Angewandt wird das kanalspezifisch in batch.ingest
+# (nicht in fetch_new: Bluesky und Mastodon bekommen weiterhin alle Kategorien).
 TUMBLR_CATEGORIES: frozenset[str] = frozenset({"news", "simulcast"})
 
 # Rang ist eine Stärke (höher = besser). Tags ohne Rang zählen 0 und fallen unter die Schwelle.
@@ -37,7 +38,7 @@ _RANG_UNBEKANNT = 0
 
 # Eine Zeile je Artikel: alle Verknüpfungen werden in korrelierten Unterabfragen zu
 # Arrays aggregiert, es gibt keinen Join auf die Hauptabfrage und damit keine
-# Zeilenvervielfachung. Direkt in psql ausführbar ($1 = text[] Kategorien, $2 = int Limit).
+# Zeilenvervielfachung. Direkt in psql ausführbar ($1 = int Limit).
 ARTICLES_SQL = """
 SELECT a.id, a.slug, a.title, a.excerpt, a.cover_image_url, a.category,
        (SELECT count(DISTINCT ar.anime_id)
@@ -71,9 +72,8 @@ LEFT JOIN LATERAL (
       ) x
 ) t ON true
 WHERE a._status = 'published' AND a.slug IS NOT NULL
-  AND a.category::text = ANY($1::text[])
 ORDER BY a.publish_date DESC NULLS LAST
-LIMIT $2
+LIMIT $1
 """
 
 # Genre-Häufigkeit (Genre-Name -> Anzahl Anime), für tagging.pick_genre.
@@ -136,10 +136,9 @@ def row_to_item(r) -> SourceItem:
 
 
 async def fetch_new(limit: int) -> list[SourceItem]:
-    """Liefert bis zu `limit` publizierte news/simulcast-Artikel, die noch nicht formuliert wurden."""
+    """Liefert bis zu `limit` publizierte Artikel (alle Kategorien, `item.category` trägt den Wert), die noch nicht formuliert wurden."""
     rows = await pg.fetch(
         ARTICLES_SQL,
-        sorted(TUMBLR_CATEGORIES),
         # großzügig ziehen, danach in Python gegen seen_sources filtern
         max(limit * 6, 40),
     )

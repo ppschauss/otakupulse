@@ -43,11 +43,21 @@ def test_mehrere_anime_behalten_genres_und_tags_ohne_serientitel():
     assert it.anime_count == 3
 
 
-def test_kein_anime_gibt_leere_felder():
-    it = row_to_item(_row(anime_count=0, series_title=None, genres=None,
-                          tag_names=None, tag_categories=None, tag_ranks=None))
+def test_kein_anime_gibt_leere_felder_trotz_befuellter_aggregate():
+    # befüllte Aggregate bei anime_count=0 dürfen nicht durchschlagen
+    it = row_to_item(_row(anime_count=0))
     assert it.genres == [] and it.anime_tags == [] and it.series_title is None
     assert it.anime_count == 0
+
+
+def test_kein_anime_behaelt_hentai_flag():
+    assert row_to_item(_row(anime_count=0, is_hentai=True)).is_hentai is True
+
+
+def test_anime_count_none_wird_null():
+    it = row_to_item(_row(anime_count=None))
+    assert it.anime_count == 0
+    assert it.genres == [] and it.anime_tags == [] and it.series_title is None
 
 
 def test_null_aggregate_bei_einem_anime_werden_leere_listen():
@@ -79,12 +89,47 @@ def test_category_none_bleibt_none():
     assert row_to_item(_row(category=None)).category is None
 
 
+async def test_fetch_new_dedup_und_limit(monkeypatch):
+    zeilen = [_row(id=i, slug=f"s{i}") for i in range(1, 8)]
+    aufrufe = []
+
+    async def fake_fetch(sql, *args):
+        aufrufe.append((sql, args))
+        return zeilen
+
+    async def fake_is_seen(kind, ref):
+        assert kind == "article"
+        return ref in {"2", "3"}
+
+    monkeypatch.setattr(articles.pg, "fetch", fake_fetch)
+    monkeypatch.setattr(articles.models, "is_seen", fake_is_seen)
+
+    items = await articles.fetch_new(3)
+    assert [i.ref for i in items] == ["1", "4", "5"]  # 2, 3 gesehen; Abbruch bei limit
+    assert aufrufe[0][0] == articles.ARTICLES_SQL
+    assert aufrufe[0][1] == (40,)  # max(limit*6, 40), kein Kategoriefilter
+
+
+async def test_fetch_new_filtert_nicht_nach_kategorie(monkeypatch):
+    async def fake_fetch(sql, *args):
+        return [_row(id=1, category="guide"), _row(id=2, category="review")]
+
+    async def fake_is_seen(kind, ref):
+        return False
+
+    monkeypatch.setattr(articles.pg, "fetch", fake_fetch)
+    monkeypatch.setattr(articles.models, "is_seen", fake_is_seen)
+    items = await articles.fetch_new(5)
+    assert [i.category for i in items] == ["guide", "review"]
+    assert "category" not in articles.ARTICLES_SQL.rsplit("WHERE", 1)[1]
+
+
 @pytest.mark.skipif(not os.environ.get("PG_PASSWORD"), reason="keine DB")
 async def test_fetch_new_liefert_tagdaten():
     items = await articles.fetch_new(3)
     assert items, "keine Artikel"
     it = items[0]
-    assert it.category in {"news", "simulcast"}
+    assert it.category is not None
     assert isinstance(it.genres, list)
     assert isinstance(it.anime_tags, list)
     assert len({i.ref for i in items}) == len(items), "doppelte Artikel"
