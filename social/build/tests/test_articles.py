@@ -267,6 +267,40 @@ async def test_gescheiterte_tagabfrage_reisst_den_ingest_nicht_mit(monkeypatch, 
                for r in caplog.records)
 
 
+@pytest.mark.parametrize("kaputte_zeile", [
+    _tagzeile(id=1, tag_ranks=["hoch"]),       # nicht-numerischer Rang -> int() wirft
+    _tagzeile(id=1, anime_count="viele"),      # nicht-numerische Anzahl -> int() wirft
+    _tagzeile(id=1, tag_names=None, tag_categories=5),  # nicht iterierbar -> zip() wirft
+    {"anime_count": 1},                        # keine id -> schon die Zuordnung wirft
+])
+async def test_kaputte_tagzeile_reisst_den_ingest_nicht_mit(monkeypatch, caplog, kaputte_zeile):
+    """Nicht nur die Abfrage, auch die Auswertung der Zeilen muss degradieren (B1).
+
+    Sonst fliegt die Ausnahme aus fetch_new über batch.ingest bis in run_daily und verhindert
+    send_batch() — derselbe Riss wie bei der Abfrage, nur eine Ebene tiefer.
+    """
+    _fetch_patchen(monkeypatch, ["tumblr", "bluesky"],
+                   [_grund(id=1, slug="s1")], [kaputte_zeile])
+    with caplog.at_level("WARNING"):
+        items = await articles.fetch_new(5)  # darf nicht werfen
+    assert [i.ref for i in items] == ["1"]
+    assert items[0].title == "Titel" and items[0].category == "news"  # Grunddaten bleiben
+    assert items[0].tag_data_ok is False
+    assert any("Tag-Rohdaten" in r.getMessage() and r.levelname == "WARNING"
+               for r in caplog.records)
+
+
+async def test_kaputte_zeile_setzt_auch_schon_angereicherte_items_zurueck(monkeypatch, caplog):
+    """Eine halb übernommene Anreicherung ist nicht vertrauenswürdig: dann gilt sie für keinen."""
+    _fetch_patchen(monkeypatch, ["tumblr"],
+                   [_grund(id=1, slug="s1"), _grund(id=2, slug="s2")],
+                   [_tagzeile(id=1), _tagzeile(id=2, tag_ranks=["kaputt"])])
+    with caplog.at_level("WARNING"):
+        items = await articles.fetch_new(5)
+    assert len(items) == 2
+    assert all(i.tag_data_ok is False for i in items)
+
+
 async def test_fehlende_tagzeile_laesst_nur_diesen_artikel_ohne_tumblr(monkeypatch, caplog):
     _fetch_patchen(monkeypatch, ["tumblr"],
                    [_grund(id=1, slug="s1"), _grund(id=2, slug="s2")],

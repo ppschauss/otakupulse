@@ -204,26 +204,37 @@ def row_to_item(r) -> SourceItem:
 async def _tags_anreichern(items: list[SourceItem], ids: list) -> None:
     """Tag-Rohdaten für die gewählten Artikel nachladen (zweite Abfrage, nur für Tumblr).
 
-    Degradiert wie der übrige Tumblr-Pfad: scheitert die Abfrage, bleibt `tag_data_ok=False`,
+    Degradiert wie der übrige Tumblr-Pfad: scheitert es, bleibt `tag_data_ok=False`,
     batch.ingest lässt Tumblr für diesen Lauf entfallen, und Bluesky/Mastodon laufen weiter.
+
+    Im try liegt bewusst AUCH die Auswertung der Zeilen, nicht nur die Abfrage: `_tagdaten` ruft
+    `int()` auf Rang und Anzahl und greift auf Spalten zu: eine unerwartete Zeile (Schema-Drift,
+    nicht-numerischer Rang) würde sonst aus `fetch_new` heraus und über `batch.ingest` bis in
+    `run_daily` fliegen — und damit `send_batch()` verhindern. Das ist derselbe Riss wie bei der
+    Abfrage selbst, nur eine Ebene tiefer. Bei einem Fehler gelten ALLE Items als ohne Tag-Daten:
+    eine halb übernommene Anreicherung ist nicht vertrauenswürdig.
     """
     try:
         rows = await pg.fetch(TAGS_SQL, ids)
+        je_id = {str(r["id"]): r for r in rows}
+        fehlend = []
+        for item in items:
+            zeile = je_id.get(item.ref)
+            if zeile is None:
+                # Artikel zwischen den beiden Abfragen verschwunden: ohne Tag-Daten kein Tumblr-Post.
+                item.tag_data_ok = False
+                fehlend.append(item.ref)
+                continue
+            tags_uebernehmen(item, zeile)
     except Exception:
         log.warning("Tag-Rohdaten nicht lesbar — kein Tumblr-Entwurf in diesem Lauf.",
                     exc_info=True)
         for item in items:
             item.tag_data_ok = False
         return
-    je_id = {str(r["id"]): r for r in rows}
-    for item in items:
-        zeile = je_id.get(item.ref)
-        if zeile is None:
-            # Artikel zwischen den beiden Abfragen verschwunden: ohne Tag-Daten kein Tumblr-Post.
-            item.tag_data_ok = False
-            log.warning("Keine Tag-Rohdaten für Artikel %s — kein Tumblr-Entwurf.", item.ref)
-            continue
-        tags_uebernehmen(item, zeile)
+    if fehlend:
+        log.warning("Keine Tag-Rohdaten für Artikel %s — dort kein Tumblr-Entwurf.",
+                    ", ".join(fehlend))
 
 
 async def fetch_new(limit: int) -> list[SourceItem]:

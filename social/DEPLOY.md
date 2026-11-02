@@ -303,6 +303,26 @@ Reihenfolge einhalten. Die Punkte stammen aus den Reviews der Tasks 1 bis 9.
 12. **Erst dann** `TUMBLR_BLOG_IDENTIFIER` auf den Markenblog `otakupulse-de.tumblr.com` umstellen.
     (In `secrets.env.example` steht die Variable bewusst **leer** — der dokumentierte Weg beginnt
     beim Testblog aus Schritt 4.)
+    - **`posted_log` kennt den Blog nicht.** Der Schlüssel ist `(channel, source_kind,
+      source_ref)`, also nur `tumblr` + Artikel-ID. Alles, was auf dem **Testblog** gepostet wurde,
+      gilt damit dauerhaft als „auf tumblr gepostet" und erscheint auf dem Markenblog **nicht noch
+      einmal**. Das ist kein Fehler, sondern genau die Schranke, die Doppelposts verhindert — aber
+      es überrascht. Wer diese Artikel auch auf dem Markenblog haben will, muss ihre Zeilen
+      **vor** der Umstellung löschen:
+      ```bash
+      # Erst ansehen, was betroffen ist:
+      docker exec otakupulse-social python -c "
+      import sqlite3
+      c = sqlite3.connect('/data/social.sqlite3')
+      for r in c.execute(\"SELECT source_ref, posted_at FROM posted_log WHERE channel='tumblr' ORDER BY posted_at\"): print(r)"
+      ```
+      Zum Löschen dasselbe mit
+      `DELETE FROM posted_log WHERE channel='tumblr'` und anschließendem `c.commit()`. Die
+      zugehörigen `drafts`-Zeilen bleiben auf `posted` stehen und werden dadurch **nicht** erneut
+      gepostet — neu formuliert wird nur, was `seen_sources` noch nicht kennt. Soll ein Artikel
+      wirklich erneut auf den Blog, muss auch seine `seen_sources`-Zeile weg. Im Normalfall ist
+      nichts davon nötig: die Testblog-Posts sind Wegwerfmaterial, und der Markenblog beginnt mit
+      den nächsten neuen Artikeln.
 13. **Später: Bluesky und Mastodon scharf schalten.** Erst wenn es dafür Konten gibt. Reihenfolge:
     1. Konten anlegen — Bluesky-**App**-Passwort (nicht das Kontopasswort), Mastodon-Access-Token
        über Konto → Entwicklung → Neue Anwendung.
