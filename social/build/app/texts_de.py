@@ -22,8 +22,18 @@ ONLY_APPROVAL_CHAT = "Dieser Bot antwortet nur im Freigabe-Chat."
 DRY_RUN_BANNER = "🧪 TROCKENMODUS — es wird nichts wirklich gepostet.\n\n"
 
 
-def batch_header(day: str, n: int, dry: bool) -> str:
-    prefix = DRY_RUN_BANNER if dry else ""
+def dry_banner(dry_channels: list[str], alle: bool) -> str:
+    """Banner nach Ist-Zustand: komplett trocken, nur einzelne Kanäle trocken oder keiner."""
+    if alle:
+        return DRY_RUN_BANNER
+    if not dry_channels:
+        return ""
+    namen = ", ".join(CHANNEL_LABEL.get(c, c) for c in dry_channels)
+    return f"🧪 TROCKEN für {namen} — dort wird nichts wirklich gepostet.\n\n"
+
+
+def batch_header(day: str, n: int, dry_channels: list[str], alle: bool = False) -> str:
+    prefix = dry_banner(dry_channels, alle)
     if n == 0:
         return prefix + f"📋 Keine neuen Entwürfe für heute ({day})."
     return prefix + f"📋 {n} Entwurf(e) für heute ({day}) — bitte durchsehen:"

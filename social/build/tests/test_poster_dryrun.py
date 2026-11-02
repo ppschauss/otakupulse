@@ -1,5 +1,5 @@
 """Kanalweiser Trockenmodus: DRY_RUN_CHANNELS haelt einzelne Kanaele zurueck (ohne Postgres)."""
-from app import config, models, poster
+from app import config, models, poster, texts_de as T
 from app.channels import registry
 from app.channels.base import PostResult
 
@@ -68,3 +68,64 @@ async def test_post_pass_ruft_adapter_nur_fuer_nicht_trockene_kanaele(tmp_db, mo
     d_tmblr = await models.get_draft(tmblr)
     assert d_tmblr["state"] == "posted"
     assert d_tmblr["external_id"] == "echt-1"
+
+
+# ---------- Statusanzeige: Ist-Zustand je Kanal ----------
+
+def _modus(monkeypatch, dry_run, dry_channels, enabled=("bluesky", "mastodon", "tumblr")):
+    monkeypatch.setattr(config, "DRY_RUN", dry_run)
+    monkeypatch.setattr(config, "DRY_RUN_CHANNELS", frozenset(dry_channels))
+    monkeypatch.setattr(config, "CHANNELS_ENABLED", list(enabled))
+
+
+def test_mode_summary_nennt_live_und_trockene_kanaele(monkeypatch):
+    _modus(monkeypatch, False, {"bluesky", "mastodon"})
+    assert config.mode_summary() == "LIVE: tumblr · TROCKEN: bluesky, mastodon"
+    assert config.live_channels() == ["tumblr"]
+    assert config.dry_channels() == ["bluesky", "mastodon"]
+    assert config.all_dry() is False
+
+
+def test_mode_summary_bei_dry_run_ist_alles_trocken(monkeypatch):
+    _modus(monkeypatch, True, {"bluesky"})
+    assert config.mode_summary() == "TROCKENMODUS (alle Kanäle)"
+    assert config.dry_channels() == ["bluesky", "mastodon", "tumblr"]
+    assert config.all_dry() is True
+
+
+def test_mode_summary_alles_live_ohne_trockenliste(monkeypatch):
+    _modus(monkeypatch, False, set())
+    assert config.mode_summary() == "LIVE: bluesky, mastodon, tumblr"
+    assert config.all_dry() is False
+
+
+def test_mode_summary_wenn_alle_kanaele_in_der_trockenliste_stehen(monkeypatch):
+    _modus(monkeypatch, False, {"bluesky", "mastodon", "tumblr"})
+    assert config.mode_summary() == "TROCKENMODUS (alle Kanäle)"
+    assert config.all_dry() is True
+
+
+def test_batch_header_banner_folgt_dem_ist_zustand():
+    teil = T.batch_header("2026-11-02", 3, ["bluesky", "mastodon"], alle=False)
+    assert "TROCKEN für" in teil and "Bluesky" in teil
+    assert "TROCKENMODUS — es wird nichts" not in teil
+    alle = T.batch_header("2026-11-02", 3, ["bluesky"], alle=True)
+    assert alle.startswith(T.DRY_RUN_BANNER)
+    live = T.batch_header("2026-11-02", 3, [], alle=False)
+    assert "🧪" not in live
+
+
+# ---------- Parsen von DRY_RUN_CHANNELS ----------
+
+def test_csv_set_trimmt_und_kleinschreibt(monkeypatch):
+    monkeypatch.setenv("DRY_RUN_CHANNELS", " Bluesky , MASTODON ,, tumblr")
+    assert config._csv_set("DRY_RUN_CHANNELS") == frozenset({"bluesky", "mastodon", "tumblr"})
+
+
+def test_csv_set_leerer_wert_und_fehlende_variable(monkeypatch):
+    monkeypatch.setenv("DRY_RUN_CHANNELS", "")
+    assert config._csv_set("DRY_RUN_CHANNELS") == frozenset()
+    monkeypatch.setenv("DRY_RUN_CHANNELS", " , ,")
+    assert config._csv_set("DRY_RUN_CHANNELS") == frozenset()
+    monkeypatch.delenv("DRY_RUN_CHANNELS")
+    assert config._csv_set("DRY_RUN_CHANNELS") == frozenset()

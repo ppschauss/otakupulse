@@ -20,6 +20,11 @@ def _bool(key: str, default: bool) -> bool:
     return raw.strip().lower() not in ("0", "false", "no", "off", "")
 
 
+def _csv_set(key: str) -> frozenset[str]:
+    """Kommaseparierte Umgebungsvariable als Menge: getrimmt, kleingeschrieben, leere Teile weg."""
+    return frozenset(c.strip().lower() for c in os.environ.get(key, "").split(",") if c.strip())
+
+
 # --- Pflicht ---
 SOCIAL_BOT_TOKEN = _req("SOCIAL_BOT_TOKEN")
 ANTHROPIC_API_KEY = _req("ANTHROPIC_API_KEY")
@@ -43,14 +48,44 @@ CHANNELS_ENABLED = [c.strip() for c in os.environ.get("CHANNELS_ENABLED", "").sp
 
 # Kanalweiser Trockenmodus: diese Kanäle posten nie echt, auch wenn DRY_RUN=0.
 # Default leer; so lässt sich ein einzelner Kanal live schalten, ohne die anderen mitzureißen.
-DRY_RUN_CHANNELS = frozenset(
-    c.strip().lower() for c in os.environ.get("DRY_RUN_CHANNELS", "").split(",") if c.strip()
-)
+DRY_RUN_CHANNELS = _csv_set("DRY_RUN_CHANNELS")
 
 
 def is_dry(channel: str) -> bool:
     """True, wenn für diesen Kanal nur simuliert wird (global oder kanalweise)."""
     return DRY_RUN or channel in DRY_RUN_CHANNELS
+
+
+def dry_channels() -> list[str]:
+    """Aktivierte Kanäle, die gerade nur simuliert werden (in CHANNELS_ENABLED-Reihenfolge)."""
+    return [c for c in CHANNELS_ENABLED if is_dry(c)]
+
+
+def live_channels() -> list[str]:
+    """Aktivierte Kanäle, die wirklich posten."""
+    return [c for c in CHANNELS_ENABLED if not is_dry(c)]
+
+
+def all_dry() -> bool:
+    """True, wenn kein einziger Kanal echt postet (DRY_RUN=1 oder alle aktivierten trocken)."""
+    return DRY_RUN or (bool(CHANNELS_ENABLED) and not live_channels())
+
+
+def mode_summary() -> str:
+    """Lesbarer Ist-Zustand je Kanal, nicht nur das globale Flag.
+
+    DRY_RUN=1 -> immer "TROCKENMODUS" für alle Kanäle; sonst z.B.
+    "LIVE: tumblr · TROCKEN: bluesky, mastodon".
+    """
+    live, dry = live_channels(), dry_channels()
+    if DRY_RUN or (dry and not live):
+        return "TROCKENMODUS (alle Kanäle)"
+    if not live:
+        return "keine Kanäle aktiv"
+    teile = ["LIVE: " + ", ".join(live)]
+    if dry:
+        teile.append("TROCKEN: " + ", ".join(dry))
+    return " · ".join(teile)
 
 # --- Quellen / Batch ---
 SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "https://www.otakupulse.de").rstrip("/")

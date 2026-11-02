@@ -105,7 +105,7 @@ async def send_batch() -> None:
     pending = await models.pending_for_batch(day)
 
     await runtime.bot.send_message(
-        chat_id=chat_id, text=T.batch_header(day, len(pending), config.DRY_RUN)
+        chat_id=chat_id, text=T.batch_header(day, len(pending), config.dry_channels(), config.all_dry())
     )
     if not pending:
         return

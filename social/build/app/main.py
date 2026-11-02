@@ -26,8 +26,7 @@ async def on_startup(app: Application) -> None:
     runtime.set_bot(app.bot)
     await scheduler.setup()
     await commands.set_menu(app)
-    mode = "TROCKENMODUS" if config.DRY_RUN else "LIVE"
-    log.info("Startup fertig — %s, Kanäle: %s", mode, config.CHANNELS_ENABLED)
+    log.info("Startup fertig — %s, Kanäle: %s", config.mode_summary(), config.CHANNELS_ENABLED)
 
 
 async def on_shutdown(app: Application) -> None:
