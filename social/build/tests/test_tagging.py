@@ -1,3 +1,5 @@
+import pytest
+
 from app import tagging
 from app.tagging import (
     is_excluded,
@@ -75,9 +77,69 @@ def test_normalize_entfernt_staffel_suffix():
     assert normalize_series_title("Shingeki no Kyojin Final Season") == "shingeki no kyojin"
 
 
-def test_normalize_entfernt_subtitel_nach_komma_und_doppelpunkt():
-    assert normalize_series_title("Tensei Kizoku, Kantei Skill de Nariagaru") == "tensei kizoku"
+def test_normalize_entfernt_subtitel_nach_doppelpunkt():
+    """Der Doppelpunkt ist der verlaessliche Untertitel-Trenner (an der Produktion geprueft)."""
     assert normalize_series_title("Tempal: Item no Chikara") == "tempal"
+    assert normalize_series_title("Pokémon: Arceus and the Jewel of Life") == "pokémon"
+    assert normalize_series_title("NARUTO: Shippuuden – Sunny Side Battle!!!") == "naruto"
+    assert normalize_series_title("Lagrange: The Flower of Rin-ne") == "lagrange"
+    assert normalize_series_title("Beelzebub: Kaiketsu!! Kuro no Majo") == "beelzebub"
+
+
+# --- C4: am Komma wird NICHT geschnitten ---
+
+def test_normalize_schneidet_nicht_am_komma():
+    """Der Komma-Schnitt war als Regel falsch: das Komma steht im Titel, nicht vor dem Untertitel."""
+    assert normalize_series_title(
+        "Hello, I am a Witch and my Crush Wants me to Make a Love Potion!"
+    ) == "hello, i am a witch and my crush wants me to make a love potion"
+
+
+@pytest.mark.parametrize("titel,erwartet", [
+    ("No Game, No Life", "no game, no life"),
+    ("DON'T TOY WITH ME, MISS NAGATORO", "don't toy with me, miss nagatoro"),
+    ("Demon Lord, Retry!", "demon lord, retry"),
+    ("With Vengeance, Sincerely, Your Broken Saintess Season 2",
+     "with vengeance, sincerely, your broken saintess"),
+    ("Tensei Kizoku, Kantei Skill de Nariagaru", "tensei kizoku, kantei skill de nariagaru"),
+])
+def test_normalize_laesst_titel_mit_komma_vollstaendig(titel, erwartet):
+    assert normalize_series_title(titel) == erwartet
+
+
+@pytest.mark.parametrize("titel", [
+    "Hello, I am a Witch and my Crush Wants me to Make a Love Potion!",
+    "No Game, No Life",
+    "DON'T TOY WITH ME, MISS NAGATORO",
+    "Demon Lord, Retry!",
+    "With Vengeance, Sincerely, Your Broken Saintess Season 2",
+])
+def test_kette_normalize_dann_sanitize_laesst_kein_komma_durch(titel):
+    """Seit dem Wegfall des Schnitts entfernt NUR sanitize_tag das Komma — lueckenlos belegen.
+
+    Ein Komma, das bis zur Tumblr-API durchkommt, zerreisst den Tag in zwei falsche.
+    """
+    roh = normalize_series_title(titel)
+    assert roh is not None
+    tag = sanitize_tag(roh)
+    assert "," not in tag
+    # Jedes Wort bleibt erhalten, nur das Komma faellt weg (keine Verstuemmelung).
+    assert tag.split() == roh.replace(",", " ").split()
+
+
+def test_kette_auch_ueber_tags_for(monkeypatch):
+    """Derselbe Weg, wie der Poster ihn geht: tags_for schickt jeden Tag durch sanitize_tag."""
+    out = tags_for(["Drama"], [], "No Game, No Life", {"Drama": 1})
+    assert out == ["anime", "otakupulse", "drama", "no game no life"]
+    assert all("," not in t for t in out)
+
+
+def test_override_faengt_den_einzelfall_des_alten_komma_schnitts():
+    """Der eine Fall, der den Komma-Schnitt begruendet hatte, steht jetzt als Override."""
+    assert normalize_series_title(
+        "Tensei Kizoku, Kantei Skill de Nariagaru 3rd Season") == "tensei kizoku"
+    assert tagging.SERIES_TAG_OVERRIDES[
+        "Tensei Kizoku, Kantei Skill de Nariagaru 3rd Season"] == "tensei kizoku"
 
 
 def test_normalize_laesst_einfache_titel_unberuehrt():
@@ -186,7 +248,8 @@ def test_normalize_suffix_nur_an_wortgrenze():
 
 def test_tags_for_komma_im_tag_wird_entfernt():
     out = tags_for(["Drama"], [("Boys, Love", "theme", 80)], "Foo, Bar", {"Drama": 1})
-    assert out == ["anime", "otakupulse", "drama", "boys love", "foo"]
+    # Serientitel bleibt vollstaendig (kein Komma-Schnitt), das Komma faellt in sanitize_tag weg.
+    assert out == ["anime", "otakupulse", "drama", "boys love", "foo bar"]
     assert all("," not in t for t in out)
 
 

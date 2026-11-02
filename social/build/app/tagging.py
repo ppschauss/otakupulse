@@ -61,9 +61,14 @@ def pick_tags(anime_tags: list[tuple[str, str, int]], limit: int = 2) -> list[st
 
 # --- Serientitel (Slot 6), Adult-Ausschluss, Gesamtschema ---
 
-# Manuelle Korrekturen zur Laufzeit: Schlüssel = Rohtitel, Wert = Tag.
-# None unterdrückt Slot 6 für diesen Titel.
-SERIES_TAG_OVERRIDES: dict[str, str | None] = {}
+# Manuelle Korrekturen zur Laufzeit: Schlüssel = Rohtitel (unverändert, wie in der DB),
+# Wert = Tag. None unterdrückt Slot 6 für diesen Titel.
+# Hier gehören die Einzelfälle hin, bei denen die Heuristik einen zu langen Tag liefert — der
+# Komma-Schnitt wurde entfernt, weil er als Regel überwiegend falsch war (siehe
+# normalize_series_title).
+SERIES_TAG_OVERRIDES: dict[str, str | None] = {
+    "Tensei Kizoku, Kantei Skill de Nariagaru 3rd Season": "tensei kizoku",
+}
 
 # Staffel-/Teil-Suffixe, die am Titelende abgeschnitten werden
 _SUFFIX_RE = re.compile(
@@ -85,6 +90,23 @@ _MIN_SERIES_LEN = 3
 def normalize_series_title(title: str | None) -> str | None:
     """Serientitel für Slot 6: ohne Staffel-Suffix und Untertitel, kleingeschrieben.
 
+    Untertitel-Trenner ist AUSSCHLIESSLICH der Doppelpunkt. Er ist an den echten Daten
+    verlässlich ("Pokémon: Arceus and the Jewel of Life" -> "pokémon", "NARUTO: Shippuuden …"
+    -> "naruto", "Lagrange: The Flower of Rin-ne" -> "lagrange").
+
+    Am Komma wird NICHT geschnitten. Das Komma steht in aller Regel *im* Titel, nicht vor einem
+    Untertitel; der Schnitt war als Regel überwiegend falsch. An der Produktion gemessen:
+    "Hello, I am a Witch and my Crush Wants me to Make a Love Potion!" -> "hello",
+    "No Game, No Life" -> "no game", "DON'T TOY WITH ME, MISS NAGATORO" -> "don't toy with me",
+    "Demon Lord, Retry!" -> "demon lord". Auch die Verschärfung "nur schneiden, wenn vor dem
+    Komma mindestens zwei Wörter stehen" hilft nicht: 226 der 310 Titel mit Komma erfüllen sie,
+    und der Schnitt bleibt dort falsch. Ein langer, aber richtiger Tag ist besser als ein kurzer,
+    falscher; Einzelfälle gehören in SERIES_TAG_OVERRIDES.
+
+    Das Komma verschwindet damit erst in sanitize_tag (Tumblr trennt den tags-Parameter am
+    Komma) — vorher hat der Schnitt das nebenbei mit erledigt. tags_for schickt jeden Tag dort
+    hindurch; test_tagging belegt die Kette lückenlos.
+
     Ein Eintrag in SERIES_TAG_OVERRIDES gewinnt immer (auch None). Zu kurze
     Ergebnisse (unter 3 Zeichen) und leere Titel ergeben None.
     """
@@ -92,7 +114,7 @@ def normalize_series_title(title: str | None) -> str | None:
         return None
     if title in SERIES_TAG_OVERRIDES:
         return SERIES_TAG_OVERRIDES[title]
-    t = re.split(r"[,:]", title.lower(), maxsplit=1)[0]
+    t = title.lower().split(":", 1)[0]
     t = re.sub(r"\s+", " ", t).strip()
     while True:
         neu = _SUFFIX_RE.sub("", t).strip()
