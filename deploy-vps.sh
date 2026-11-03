@@ -16,6 +16,9 @@ STACK=ei9kq0mxqajfydp1vcydbnyg
 APP="otakupulse-app-$STACK"
 NET="$STACK"
 PORT=3001
+# Docker laeuft hier nur mit erhoehten Rechten — `administrator` ist nicht in der
+# docker-Gruppe. Ohne sudo bricht der Build mit „permission denied … docker.sock" ab.
+DOCKER="sudo docker"
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
@@ -38,9 +41,9 @@ say "2/6 Build im Wegwerf-Container"
 # nach /app/public/media (über 100.000 Dateien). Tailwind scannt das mit und der
 # PostCSS-Worker stirbt per OOM. Dieser Container hat den Mount nicht.
 # NICHT ins laufende .next bauen: ISR schreibt dort parallel → ENOTEMPTY.
-rm -rf "$F/.next-new"
-docker rm -f op-build >/dev/null 2>&1 || true
-docker run --rm --name op-build \
+sudo rm -rf "$F/.next-new"
+$DOCKER rm -f op-build >/dev/null 2>&1 || true
+$DOCKER run --rm --name op-build \
   --network "$NET" \
   --env-file "$SECRETS" \
   -e NODE_ENV=production -e NEXT_DIST_DIR=.next-new \
@@ -55,12 +58,12 @@ echo "   BUILD_ID: $(cat "$F/.next-new/BUILD_ID")"
 
 say "4/6 Einsetzen"
 ts=$(date +%Y%m%d-%H%M)
-mv "$F/.next" "$F/.next.bak-$ts"
-mv "$F/.next-new" "$F/.next"
+sudo mv "$F/.next" "$F/.next.bak-$ts"
+sudo mv "$F/.next-new" "$F/.next"
 echo "   alter Build liegt unter .next.bak-$ts"
 
 say "5/6 App neu starten"
-docker restart "$APP" >/dev/null
+$DOCKER restart "$APP" >/dev/null
 code=000
 for i in $(seq 1 40); do
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://localhost:$PORT/" || echo 000)
@@ -69,8 +72,8 @@ for i in $(seq 1 40); do
 done
 if [ "$code" != "200" ]; then
   echo "   ✗ App antwortet mit $code — zurück auf den alten Build."
-  rm -rf "$F/.next"; mv "$F/.next.bak-$ts" "$F/.next"
-  docker restart "$APP" >/dev/null
+  sudo rm -rf "$F/.next"; sudo mv "$F/.next.bak-$ts" "$F/.next"
+  $DOCKER restart "$APP" >/dev/null
   exit 1
 fi
 
