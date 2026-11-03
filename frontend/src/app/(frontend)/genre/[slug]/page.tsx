@@ -71,29 +71,43 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 async function getExtras(payload: any, genre: any) {
   const pool = (payload.db as any).pool
   // Gemeinsame Basis: die 80 beliebtesten öffentlichen Titel dieses Genres.
+  // `rang` haelt die Beliebtheitsreihenfolge fest — die braucht die Sortierung unten.
   const TOP80 = `
-    SELECT a.id FROM anime a
+    SELECT a.id, row_number() OVER (ORDER BY a.popularity DESC NULLS LAST, a.id) AS rang
+    FROM anime a
     JOIN anime_rels r ON r.parent_id = a.id AND r.genres_id = $1
     WHERE a.is_hentai IS NOT TRUE
-    ORDER BY a.popularity DESC NULLS LAST
+    ORDER BY a.popularity DESC NULLS LAST, a.id
     LIMIT 80`
 
+  // `ORDER BY n DESC, zuerst`: bei gleicher Anzahl gewinnt, was beim beliebtesten
+  // Titel zuerst auftauchte — und innerhalb desselben Titels das, was in der
+  // Relationsliste vorne steht. Daher das Paar [rang, order] statt nur rang; ohne
+  // den zweiten Teil schwankt die Liste zwischen Aufrufen.
+  //
+  // Der Tiebreak ist keine Kosmetik: die Liste wird auf 10 bzw. 15 gekuerzt, er
+  // entscheidet also, WER drinsteht. Der frühere JS-Code sortierte stabil über eine
+  // Map in Beliebtheitsreihenfolge; genau das bildet das Paar nach. Ein erster
+  // Versuch mit alphabetischem Tiebreak wies am 03.11.2026 auf /genre/mecha und
+  // /genre/ecchi sichtbar andere Studios und Tags aus.
   const [ids, studios, tags] = await Promise.all([
     pool.query(TOP80, [genre.id]),
     pool.query(
       `WITH top AS (${TOP80})
-       SELECT s.name, s.slug, count(*)::int AS n
+       SELECT s.name, s.slug, count(*)::int AS n,
+              min(ARRAY[top.rang::int, coalesce(r."order", 0)]) AS zuerst
        FROM top JOIN anime_rels r ON r.parent_id = top.id AND r.studios_id IS NOT NULL
                 JOIN studios s ON s.id = r.studios_id
-       GROUP BY s.id, s.name, s.slug ORDER BY n DESC, s.name LIMIT 10`,
+       GROUP BY s.id, s.name, s.slug ORDER BY n DESC, zuerst LIMIT 10`,
       [genre.id],
     ),
     pool.query(
       `WITH top AS (${TOP80})
-       SELECT t.name, t.slug, count(*)::int AS n
+       SELECT t.name, t.slug, count(*)::int AS n,
+              min(ARRAY[top.rang::int, coalesce(at._order, 0)]) AS zuerst
        FROM top JOIN anime_tags at ON at._parent_id = top.id
                 JOIN tags t ON t.id = at.tag_id
-       GROUP BY t.id, t.name, t.slug ORDER BY n DESC, t.name LIMIT 15`,
+       GROUP BY t.id, t.name, t.slug ORDER BY n DESC, zuerst LIMIT 15`,
       [genre.id],
     ),
   ])
