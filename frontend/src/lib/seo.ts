@@ -1,6 +1,6 @@
 // Hilfen für Metadaten (Open Graph / Twitter / canonical) und JSON-LD.
 import type { Metadata } from 'next'
-import { DISCORD_INVITE, SITE_NAME, SITE_URL, TELEGRAM_CHANNEL, X_URL, url } from './site'
+import { DISCORD_INVITE, SITE_NAME, SITE_URL, TELEGRAM_CHANNEL, TUMBLR_URL, X_URL, url } from './site'
 import { animeCover, displayTitle, plainText } from './anime'
 import { streamingOffersOf, type OfferView } from './streaming'
 
@@ -92,7 +92,7 @@ export function organizationLd() {
     url: SITE_URL,
     description: 'Deutschsprachige Anime-Datenbank mit anbieter-genauer Streaming-Verfügbarkeit (Dub/Sub) für Deutschland.',
     // Entity-Verknüpfung: dieselbe Organisation auf den Community-Kanälen (Knowledge Graph / KI-Grounding).
-    sameAs: [DISCORD_INVITE, X_URL, TELEGRAM_CHANNEL],
+    sameAs: [DISCORD_INVITE, X_URL, TELEGRAM_CHANNEL, TUMBLR_URL],
   }
 }
 

@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { JsonLd } from '@/components/JsonLd'
 import { pageMeta } from '@/lib/seo'
-import { DISCORD_INVITE, SITE_NAME, SITE_URL, TELEGRAM_CHANNEL, X_URL } from '@/lib/site'
+import { DISCORD_INVITE, SITE_NAME, SITE_URL, TELEGRAM_CHANNEL, TUMBLR_URL, X_URL } from '@/lib/site'
 
 export const dynamic = 'force-static'
 
@@ -25,7 +25,7 @@ export default function UeberUnsPage() {
           '@type': 'AboutPage',
           name: `Über ${SITE_NAME}`,
           url: `${SITE_URL}/ueber-uns`,
-          mainEntity: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL, sameAs: [DISCORD_INVITE, X_URL, TELEGRAM_CHANNEL] },
+          mainEntity: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL, sameAs: [DISCORD_INVITE, X_URL, TELEGRAM_CHANNEL, TUMBLR_URL] },
         }}
       />
       <Breadcrumbs items={[{ name: 'Start', path: '/' }, { name: 'Über uns', path: '/ueber-uns' }]} />
@@ -102,7 +102,8 @@ export default function UeberUnsPage() {
             Diskutiere mit auf unserem{' '}
             <a href={DISCORD_INVITE} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Discord</a>,
             folge uns auf{' '}
-            <a href={X_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">X</a> oder abonniere
+            <a href={X_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">X</a> und{' '}
+            <a href={TUMBLR_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Tumblr</a> oder abonniere
             den{' '}
             <a href={TELEGRAM_CHANNEL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Telegram-Kanal</a>{' '}
             für neue Simulcasts und Lizenz-News.

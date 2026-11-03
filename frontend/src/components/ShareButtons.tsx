@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 /**
  * Teilen-Leiste für Beiträge: nativer Web-Share-Dialog (mobil, wenn verfügbar)
  * + „Link kopieren" + die wichtigsten Netzwerke (WhatsApp, Telegram, X, Bluesky,
- * Facebook, Reddit). `url` sollte absolut sein (Server übergibt die kanonische URL).
+ * Facebook, Reddit, Tumblr). `url` sollte absolut sein (Server übergibt die kanonische URL).
  */
 export function ShareButtons({ url, title, message }: { url: string; title: string; message?: string }) {
   const [copied, setCopied] = useState(false)
@@ -17,7 +17,7 @@ export function ShareButtons({ url, title, message }: { url: string; title: stri
   }, [])
 
   // `message` = CTA-Vorlage für die konversationellen Kanäle (WhatsApp/Telegram/X/
-  // Bluesky/nativer Dialog). Reddit nutzt den nackten Titel als Beitrags-Titel.
+  // Bluesky/nativer Dialog). Reddit/Tumblr nutzen den nackten Titel als Beitrags-Titel.
   const msg = message || title
   // Text zuerst, Link danach — für Kanäle mit freiem Nachrichtentext (WhatsApp,
   // Bluesky, nativer Dialog). Telegram/X bekommen Text + URL getrennt und hängen
@@ -79,6 +79,14 @@ export function ShareButtons({ url, title, message }: { url: string; title: stri
       hover: 'hover:border-[#FF4500]/60 hover:text-[#FF4500]',
       icon: (
         <path d="M22 11.82a2.13 2.13 0 0 0-3.6-1.53 10.4 10.4 0 0 0-5.6-1.77l.95-4.48 3.12.66a1.53 1.53 0 1 0 .16-.9l-3.48-.74a.38.38 0 0 0-.45.29l-1.06 4.99a10.5 10.5 0 0 0-5.68 1.77 2.13 2.13 0 1 0-2.35 3.5 4.2 4.2 0 0 0-.05.64c0 3.24 3.77 5.86 8.42 5.86s8.42-2.62 8.42-5.86a4.2 4.2 0 0 0-.05-.63A2.13 2.13 0 0 0 22 11.82ZM7.6 13.34a1.53 1.53 0 1 1 3.06 0 1.53 1.53 0 0 1-3.06 0Zm8.53 4.03c-1.04 1.04-3.05 1.12-3.64 1.12-.59 0-2.6-.08-3.64-1.12a.4.4 0 0 1 .56-.56c.66.66 2.06.89 3.08.89 1.02 0 2.42-.23 3.08-.89a.4.4 0 0 1 .56.56Zm-.28-2.5a1.53 1.53 0 1 1 0-3.06 1.53 1.53 0 0 1 0 3.06Z" />
+      ),
+    },
+    {
+      name: 'Tumblr',
+      href: `https://www.tumblr.com/widgets/share/tool?canonicalUrl=${u}&title=${rt}&posttype=link`,
+      hover: 'hover:border-[#5A8DD6]/60 hover:text-[#5A8DD6]',
+      icon: (
+        <path d="M14.563 24c-5.093 0-7.031-3.756-7.031-6.411V9.747H5.116V6.648c3.63-1.313 4.512-4.596 4.71-6.469C9.84.051 9.941 0 9.999 0h3.517v6.114h4.801v3.633h-4.82v7.47c.016 1.001.375 2.371 2.207 2.371h.09c.631-.02 1.486-.205 1.936-.419l1.156 3.425c-.436.636-2.4 1.374-4.156 1.404h-.178l.011.002z" />
       ),
     },
   ]

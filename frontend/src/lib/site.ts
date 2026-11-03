@@ -7,6 +7,8 @@ export const DISCORD_INVITE = 'https://discord.gg/UwX9akYq5F'
 export const TELEGRAM_CHANNEL = 'https://t.me/otakupulse_de'
 // X / Twitter-Profil.
 export const X_URL = 'https://x.com/OtakuPulseDE'
+// Tumblr-Blog.
+export const TUMBLR_URL = 'https://otakupulse-de.tumblr.com/'
 // Google AdSense: Publisher-ID für das Verifizierungs-Meta-Tag im <head>.
 // Leer lassen (oder Env auf '' setzen) blendet das Tag aus.
 export const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_ADSENSE_CLIENT ?? 'ca-pub-5566154579483105'

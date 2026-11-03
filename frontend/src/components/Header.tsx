@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import type { NavLink } from '@/lib/navigation'
-import { DISCORD_INVITE, TELEGRAM_CHANNEL, X_URL } from '@/lib/site'
+import { DISCORD_INVITE, TELEGRAM_CHANNEL, TUMBLR_URL, X_URL } from '@/lib/site'
 
 function isActive(pathname: string, href: string) {
   if (href.startsWith('http')) return false
@@ -31,6 +31,14 @@ function XIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
       <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  )
+}
+
+function TumblrIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path d="M14.563 24c-5.093 0-7.031-3.756-7.031-6.411V9.747H5.116V6.648c3.63-1.313 4.512-4.596 4.71-6.469C9.84.051 9.941 0 9.999 0h3.517v6.114h4.801v3.633h-4.82v7.47c.016 1.001.375 2.371 2.207 2.371h.09c.631-.02 1.486-.205 1.936-.419l1.156 3.425c-.436.636-2.4 1.374-4.156 1.404h-.178l.011.002z" />
     </svg>
   )
 }
@@ -117,6 +125,16 @@ export function Header({ nav }: { nav: NavLink[] }) {
           >
             <XIcon className="h-3.5 w-3.5 fill-current" />
           </a>
+          <a
+            href={TUMBLR_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="OtakuPulse auf Tumblr folgen"
+            title="OtakuPulse auf Tumblr"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#001935] text-white ring-1 ring-white/15 transition hover:bg-[#0b2a4d]"
+          >
+            <TumblrIcon className="h-4 w-4 fill-current" />
+          </a>
         </div>
 
         {/* Mobile: Hamburger */}
@@ -194,6 +212,16 @@ export function Header({ nav }: { nav: NavLink[] }) {
           >
             <XIcon className="h-4 w-4 fill-current" />
             OtakuPulse auf X
+          </a>
+          <a
+            href={TUMBLR_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={close}
+            className="mt-1 flex items-center gap-2 rounded-lg bg-[#001935] px-3 py-2.5 text-base font-semibold text-white ring-1 ring-white/15 transition hover:bg-[#0b2a4d]"
+          >
+            <TumblrIcon className="h-4 w-4 fill-current" />
+            OtakuPulse auf Tumblr
           </a>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { FooterColumn, NavLink } from '@/lib/navigation'
 import { ConsentSettingsLink } from '@/components/ConsentSettingsLink'
-import { DISCORD_INVITE, TELEGRAM_CHANNEL, X_URL } from '@/lib/site'
+import { DISCORD_INVITE, TELEGRAM_CHANNEL, TUMBLR_URL, X_URL } from '@/lib/site'
 
 const ext = (href: string) => href.startsWith('http')
 
@@ -53,6 +53,17 @@ export function Footer({ columns, legal, lists = [] }: { columns: FooterColumn[]
                 </svg>
                 X
               </a>
+              <a
+                href={TUMBLR_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#001935] px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/15 transition hover:bg-[#0b2a4d]"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-current">
+                  <path d="M14.563 24c-5.093 0-7.031-3.756-7.031-6.411V9.747H5.116V6.648c3.63-1.313 4.512-4.596 4.71-6.469C9.84.051 9.941 0 9.999 0h3.517v6.114h4.801v3.633h-4.82v7.47c.016 1.001.375 2.371 2.207 2.371h.09c.631-.02 1.486-.205 1.936-.419l1.156 3.425c-.436.636-2.4 1.374-4.156 1.404h-.178l.011.002z" />
+                </svg>
+                Tumblr
+              </a>
             </div>
           </div>
           {columns.map((col, ci) => (
@@ -91,6 +102,11 @@ export function Footer({ columns, legal, lists = [] }: { columns: FooterColumn[]
               <li>
                 <a href={X_URL} target="_blank" rel="noopener" className="transition hover:text-accent">
                   Twitter / X
+                </a>
+              </li>
+              <li>
+                <a href={TUMBLR_URL} target="_blank" rel="noopener" className="transition hover:text-accent">
+                  Tumblr
                 </a>
               </li>
             </ul>

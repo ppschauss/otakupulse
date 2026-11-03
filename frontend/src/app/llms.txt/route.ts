@@ -1,6 +1,6 @@
 import { DE_PROVIDER_SLUGS, providerBySlug } from '@/lib/streaming'
 import { STATIC_FILTER_KEYS, staticFilter } from '@/lib/platformLists'
-import { DISCORD_INVITE, SITE_URL, TELEGRAM_CHANNEL, X_URL } from '@/lib/site'
+import { DISCORD_INVITE, SITE_URL, TELEGRAM_CHANNEL, TUMBLR_URL, X_URL } from '@/lib/site'
 
 export const revalidate = 86400
 
@@ -47,7 +47,7 @@ ${lists.join('\n')}
 - [Über uns & Methodik: So prüfen wir die Verfügbarkeit](${SITE_URL}/ueber-uns)
 - [Impressum](${SITE_URL}/impressum)
 - [Kontakt](${SITE_URL}/kontakt)
-- Discord: ${DISCORD_INVITE} · X: ${X_URL} · Telegram: ${TELEGRAM_CHANNEL}
+- Discord: ${DISCORD_INVITE} · X: ${X_URL} · Telegram: ${TELEGRAM_CHANNEL} · Tumblr: ${TUMBLR_URL}
 
 ## Nutzung durch KI-Systeme
 
