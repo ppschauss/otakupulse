@@ -34,6 +34,18 @@ export function isBlockedAnime(anime: any): boolean {
 /** Where-Baustein für Payload-Abfragen: nur öffentliche Titel. */
 export const publicAnimeFilter = { isHentai: { not_equals: true } } as const
 
+/**
+ * Where-Baustein für Abfragen auf die `genres`-Collection: gesperrte Genres
+ * gehören in keine Liste, keinen Filter, kein Menü und keine Sitemap. Die
+ * Detailseite leitet zwar um (ADULT_REDIRECT_TARGET), aber ein Link darauf ist
+ * trotzdem ein Signal an Nutzer und Crawler — und auf einer Seite mit Anzeigen
+ * will Google diese Signale nicht sehen.
+ */
+export const publicGenreFilter = { slug: { not_in: [...BLOCKED_GENRE_SLUGS] } } as const
+
+/** Liste für SQL-Aggregationen über `genres` (als Parameter zu binden). */
+export const blockedGenreSlugList: string[] = [...BLOCKED_GENRE_SLUGS]
+
 /** Gehört ein Artikel zu einem gesperrten Titel? (relatedAnime bei depth ≥ 1) */
 export function isBlockedArticle(article: any): boolean {
   const related: any[] = Array.isArray(article?.relatedAnime) ? article.relatedAnime : []

@@ -3,7 +3,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import { PROVIDER_SLUGS } from './streaming'
 import { animeIndexable, liveArticleFilters, textTooThin } from './anime'
-import { BLOCKED_GENRE_SLUGS, publicAnimeFilter } from './adult'
+import { BLOCKED_GENRE_SLUGS, publicAnimeFilter, publicGenreFilter } from './adult'
 
 export const PER = 5000
 
@@ -59,7 +59,7 @@ export const TYPES: SitemapType[] = [
     keep: (d) => !d.noindex && !textTooThin(d.bioDe),
   },
   { key: 'studios', collection: 'studios', path: (s) => `/studio/${s}` },
-  { key: 'genres', collection: 'genres', path: (s) => `/genre/${s}` },
+  { key: 'genres', collection: 'genres', path: (s) => `/genre/${s}`, where: publicGenreFilter },
   { key: 'tags', collection: 'tags', path: (s) => `/tag/${s}` },
   { key: 'seasons', collection: 'anime-seasons', path: (s) => `/season/${s}` },
   // Geplante Artikel (publishDate in der Zukunft) erst zum Termin in die Sitemap.

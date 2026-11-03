@@ -2,11 +2,12 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 import Link from 'next/link'
 import { genreBlurb } from '@/lib/genre-info'
+import { publicGenreFilter } from '@/lib/adult'
 
 // Wählt deterministisch ein Genre pro Tag (gleicher Tag → gleiches Genre).
 export async function GenreOfTheDay() {
   const payload = await getPayload({ config })
-  const { docs, totalDocs } = await payload.find({ collection: 'genres', limit: 200, sort: 'name', depth: 0 })
+  const { docs, totalDocs } = await payload.find({ collection: 'genres', where: publicGenreFilter, limit: 200, sort: 'name', depth: 0 })
   if (!docs.length) return null
 
   const now = new Date()

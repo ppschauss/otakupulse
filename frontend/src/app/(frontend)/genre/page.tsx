@@ -9,6 +9,7 @@ import { JsonLd } from '@/components/JsonLd'
 import { pageMetaFor } from '@/lib/pageContent'
 import { PageSeoFooter } from '@/components/SeoFooter'
 import { url } from '@/lib/site'
+import { publicGenreFilter } from '@/lib/adult'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,7 @@ type SP = { sort?: string }
 export async function generateMetadata({ searchParams }: { searchParams: Promise<SP> }): Promise<Metadata> {
   await searchParams
   const payload = await getPayload({ config })
-  const count = await payload.count({ collection: 'genres' })
+  const count = await payload.count({ collection: 'genres', where: publicGenreFilter })
   return pageMetaFor(
     'genre',
     {
@@ -35,12 +36,18 @@ export default async function GenreListPage({ searchParams }: { searchParams: Pr
   const sortKey = sp.sort === 'name' ? 'name' : 'count'
 
   const payload = await getPayload({ config })
-  const { docs } = await payload.find({ collection: 'genres', limit: 300, sort: 'name', depth: 0 })
+  const { docs } = await payload.find({ collection: 'genres', where: publicGenreFilter, limit: 300, sort: 'name', depth: 0 })
 
   // Anime-Anzahl pro Genre (eine Aggregation).
+  // `JOIN anime`: gesperrte Titel zählen nicht mit, sonst weist z. B. Ecchi mehr
+  // Anime aus, als die Genre-Seite danach überhaupt zeigt (die filtert mit
+  // publicAnimeFilter).
   const pool = (payload.db as any).pool
   const { rows } = await pool.query(
-    `SELECT genres_id AS id, count(*)::int AS n FROM anime_rels WHERE genres_id IS NOT NULL GROUP BY genres_id`,
+    `SELECT ar.genres_id AS id, count(*)::int AS n
+     FROM anime_rels ar JOIN anime a ON a.id = ar.parent_id
+     WHERE ar.genres_id IS NOT NULL AND a.is_hentai IS NOT TRUE
+     GROUP BY ar.genres_id`,
   )
   const countById = new Map<number, number>(rows.map((r: any) => [r.id, r.n]))
 

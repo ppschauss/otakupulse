@@ -4,8 +4,10 @@ import {
   adsAllowedForArticle,
   adsAllowedForGenre,
   adsAllowedForTag,
+  blockedGenreSlugList,
   isBlockedAnime,
   isBlockedArticle,
+  publicGenreFilter,
 } from './adult'
 
 describe('Adult-Policy', () => {
@@ -29,6 +31,14 @@ describe('Adult-Policy', () => {
     expect(adsAllowedForGenre('hentai')).toBe(false)
     expect(adsAllowedForTag('ninja')).toBe(true)
     expect(adsAllowedForTag('nudity')).toBe(false)
+  })
+  it('haelt gesperrte Genres aus Listen, Filtern und der Sitemap', () => {
+    // Der Baustein muss alle gesperrten Slugs nennen — sonst taucht ein Genre
+    // wieder in Uebersicht, Startseite, Sitemap oder „Genre des Tages" auf,
+    // obwohl die Detailseite umleitet.
+    expect(publicGenreFilter.slug.not_in).toContain('hentai')
+    expect(publicGenreFilter.slug.not_in).not.toContain('ecchi')
+    expect(blockedGenreSlugList).toEqual([...publicGenreFilter.slug.not_in])
   })
   it('vererbt die Anzeigen-Entscheidung vom Artikel auf die behandelten Titel', () => {
     expect(adsAllowedForArticle({ title: 'Frieren Staffel 3', relatedAnime: [{ genres: [{ slug: 'action' }] }] })).toBe(true)

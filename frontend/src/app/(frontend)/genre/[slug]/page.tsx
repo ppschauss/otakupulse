@@ -7,7 +7,7 @@ import type { Metadata } from 'next'
 import { AnimeCard } from '@/components/AnimeCard'
 import { Pagination } from '@/components/Pagination'
 import { Faq } from '@/components/Faq'
-import { ADULT_REDIRECT_TARGET, BLOCKED_GENRE_SLUGS, adsAllowedForGenre, publicAnimeFilter } from '@/lib/adult'
+import { ADULT_REDIRECT_TARGET, BLOCKED_GENRE_SLUGS, adsAllowedForGenre, publicAnimeFilter, publicGenreFilter } from '@/lib/adult'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { Chip } from '@/components/Chip'
 import { SeoFooter } from '@/components/SeoFooter'
@@ -94,7 +94,13 @@ async function getExtras(payload: any, genre: any) {
   const topTags = [...tagCount.values()].sort((a, b) => b.n - a.n).slice(0, 15)
 
   const [related, news] = await Promise.all([
-    payload.find({ collection: 'genres', where: { slug: { not_equals: genre.slug } }, sort: 'name', limit: 30, depth: 0 }),
+    payload.find({
+      collection: 'genres',
+      where: { and: [{ slug: { not_equals: genre.slug } }, publicGenreFilter] },
+      sort: 'name',
+      limit: 30,
+      depth: 0,
+    }),
     animeIds.length
       ? payload.find({
           collection: 'articles',

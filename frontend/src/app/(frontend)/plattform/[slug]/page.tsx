@@ -12,7 +12,7 @@ import { JsonLd } from '@/components/JsonLd'
 import { breadcrumbLd, pageMeta } from '@/lib/seo'
 import { providerBySlug } from '@/lib/streaming'
 import { platformListCounts, MIN_LIST_SIZE, staticFilter } from '@/lib/platformLists'
-import { publicAnimeFilter } from '@/lib/adult'
+import { blockedGenreSlugList, publicAnimeFilter, publicGenreFilter } from '@/lib/adult'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 36
@@ -83,12 +83,13 @@ export default async function PlatformDetail({
       pool.query(
         `SELECT g.name, g.slug, count(DISTINCT ar.parent_id)::int AS n
          FROM anime_streaming_providers sp
+         JOIN anime a ON a.id = sp.parent_id AND a.is_hentai IS NOT TRUE
          JOIN anime_rels ar ON ar.parent_id = sp.parent_id AND ar.genres_id IS NOT NULL
          JOIN genres g ON g.id = ar.genres_id
-         WHERE sp.value = $1
+         WHERE sp.value = $1 AND g.slug <> ALL($2)
          GROUP BY g.id, g.name, g.slug
          ORDER BY n DESC LIMIT 8`,
-        [provider.slug],
+        [provider.slug, blockedGenreSlugList],
       ),
     ])
     deDub = dub.rows[0]?.n ?? 0
@@ -97,7 +98,7 @@ export default async function PlatformDetail({
     // Listen-Chips: nur Kombinationen, die indexwürdig sind (≥ MIN_LIST_SIZE).
     const [counts, allGenres] = await Promise.all([
       platformListCounts(payload),
-      payload.find({ collection: 'genres', limit: 100, depth: 0, select: { slug: true, name: true } as any }),
+      payload.find({ collection: 'genres', where: publicGenreFilter, limit: 100, depth: 0, select: { slug: true, name: true } as any }),
     ])
     const genreName = new Map((allGenres.docs as any[]).map((g) => [g.slug, g.name]))
     n = {

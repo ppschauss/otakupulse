@@ -3,6 +3,7 @@ import config from '@payload-config'
 import { ChipSection } from './HubSections'
 import { seasonLabel } from '@/lib/anime'
 import { STREAMING_PROVIDERS } from '@/lib/streaming'
+import { publicGenreFilter } from '@/lib/adult'
 
 // Async-Bereich der Startseite: Daten-getriebene Entdeckungs-Sektionen.
 // Stats-Leiste (Autorität) + Genre-/Season-/Streaming-Chips (interne Verlinkung).
@@ -14,8 +15,8 @@ export async function HomeDiscover() {
     payload.count({ collection: 'characters' }),
     payload.count({ collection: 'persons' }),
     payload.count({ collection: 'studios' }),
-    payload.count({ collection: 'genres' }),
-    payload.find({ collection: 'genres', sort: 'name', limit: 30, depth: 0 }),
+    payload.count({ collection: 'genres', where: publicGenreFilter }),
+    payload.find({ collection: 'genres', where: publicGenreFilter, sort: 'name', limit: 30, depth: 0 }),
     payload.find({ collection: 'anime-seasons', sort: '-year', limit: 12, depth: 0 }),
   ])
 
