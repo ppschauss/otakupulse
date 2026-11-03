@@ -62,6 +62,19 @@ sudo mv "$F/.next" "$F/.next.bak-$ts"
 sudo mv "$F/.next-new" "$F/.next"
 echo "   alter Build liegt unter .next.bak-$ts"
 
+say "4b/6 Alte Build-Kopien aufräumen"
+# Jeder Lauf legt eine Kopie an; ein .next ist mehrere GB gross (ISR-Cache).
+# Zwei Staende als Rueckfallebene genuegen, der Rest kann weg. Nur das eigene
+# Zeitstempel-Muster, damit von Hand angelegte Kopien (.next.bak-vps o. ae.)
+# unberuehrt bleiben.
+alt=$(ls -1d "$F"/.next.bak-20[0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9] 2>/dev/null | sort -r | tail -n +3)
+if [ -n "$alt" ]; then
+  echo "$alt" | sed 's|.*/|   entferne |'
+  echo "$alt" | xargs -r sudo rm -rf
+else
+  echo "   nichts zu entfernen"
+fi
+
 say "5/6 App neu starten"
 $DOCKER restart "$APP" >/dev/null
 code=000
