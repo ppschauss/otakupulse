@@ -36,6 +36,52 @@ const securityHeaders = [
 // security configuration doesn't match"). Cross-Origin-Isolation (SharedArrayBuffer
 // o. ä.) braucht die Seite nicht — daher kein COEP.
 
+// animestern.de (2026-11): Die alte Fanseite ist eine reine Weiterleitungs-Domain
+// und schickt jeden Pfad unverändert hierher — ihre Struktur war aber
+// /anime/<titel>/<unterordner>/..., die es hier nicht gibt, also lief jede dieser
+// 301 in einen 404. Diese Tabelle fängt die Titel auf, die sich eindeutig zuordnen
+// lassen; sie ist von Hand geprüft, nicht per Namensähnlichkeit geraten. Bewusst
+// NICHT aufgenommen: wedding_peach, jeanne, nadia, cutey_honey, el_hazard,
+// tenchi_muyou, record_of, magig_k_r, plastic_little, phantom_quest, midnight —
+// diese Titel fehlen im Bestand oder liegen nur als Spin-off bzw. Remake vor. Eine
+// Umleitung auf den falschen Titel ist schlechter als ein ehrlicher 404 und sieht
+// für Google wie eine Doorway-Weiterleitung aus.
+//
+// Ebenfalls nicht aufgenommen: `aika` und `chobits`. Dort heißt das alte Verzeichnis
+// schon wie der heutige Slug, die Titelseite ist also längst erreichbar — eine
+// Platzhalter-Regel würde dort die echten Unterseiten /episoden und /charaktere
+// verschlucken. Deren alte Galerie-URLs bleiben 404; daran hängt nichts.
+const ANIMESTERN_TITEL = {
+  dragonball: 'dragon-ball',
+  sailor: 'bishoujo-senshi-sailor-moon',
+  love_hina: 'love-hina',
+  nge: 'shin-seiki-evangelion',
+  ranma: 'ranma-1-2', // Original von 1989, nicht die Neuauflage von 2024
+  yugioh: 'yu-gi-oh-duel-monsters',
+  pokemon: 'pocket-monsters',
+  oh_my_goodness: 'aa-megami-sama-tv', // nur Franchise-Treffer: die OVA von 1993 fehlt
+}
+
+// Die alte Seite hatte je Titel wechselnde Unterordner. Zwei davon haben hier ein
+// echtes Gegenstück, der Rest (bilder, mangas, wallpapers, cards, filminfo, story,
+// autor …) landet auf der Titelseite. Die spezifischen Regeln müssen vor dem
+// Platzhalter stehen — Next arbeitet die Liste von oben nach unten ab.
+const animesternRedirects = Object.entries(ANIMESTERN_TITEL).flatMap(([alt, slug]) => [
+  ...['folgen', 'episoden'].map((ordner) => ({
+    source: `/anime/${alt}/${ordner}/:pfad*`,
+    destination: `/anime/${slug}/episoden`,
+    permanent: true,
+  })),
+  ...['charas', 'chara', 'charaktere'].map((ordner) => ({
+    source: `/anime/${alt}/${ordner}/:pfad*`,
+    destination: `/anime/${slug}/charaktere`,
+    permanent: true,
+  })),
+  { source: `/anime/${alt}/:pfad*`, destination: `/anime/${slug}`, permanent: true },
+  { source: `/anime/${alt}`, destination: `/anime/${slug}`, permanent: true },
+])
+
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Kein `X-Powered-By: Next.js`-Header (Tech-Fingerprinting reduzieren).
@@ -71,6 +117,7 @@ const nextConfig = {
       { source: '/aehnlich/:slug', destination: '/anime/:slug', permanent: true },
       { source: '/streamen', destination: '/plattform', permanent: true },
       { source: '/aehnlich', destination: '/anime', permanent: true },
+      ...animesternRedirects,
     ]
   },
   async headers() {
