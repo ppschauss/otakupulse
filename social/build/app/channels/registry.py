@@ -4,17 +4,23 @@ import logging
 from .. import config
 from .bluesky import Bluesky
 from .mastodon import Mastodon
+from .tumblr import Tumblr
 
 log = logging.getLogger(__name__)
 
 _FACTORY = {
     "bluesky": Bluesky,
     "mastodon": Mastodon,
+    "tumblr": Tumblr,
     # v2.5: "discord": Discord, "x": IftttX
     # v3:   "reddit": Reddit, "facebook": Facebook
 }
 
 _instances: dict = {}
+
+
+def known_channel_names() -> list[str]:
+    return list(_FACTORY)
 
 
 def active_channel_names() -> list[str]:

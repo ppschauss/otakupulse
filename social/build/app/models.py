@@ -1,7 +1,8 @@
 """Datenzugriff auf die Entwurfs-Queue, das Post-Log und die Ingest-Dedup-Tabelle."""
-from datetime import timedelta
+import json
+from datetime import datetime, time, timedelta, timezone
 
-from . import db, config
+from . import db, config, util
 from .util import now_utc, now_utc_iso, parse_iso
 
 
@@ -30,7 +31,8 @@ async def seen_count() -> int:
 # ---------- Entwürfe ----------
 
 async def enqueue(*, batch_day, channel, source_kind, source_ref, url, image_url,
-                  title, body, perishable: bool) -> int:
+                  title, body, perishable: bool,
+                  tags: list[str] | None = None, category: str | None = None) -> int:
     now = now_utc()
     perishable_at = (
         (now + timedelta(hours=config.PERISHABLE_HOURS)).isoformat() if perishable else None
@@ -38,10 +40,11 @@ async def enqueue(*, batch_day, channel, source_kind, source_ref, url, image_url
     cur = await db.conn().execute(
         """INSERT INTO drafts
            (batch_day, channel, source_kind, source_ref, url, image_url, title, body,
-            perishable_at, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            perishable_at, created_at, tags, category)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (batch_day, channel, source_kind, source_ref, url, image_url, title, body,
-         perishable_at, now.isoformat()),
+         perishable_at, now.isoformat(),
+         json.dumps(tags, ensure_ascii=False) if tags is not None else None, category),
     )
     await db.conn().commit()
     return cur.lastrowid
@@ -100,10 +103,21 @@ async def set_edit_and_approve(draft_id: int, text: str) -> None:
 
 async def mark_posted(draft_id: int, external_id: str | None, channel: str,
                       source_kind: str, source_ref: str) -> None:
+    """Erfolgreichen Post verbuchen: Entwurf auf 'posted' und Eintrag im posted_log.
+
+    Räumt `last_error` mit auf — das ist die einzige Stelle, die den Erfolg kennt. Sonst stünde
+    bei jedem gelungenen Tumblr-Post die Vormerkung "Ausgang unbekannt: Versand begonnen" in der
+    Zeile (und bei allen Kanälen die Meldung eines vorangegangenen Fehlversuchs). Wer die
+    Entwürfe von Hand ansieht (DEPLOY.md Schritt 7), liest dort sonst eine Fehlermeldung an
+    einem geglückten Post und gewöhnt sich an, sie zu übersehen. `attempts` bleibt stehen: dass
+    es Versuche brauchte, ist richtige Information, und der Fehlertext selbst steht im Log
+    (breaker.record_fail).
+    """
     now = now_utc_iso()
     c = db.conn()
     await c.execute(
-        "UPDATE drafts SET state='posted', posted_at=?, external_id=? WHERE id=?",
+        "UPDATE drafts SET state='posted', posted_at=?, external_id=?, last_error=NULL "
+        "WHERE id=?",
         (now, external_id, draft_id),
     )
     await c.execute(
@@ -114,21 +128,142 @@ async def mark_posted(draft_id: int, external_id: str | None, channel: str,
     await c.commit()
 
 
-async def record_attempt_failure(draft_id: int, error: str, give_up: bool) -> None:
-    state = "failed" if give_up else "approved"
+async def already_posted(channel: str, source_kind: str, source_ref: str) -> bool:
+    """Steht dieser Beitrag für diesen Kanal schon im posted_log?
+
+    Die Schranke, die der Vertrag im Kopf von db.py zusagt: posted_log wurde bisher nur
+    geschrieben und gezählt, aber vor einem Post nie gefragt. poster.run_post_pass fragt hier,
+    bevor gesendet wird — das deckt jede Quelle doppelter 'approved'-Entwürfe ab (Absturz
+    zwischen enqueue/approve und mark_seen, zweiter `/batch`, paralleler `cli ingest`).
+    """
+    cur = await db.conn().execute(
+        "SELECT 1 FROM posted_log WHERE channel=? AND source_kind=? AND source_ref=?",
+        (channel, source_kind, source_ref),
+    )
+    return (await cur.fetchone()) is not None
+
+
+async def mark_posted_duplicate(draft_id: int) -> None:
+    """Zwillings-Entwurf als 'posted' verbuchen, ohne zu senden (der Beitrag ist schon draußen).
+
+    Kein posted_log-Eintrag (der steht schon da) und bewusst kein posted_at: sonst zählte die
+    Tumblr-Tagesmeldung (posted_between) denselben Post zweimal.
+    """
     await db.conn().execute(
-        "UPDATE drafts SET attempts=attempts+1, last_error=?, state=? WHERE id=?",
-        (error[:500], state, draft_id),
+        "UPDATE drafts SET state='posted', decided_at=? WHERE id=? AND state='approved'",
+        (now_utc_iso(), draft_id),
+    )
+    await db.conn().commit()
+
+
+async def record_attempt_failure(draft_id: int, error: str, give_up: bool,
+                                 count_attempt: bool = True) -> None:
+    """Fehlschlag festhalten; `give_up` setzt 'failed', sonst bleibt der Entwurf 'approved'.
+
+    `count_attempt=False` schreibt nur Grund und Zustand, ohne attempts zu erhöhen: der Versuch
+    wurde dann schon vor dem Senden gezählt (poster.run_post_pass, Tumblr-Vormerkung), und ein
+    zweites Hochzählen im selben Durchlauf würde das Retry-Limit halbieren.
+    """
+    state = "failed" if give_up else "approved"
+    # Beim endgültigen Aufgeben den Zeitpunkt festhalten (für die Tagesmeldung).
+    await db.conn().execute(
+        f"UPDATE drafts SET attempts=attempts+{1 if count_attempt else 0}, last_error=?, state=?, "
+        "decided_at=CASE WHEN ? THEN ? ELSE decided_at END WHERE id=?",
+        (error[:500], state, 1 if give_up else 0, now_utc_iso(), draft_id),
+    )
+    await db.conn().commit()
+
+
+def _heute_bereich_utc(jetzt: datetime | None = None) -> tuple[str, str]:
+    """Beginn und Ende des lokalen Tages (config.TZ, nicht UTC) als UTC-ISO-Strings.
+
+    posted_at liegt als UTC-ISO ("...+00:00") vor; die lokalen Tagesgrenzen werden daher in
+    dasselbe Format umgerechnet und als Bereich verglichen (Sommerzeitwechsel inklusive).
+    """
+    heute = jetzt or util.now_local()
+    morgen = heute.date() + timedelta(days=1)
+    beginn = datetime.combine(heute.date(), time.min, tzinfo=heute.tzinfo)
+    ende = datetime.combine(morgen, time.min, tzinfo=heute.tzinfo)
+    return (beginn.astimezone(timezone.utc).isoformat(),
+            ende.astimezone(timezone.utc).isoformat())
+
+
+def tagesbeginn_utc(jetzt: datetime | None = None) -> str:
+    """Beginn des lokalen Tages als UTC-ISO (gleiche Grenze wie posted_today); optional zu einem
+    vorgegebenen "jetzt", damit Aufrufer nur eine Uhrablesung verwenden."""
+    return _heute_bereich_utc(jetzt)[0]
+
+
+async def posted_today(channel: str) -> int:
+    """Zahl der heute (lokaler Tag nach config.TZ, nicht UTC) auf diesem Kanal geposteten Einträge."""
+    beginn, ende = _heute_bereich_utc()
+    cur = await db.conn().execute(
+        "SELECT COUNT(*) AS n FROM posted_log WHERE channel=? AND posted_at >= ? AND posted_at < ?",
+        (channel, beginn, ende),
+    )
+    return (await cur.fetchone())["n"]
+
+
+LIMIT_VERWORFEN = "Tageslimit erreicht"  # Markierung in last_error, damit der Verwurf erkennbar bleibt
+AUSGANG_UNBEKANNT = "Ausgang unbekannt"   # Präfix in last_error (siehe poster.run_post_pass)
+
+
+async def posted_between(channel: str, von: str, bis: str):
+    """Im Zeitraum [von, bis) auf diesem Kanal geposteten Entwürfe (UTC-ISO), älteste zuerst."""
+    cur = await db.conn().execute(
+        """SELECT * FROM drafts WHERE channel=? AND state='posted'
+           AND posted_at >= ? AND posted_at < ? ORDER BY posted_at, id""",
+        (channel, von, bis),
+    )
+    return await cur.fetchall()
+
+
+async def limit_discarded_between(channel: str, von: str, bis: str):
+    """Im Zeitraum wegen Tageslimit verworfene Entwürfe (nicht: normal verfallene News)."""
+    cur = await db.conn().execute(
+        """SELECT * FROM drafts WHERE channel=? AND state='expired' AND last_error=?
+           AND decided_at >= ? AND decided_at < ? ORDER BY decided_at, id""",
+        (channel, LIMIT_VERWORFEN, von, bis),
+    )
+    return await cur.fetchall()
+
+
+async def outcome_unknown_between(channel: str, von: str, bis: str):
+    """Im Zeitraum mit 'Ausgang unbekannt' aufgegebene Entwürfe."""
+    cur = await db.conn().execute(
+        """SELECT * FROM drafts WHERE channel=? AND state='failed' AND last_error LIKE ?
+           AND decided_at >= ? AND decided_at < ? ORDER BY decided_at, id""",
+        (channel, AUSGANG_UNBEKANNT + "%", von, bis),
+    )
+    return await cur.fetchall()
+
+
+async def expire_draft(draft_id: int) -> None:
+    """Einen freigegebenen Entwurf wegen Tageslimit verfallen lassen.
+
+    Zeitpunkt (decided_at) und Grund (last_error) werden festgehalten, damit die Tagesmeldung
+    diese Fälle von normal verfallenen News unterscheiden kann.
+    """
+    await db.conn().execute(
+        "UPDATE drafts SET state='expired', decided_at=?, last_error=? "
+        "WHERE id=? AND state='approved'",
+        (now_utc_iso(), LIMIT_VERWORFEN, draft_id),
     )
     await db.conn().commit()
 
 
 async def expire_due() -> int:
-    """Verderbliche Entwürfe (News) über perishable_at hinaus verfallen lassen."""
+    """Verderbliche Entwürfe (News) über perishable_at hinaus verfallen lassen.
+
+    Offene Entwürfe aller Kanäle; freigegebene nur bei Tumblr: Dessen Entwürfe sind ab Erzeugung
+    'approved' und fielen sonst aus dem Verfall heraus. Bluesky/Mastodon werden von Hand
+    freigegeben und warten danach ggf. (Pause, Breaker, Retry-After) — das bleibt wie es war.
+    """
     now = now_utc_iso()
     cur = await db.conn().execute(
         """UPDATE drafts SET state='expired'
-           WHERE state='pending' AND perishable_at IS NOT NULL AND perishable_at < ?""",
+           WHERE (state='pending' OR (state='approved' AND channel='tumblr'))
+             AND perishable_at IS NOT NULL AND perishable_at < ?""",
         (now,),
     )
     await db.conn().commit()

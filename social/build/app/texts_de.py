@@ -1,9 +1,14 @@
 """Alle deutschen Texte + Inline-Keyboards zentral."""
+import logging
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+log = logging.getLogger(__name__)
 
 CHANNEL_LABEL = {
     "bluesky": "Bluesky",
     "mastodon": "Mastodon",
+    "tumblr": "Tumblr",
     "discord": "Discord",
     "reddit": "Reddit",
     "facebook": "Facebook",
@@ -22,8 +27,18 @@ ONLY_APPROVAL_CHAT = "Dieser Bot antwortet nur im Freigabe-Chat."
 DRY_RUN_BANNER = "🧪 TROCKENMODUS — es wird nichts wirklich gepostet.\n\n"
 
 
-def batch_header(day: str, n: int, dry: bool) -> str:
-    prefix = DRY_RUN_BANNER if dry else ""
+def dry_banner(dry_channels: list[str], alle: bool) -> str:
+    """Banner nach Ist-Zustand: komplett trocken, nur einzelne Kanäle trocken oder keiner."""
+    if alle:
+        return DRY_RUN_BANNER
+    if not dry_channels:
+        return ""
+    namen = ", ".join(CHANNEL_LABEL.get(c, c) for c in dry_channels)
+    return f"🧪 TROCKEN für {namen} — dort wird nichts wirklich gepostet.\n\n"
+
+
+def batch_header(day: str, n: int, dry_channels: list[str], alle: bool = False) -> str:
+    prefix = dry_banner(dry_channels, alle)
     if n == 0:
         return prefix + f"📋 Keine neuen Entwürfe für heute ({day})."
     return prefix + f"📋 {n} Entwurf(e) für heute ({day}) — bitte durchsehen:"
@@ -74,6 +89,75 @@ def posted_note(channel: str, url: str, external_id: str | None) -> str:
     ch = CHANNEL_LABEL.get(channel, channel)
     ref = f"\n{external_id}" if external_id and not external_id.startswith("dry-") else ""
     return f"📤 Auf {ch} gepostet.\n{url}{ref}"
+
+
+def outcome_unknown_note(channel: str, url: str, error: str) -> str:
+    ch = CHANNEL_LABEL.get(channel, channel)
+    return (f"❓ Ausgang unbekannt bei {ch}: Der Post wurde möglicherweise veröffentlicht. "
+            f"Es gibt KEINEN automatischen neuen Versuch (Doppelpost-Gefahr). "
+            f"Bitte auf dem Blog nachsehen.\n{url}\nFehler: {error[:200]}")
+
+
+def tageslimit_note(channel: str, anzahl: int, limit: int) -> str:
+    ch = CHANNEL_LABEL.get(channel, channel)
+    return (f"⚠️ Tageslimit für {ch} erreicht ({limit} Posts): {anzahl} freigegebene(r) Entwurf/"
+            f"Entwürfe verworfen, nicht aufgeschoben. Das Limit ist nur ein Sicherheitsnetz — "
+            f"bitte prüfen, warum so viele Entwürfe anfielen.")
+
+
+def _eintrag_zeilen(p, blog: str = "") -> list[str]:
+    zeilen = [f"• {p['title'] or p['url']}", f"  {p['url']}"]
+    ext = p["external_id"]
+    if blog and ext and ext.isdigit():
+        zeilen.append(f"  https://{blog}/post/{ext}")
+    return zeilen
+
+
+def _anhaengen(text: str, eintraege, grenze: int, blog: str = "") -> tuple[str, int]:
+    """Hängt Einträge an, solange Text samt Hinweis "… und N weitere" unter der Grenze bleibt.
+    Gibt den Text und die Zahl der nicht mehr gezeigten Einträge zurück (Hinweis hängt der Aufrufer an)."""
+    reserve = len("\n… und 9999 weitere")
+    eintraege = list(eintraege)
+    for i, p in enumerate(eintraege):
+        neu = text + "\n" + "\n".join(_eintrag_zeilen(p, blog))
+        if len(neu) + reserve > grenze:
+            return text, len(eintraege) - i
+        text = neu
+    return text, 0
+
+
+def tumblr_tagesmeldung(posts, limit_verworfen, unbekannt, blog: str = "", banner: str = "",
+                        max_zeichen: int = 4000) -> str:
+    """Tagesmeldung für Tumblr: unklare Ausgänge, Tageslimit-Verwürfe, veröffentlichte Posts.
+
+    posts/unbekannt sind Entwurfs-Zeilen (title, url, external_id), limit_verworfen eine Zahl.
+    Bei null Posts steht das ausdrücklich da — Schweigen ließe offen, ob der Kanal lief.
+
+    Reihenfolge mit Absicht: "Ausgang unbekannt" zuerst, denn nur dort muss jemand auf dem Blog
+    nachsehen; die Kürzung greift am unwichtigsten Ende zuerst. Jede Liste endet bei Überlänge mit
+    "… und N weitere"; auch "Ausgang unbekannt" hat eine Obergrenze (halbe Meldung), sonst könnte
+    die Meldung bei einem langen Zeitraum so lang werden, dass Telegram sie ablehnt, der Zeitraum
+    nie vorrückt und sie nie wieder ankommt. Gekürzte unklare Ausgänge stehen vollständig im Log.
+    """
+    text = f"{banner}📊 Tumblr — Rückblick seit der letzten Meldung"
+    if unbekannt:
+        text += f"\n\n❓ Ausgang unbekannt: {len(unbekannt)}"
+        text, rest = _anhaengen(text, unbekannt, max_zeichen // 2, blog="")
+        if rest:
+            text += f"\n… und {rest} weitere"
+            log.warning("Tumblr-Tagesmeldung: %d Ausgang-unbekannt-Einträge gekürzt: %s", rest,
+                        ", ".join(p["url"] for p in list(unbekannt)[len(unbekannt) - rest:]))
+    if limit_verworfen:
+        text += f"\n\n⚠️ Wegen des Tageslimits verworfen: {limit_verworfen}"
+    if not posts:
+        return text + "\n\nEs wurde kein Post auf Tumblr veröffentlicht."
+
+    n = len(posts)
+    text += f"\n\n📤 {n} {'Post' if n == 1 else 'Posts'} veröffentlicht:"
+    text, rest = _anhaengen(text, posts, max_zeichen, blog)
+    if rest:
+        text += f"\n… und {rest} weitere"
+    return text
 
 
 def channel_down(channel: str, error: str) -> str:

@@ -29,6 +29,7 @@ CHAR_LIMIT = {
     "reddit": 300,      # Titel
     "x": 280,
     "facebook": 600,
+    "tumblr": 1000,     # gleich Tumblr.char_limit
 }
 
 SYSTEM = """Du bist Redakteur:in beim deutschsprachigen Anime-Magazin OtakuPulse und schreibst \

@@ -36,7 +36,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     seen = await models.seen_count()
     channels = ", ".join(registry.active_channel_names()) or "keine"
     paused = "ja" if await settings.is_paused() else "nein"
-    mode = "TROCKENMODUS 🧪" if config.DRY_RUN else "LIVE"
+    mode = config.mode_summary()
     lines = [
         f"Modus: {mode}",
         f"Kanäle: {channels}",

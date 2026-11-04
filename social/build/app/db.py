@@ -2,7 +2,9 @@
 
 Zwei tragende Verträge:
 - posted_log PRIMARY KEY (channel, source_kind, source_ref): derselbe Beitrag kann nie
-  zweimal auf denselben Kanal, egal wie oft der Container neu startet.
+  zweimal auf denselben Kanal, egal wie oft der Container neu startet. Tragend wird das erst
+  durch die Abfrage VOR dem Senden (models.already_posted, aufgerufen in poster.run_post_pass);
+  der Primärschlüssel allein verschluckt die Kollision nur im Nachhinein (INSERT OR IGNORE).
 - seen_sources: pro Quelle wird nur EINMAL formuliert (Ingest-Dedup über alle Kanäle).
 """
 import aiosqlite
@@ -10,6 +12,12 @@ import aiosqlite
 from . import config
 
 _conn: aiosqlite.Connection | None = None
+
+# Spalten, die nach dem ersten Release dazukamen: eine bestehende DB bekommt sie per ALTER TABLE.
+_NACHGERUESTETE_SPALTEN = (
+    ("tags", "TEXT"),
+    ("category", "TEXT"),
+)
 
 SCHEMA = """
 -- Ein Entwurf je (Quelle × Kanal).
@@ -32,7 +40,9 @@ CREATE TABLE IF NOT EXISTS drafts (
     posted_at     TEXT,
     external_id   TEXT,
     attempts      INTEGER NOT NULL DEFAULT 0,
-    last_error    TEXT
+    last_error    TEXT,
+    tags          TEXT,                        -- JSON-Liste, nur für Tumblr gesetzt
+    category      TEXT                         -- Artikelkategorie
 );
 CREATE INDEX IF NOT EXISTS idx_drafts_state ON drafts(state, batch_day);
 CREATE INDEX IF NOT EXISTS idx_drafts_ext   ON drafts(channel, external_id);
@@ -82,6 +92,13 @@ async def init() -> None:
     await _conn.execute("PRAGMA foreign_keys=ON;")
     await _conn.execute("PRAGMA busy_timeout=5000;")
     await _conn.executescript(SCHEMA)
+    # Nur fehlende Spalten ergänzen. Bewusst kein breites except: ein echter Fehler
+    # (gesperrt, readonly, I/O) muss laut hochschlagen, sonst scheitert später jedes enqueue.
+    cur = await _conn.execute("PRAGMA table_info(drafts)")
+    vorhanden = {r["name"] for r in await cur.fetchall()}
+    for name, typ in _NACHGERUESTETE_SPALTEN:
+        if name not in vorhanden:
+            await _conn.execute(f"ALTER TABLE drafts ADD COLUMN {name} {typ}")
     await _conn.commit()
 
 

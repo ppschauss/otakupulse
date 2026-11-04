@@ -1,6 +1,6 @@
 """Gemeinsames Kanal-Interface. Ein neuer Kanal ist damit ~50 Zeilen."""
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -9,6 +9,9 @@ class PostResult:
     external_id: str | None = None
     error: str | None = None
     retry_after: int | None = None  # Sekunden, aus Retry-After-Header
+    # True, wenn unklar ist, ob der Post trotzdem veröffentlicht wurde (Timeout nach dem Senden,
+    # Gateway-Fehler). Der Poster wiederholt dann NICHT, weil das einen Doppelpost riskiert.
+    outcome_unknown: bool = False
 
 
 @dataclass
@@ -18,6 +21,8 @@ class Post:
     url: str
     title: str | None = None
     image_url: str | None = None
+    tags: list[str] = field(default_factory=list)  # fertige Tags (nur Tumblr nutzt sie)
+    category: str | None = None  # Artikelkategorie (news, simulcast, ...)
 
 
 class Channel(ABC):
