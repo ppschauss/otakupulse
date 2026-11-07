@@ -212,7 +212,7 @@ NEXT_PUBLIC_ADSENSE_SLOT_MULTIPLEX=<slot-id>
 | `mirror` | Cover/Banner/Portraits lokal nach `public/media` spiegeln (inkrementell) |
 | `translate` | Beschreibungen ins Deutsche umschreiben (Claude Haiku, inkrementell) |
 | `news:anime` | Ankündigungs-/Simulcast-Artikel je neuem Titel (siehe Redaktion) |
-| `scripts/generate-recurring-news.ts` | wiederkehrende Formate (`--daily`, `--weekly-preview`, `--genre-spotlight`, `--weekly-recap`) |
+| `scripts/generate-recurring-news.ts` | wiederkehrende Formate (`--weekly-preview`, `--genre-spotlight`, `--weekly-recap`, `--platform-new`, `--platform-leaving`; `--daily` ist abgeschafft) |
 | `telegram:notify` | neue Artikel in den Telegram-Channel posten |
 | `indexnow` | URLs an IndexNow pushen (`--all`, `--recent N`, `--dry`) |
 | `backfill:languages` | `availableLanguages` aus vorhandenen Daten ableiten |
@@ -486,12 +486,17 @@ Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron
 | `30 3 * * *` | `backup-db.sh` | DB-Backup lokal + B2-Offsite, rotierend |
 | `15 4 * * *` | `otakupulse-sync.sh` | AniList-Sync → JustWatch → News → Telegram → IndexNow |
 | `45 */4 * * *` | `refresh-streaming.sh` | rollierender Streaming-Abgleich (`--stale`) |
-| `0 6 * * *` | `generate-recurring-news --daily` | Tages-Digest |
-| `30 6 * * 1` | `generate-recurring-news --weekly-preview` | Wochenvorschau (Mo) |
+| `55 7 * * 1` | `generate-recurring-news --weekly-preview` | Wochenvorschau (Mo) |
 | `0 12 * * 3` | `generate-recurring-news --genre-spotlight` | Genre-Spotlight (Mi) |
+| `0 8 * * 4` | `generate-recurring-news --platform-new` | „Neu auf <Anbieter>" (Do) |
+| `0 8 * * 5` | `generate-recurring-news --platform-leaving` | „verlässt <Anbieter>" (Fr) |
 | `0 19 * * 0` | `generate-recurring-news --weekly-recap` | Wochenrückblick (So) |
 | `*/30 * * * *` | `telegram-notify.ts` | neue Artikel in den Channel posten |
 | `*/5 * * * *` | `watchdog.sh` | Uptime-Watchdog + Auto-Neustart |
+| `23 * * * *` | `find …/.next/cache/images -size 0 -delete` | 0-Byte-Bilder, die den LRU-Start killen |
+
+Der Tages-Digest (`--daily`, früher 06:00) ist seit 9f83275 abgeschafft: rund fünf
+Artikel pro Tag nach Schablone sind „Scaled content". Ersatz ist die Wochenvorschau.
 
 ---
 
