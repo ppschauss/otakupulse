@@ -12,9 +12,11 @@
  *   --genre-spotlight  Rotierendes Genre-Ranking („Die besten X-Anime"). Wöchentlich.
  *   --platform-new     „Neu auf <Anbieter> im <Monat>" — je DE-Anbieter die Titel, die in
  *                      den letzten 30 Tagen neu in den Katalog kamen (streamingOffers.
- *                      first_seen_at). Wöchentlich; ein Artikel pro Anbieter und Monat.
+ *                      first_seen_at, gegengeprüft über ECHT_NEU, siehe dort).
+ *                      Wöchentlich; ein Artikel pro Anbieter und Monat.
  *   --platform-leaving „Diese Anime verlassen <Anbieter>" — Titel mit Ablaufdatum in den
- *                      nächsten 30 Tagen (streamingOffers.available_to). Wöchentlich.
+ *                      nächsten VERLAESST_TAGE Tagen (streamingOffers.available_to).
+ *                      Wöchentlich.
  *
  * Dedup über feste Slugs (simulcast-heute-<datum>, episode-<anime>-<n>, …) —
  * ein zweiter Lauf am selben Tag erstellt nichts doppelt. Hentai ist überall
@@ -511,11 +513,36 @@ const platformPages = (): Map<string, string> => {
   return m
 }
 
+// „Neu auf <Anbieter>" ist nicht dasselbe wie „von uns neu gefunden". Die
+// rollierende JustWatch-Auffrischung stempelt `first_seen_at` auch dann, wenn der
+// Matcher einen Katalogtitel zum ersten Mal überhaupt zuordnet — bei einem Lauf
+// über 11k Titel sind das viele. Ungefiltert käme für Crunchyroll heraus:
+// „300 Neuzugänge in 30 Tagen", darunter 24 Titel aus 2017. Das wäre schlicht
+// falsch. Als echter Neuzugang gilt deshalb nur eine von zwei Lagen:
+//   a) Der Titel stand bereits mit einem anderen Angebot im Index (dessen
+//      `first_seen_at` ist NULL, also „seit Beginn bekannt") und hat diesen
+//      Anbieter dazubekommen.
+//   b) Der Titel läuft gerade (RELEASING) — dann ist es eine frische
+//      Simulcast-Lizenz und das Datum stimmt.
+// Alles andere ist ein Matcher-Fund und sagt nichts über den Katalog aus.
+// Wirkung: Crunchyroll 300 → 48, und die Zahl im Artikel hält einer Prüfung stand.
+const ECHT_NEU =
+  "(EXISTS (SELECT 1 FROM anime_streaming_offers x WHERE x._parent_id = o._parent_id AND x.first_seen_at IS NULL)" +
+  " OR a.status = 'RELEASING')"
+
+// JustWatch meldet Lizenzenden Wochen im Voraus, aber fast nie innerhalb von 30
+// Tagen: In diesem Fenster lagen über ALLE Anbieter zusammen 9 Angebote, pro
+// Anbieter also keines über der Mindestgröße — das Format hat seit seiner Einführung
+// keinen einzigen Artikel erzeugt. Bei 60 Tagen sind es Aniverse 25 und Prime Video
+// 10. Der Zeitraum war vorher 30 Tage (16e05bd); 60 ist der kleinste Wert, mit dem
+// das Format überhaupt etwas zu sagen hat.
+const VERLAESST_TAGE = 60
+
 async function runPlatformNew(payload: Payload, authorId: any, ymd: string): Promise<void> {
   const [y, m] = ymd.split('-').map(Number)
   for (const ps of DE_PROVIDER_SLUGS) {
     const p = providerBySlug(ps)!
-    const rows = await offerRows(payload, ps, `o.first_seen_at >= now() - interval '30 days'`)
+    const rows = await offerRows(payload, ps, `o.first_seen_at >= now() - interval '30 days' AND ${ECHT_NEU}`)
     if (rows.length < 5) continue
     const slug = `neu-auf-${ps}-${y}-${String(m).padStart(2, '0')}`
     const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]] | ${LANG(r.audio, r.subs)} | ${COST[r.monet] || r.monet} | ${r.score ? `${r.score}/100` : '—'} |`)
@@ -544,7 +571,7 @@ async function runPlatformLeaving(payload: Payload, authorId: any, ymd: string):
   const [y, m] = ymd.split('-').map(Number)
   for (const ps of DE_PROVIDER_SLUGS) {
     const p = providerBySlug(ps)!
-    const rows = await offerRows(payload, ps, `o.available_to IS NOT NULL AND o.available_to BETWEEN now() AND now() + interval '30 days'`)
+    const rows = await offerRows(payload, ps, `o.available_to IS NOT NULL AND o.available_to BETWEEN now() AND now() + interval '${VERLAESST_TAGE} days'`)
     if (rows.length < 3) continue
     const slug = `verlaesst-${ps}-${y}-${String(m).padStart(2, '0')}`
     const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Berlin' }) : '—')
@@ -558,14 +585,14 @@ async function runPlatformLeaving(payload: Payload, authorId: any, ymd: string):
       fallbackTitle: `Diese ${rows.length} Anime verlassen ${p.name} bald`,
       prompt: [
         `Schreibe das Intro (2–3 Absätze, 120–180 Wörter) für unsere Liste „Diese Anime verlassen ${p.name} bald" (Stand ${MONTHS[m - 1]} ${y}).`,
-        `Bei ${rows.length} Anime läuft die Lizenz bei ${p.name} (Deutschland) in den nächsten 30 Tagen aus — wer sie noch sehen will, sollte sich beeilen.`,
+        `Bei ${rows.length} Anime läuft die Lizenz bei ${p.name} (Deutschland) in den nächsten ${VERLAESST_TAGE} Tagen aus — wer sie noch sehen will, sollte sich beeilen.`,
         `Anbieter-Baustein (wörtlich einbauen): [[page:plattform-${ps}|${p.name}]]`,
         `Die drei beliebtesten Titel mit Datum (Bausteine wörtlich einbauen):`,
         ...rows.slice(0, 3).map((r) => `- [[anime:${r.slug}|${r.t}]] (bis ${fmt(r.at)})`),
         `Verweise auf die vollständige Liste unten. Erfinde keine Gründe für den Lizenzablauf.`,
         `headline: Muss "${p.name}" und "verlassen" oder "verschwinden" enthalten.`,
       ].join('\n'),
-      appendix: [`## Alle Titel, die ${p.name} in den nächsten 30 Tagen verlassen`, '', '| Anime | verfügbar bis | Sprachfassung | Score |', '|---|---|---|---|', ...lines].join('\n'),
+      appendix: [`## Alle Titel, die ${p.name} in den nächsten ${VERLAESST_TAGE} Tagen verlassen`, '', '| Anime | verfügbar bis | Sprachfassung | Score |', '|---|---|---|---|', ...lines].join('\n'),
     })
   }
 }
