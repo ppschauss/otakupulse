@@ -526,6 +526,19 @@ const platformPages = (): Map<string, string> => {
 //      Simulcast-Lizenz und das Datum stimmt.
 // Alles andere ist ein Matcher-Fund und sagt nichts über den Katalog aus.
 // Wirkung: Crunchyroll 300 → 48, und die Zahl im Artikel hält einer Prüfung stand.
+// Kaltstart-Sperre. `first_seen_at` gibt es erst seit dem 26.10.2026, und die
+// rollierende Auffrischung braucht für einen vollen Durchlauf über den Katalog
+// rund zwölf Tage (900 Titel/Tag bei 11.061 Titeln). Beim ERSTEN Durchlauf nach
+// der Feldeinführung wird deshalb jedes Angebot gestempelt, das vorher nicht
+// erfasst war — also praktisch alle. Messung vom 07.11.2026: von 578 gestempelten
+// Angeboten war genau EINES durch eine zweite Prüfung bestätigt; „Neu auf Prime
+// Video" hätte Attack on Titan und Demon Slayer gelistet. Erst ab dem zweiten
+// Durchlauf ist ein Stempel ein echter Unterschied zu einem bekannten Stand.
+// Der erste Durchlauf war am 08.11.2026 durch (96,3 % am 07.11.).
+// Ab Mitte Dezember ist diese Grenze wirkungslos, weil das 30-Tage-Fenster
+// ohnehin dahinter liegt — dann kann die Zeile raus.
+const NEU_AB = '2026-11-09'
+
 const ECHT_NEU =
   "(EXISTS (SELECT 1 FROM anime_streaming_offers x WHERE x._parent_id = o._parent_id AND x.first_seen_at IS NULL)" +
   " OR a.status = 'RELEASING')"
@@ -542,7 +555,7 @@ async function runPlatformNew(payload: Payload, authorId: any, ymd: string): Pro
   const [y, m] = ymd.split('-').map(Number)
   for (const ps of DE_PROVIDER_SLUGS) {
     const p = providerBySlug(ps)!
-    const rows = await offerRows(payload, ps, `o.first_seen_at >= now() - interval '30 days' AND ${ECHT_NEU}`)
+    const rows = await offerRows(payload, ps, `o.first_seen_at >= greatest(now() - interval '30 days', '${NEU_AB}'::timestamptz) AND ${ECHT_NEU}`)
     if (rows.length < 5) continue
     const slug = `neu-auf-${ps}-${y}-${String(m).padStart(2, '0')}`
     const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]] | ${LANG(r.audio, r.subs)} | ${COST[r.monet] || r.monet} | ${r.score ? `${r.score}/100` : '—'} |`)
