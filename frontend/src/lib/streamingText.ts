@@ -377,12 +377,14 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
   // „Nicht gelistet" nur mit Nachweis (vollständiger Katalog-Durchlauf) und nie für Anbieter mit unbestätigtem Angebot:
   // dort liegt ein positiver Hinweis vor, keine erwiesene Abwesenheit.
   const unconfirmedNames = new Set(allViews.filter((v) => isUnconfirmed(v.offer)).map((v) => v.provider.name))
+  // Der Satz stützt sich auf den Katalog-Durchlauf, also trägt er dessen Datum (nicht `streamingCheckedAt`).
+  const verifiedStand = formatDateDe(anime?.streamingVerifiedAt)
   const no = anime?.streamingVerifiedAt ? bigs.filter((b) => !names.includes(b) && !unconfirmedNames.has(b)) : []
   faq.push({
     q: `Streamen auch Dienste wie Netflix, Crunchyroll oder Amazon Prime Video ${title}?`,
     a: `Ob neben ${plain} noch weitere große Plattformen ${title} im Abo anbieten, hängt vom jeweiligen Rechtekatalog im deutschsprachigen Raum ab. Es kommt häufig vor, dass Serien bei mehreren Anbietern gleichzeitig oder zeitversetzt laufen.${
       yes.length ? ` Aktuell: ${joinNames(yes)} ${yes.length > 1 ? 'haben' : 'hat'} ${title} im Programm.` : ''
-    }${no.length ? ` Bei ${joinNames(no)} ist ${title} derzeit nicht gelistet${stand ? ` (Stand: ${stand})` : ''}.` : ''}`,
+    }${no.length ? ` Bei ${joinNames(no)} ist ${title} derzeit nicht gelistet${verifiedStand ? ` (geprüft am ${verifiedStand})` : ''}.` : ''}`,
   })
   faq.push({
     q: `Kann man ${title} auch ohne Abo streamen, kaufen oder leihen?`,

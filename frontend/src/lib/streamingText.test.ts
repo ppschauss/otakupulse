@@ -94,6 +94,15 @@ describe('streamingGuide (Vorlagen-Wortlaut + Datenzusätze)', () => {
       const mit = streamingGuide({ ...naruto, streamingOffers: offers, streamingVerifiedAt: '2026-11-09T00:00:00Z' })!
       expect(faqBig(mit)).toContain('Bei Crunchyroll und Amazon Prime Video ist Naruto derzeit nicht gelistet')
     })
+    it('„nicht gelistet" nennt das Prüfdatum des Belegs, nicht streamingCheckedAt', () => {
+      const g = streamingGuide({ ...naruto, streamingOffers: [nfConfirmed], streamingCheckedAt: '2026-09-10T00:00:00Z', streamingVerifiedAt: '2026-11-09T12:00:00Z' })!
+      expect(faqBig(g)).toContain('derzeit nicht gelistet (geprüft am 09.11.2026).')
+      expect(faqBig(g)).not.toContain('10.09.2026')
+    })
+    it('„nicht gelistet" mit unlesbarem Stempel: kein leeres Klammerpaar', () => {
+      const g = streamingGuide({ ...naruto, streamingOffers: [nfConfirmed], streamingVerifiedAt: 'kaputt' })!
+      expect(faqBig(g)).toContain('derzeit nicht gelistet.')
+    })
     it('Anbieter mit unbestätigtem Angebot gilt auch mit Nachweis nie als „nicht gelistet"', () => {
       const g = streamingGuide({ ...naruto, streamingOffers: [nfConfirmed, crUnconfirmed], streamingVerifiedAt: '2026-11-09T00:00:00Z' })!
       expect(faqBig(g)).toContain('Amazon Prime Video ist Naruto derzeit nicht gelistet')
