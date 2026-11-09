@@ -38,6 +38,24 @@ describe('streamingMetaDescription / Title', () => {
   })
 })
 
+describe('Nichtverfügbarkeit nur mit Nachweis', () => {
+  const base = { titleEnglish: 'Testanime', format: 'TV', seasonYear: 2014, episodes: 22, streamingOffers: [] }
+  it('behauptet Nichtverfügbarkeit, wenn verifiziert', () => {
+    const d = streamingMetaDescription({ ...base, streamingVerifiedAt: '2026-11-09T00:00:00Z' })
+    expect(d).toContain('bei keinem Anbieter in Deutschland')
+  })
+  it('behauptet sie NICHT, wenn nie verifiziert', () => {
+    const d = streamingMetaDescription({ ...base, streamingVerifiedAt: null })
+    expect(d).not.toContain('bei keinem Anbieter')
+    expect(d).not.toContain('Gratis-Stream')
+  })
+  it('nennt auch ohne Nachweis Genre und Fakten', () => {
+    const d = streamingMetaDescription({ ...base, streamingVerifiedAt: null })
+    expect(d).toContain('Testanime')
+    expect(d).toContain('22 Folgen')
+  })
+})
+
 describe('shortTitle', () => {
   it('kürzt Untertitel und behält die Season', () => {
     expect(shortTitle('Re:ZERO -Starting Life in Another World- Season 4')).toBe('Re:ZERO Season 4')

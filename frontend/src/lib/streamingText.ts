@@ -83,7 +83,12 @@ export function streamingMetaDescription(anime: any): string {
   const facts = [formatLabel(anime?.format), yearOf(anime), anime?.episodes ? `${anime.episodes} Folgen` : ''].filter(Boolean).join(', ')
   const kind = `${g ? `${g}-Anime` : 'Anime'}${facts ? ` (${facts})` : ''}`
   if (!s.hasStream) {
-    return `${title}: ${kind}. Handlung, Charaktere, Episoden und Streaming-Status – aktuell bei keinem Anbieter in Deutschland im Abo- oder Gratis-Stream.`
+    // Die Aussage „bei keinem Anbieter" ist nur wahr, wenn ein vollständiger Katalog-Durchlauf den Titel nirgends fand.
+    if (anime?.streamingVerifiedAt) {
+      return `${title}: ${kind}. Handlung, Charaktere, Episoden und Streaming-Status – aktuell bei keinem Anbieter in Deutschland im Abo- oder Gratis-Stream.`
+    }
+    // Ohne Nachweis keine Aussage zur Verfügbarkeit (nie nachgesehen ≠ nicht verfügbar).
+    return `${title}: ${kind}. Handlung, Charaktere und Episoden im Überblick.`
   }
   const lang = s.legacy
     ? ''

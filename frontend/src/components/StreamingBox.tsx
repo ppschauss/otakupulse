@@ -25,6 +25,7 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
   const groups = groupOffersByProvider(views)
   const s = streamingSummary(anime)
   const stand = formatDateDe(s.checkedAt)
+  const verified = formatDateDe(anime?.streamingVerifiedAt)
   const stores = purchaseOffersOf(anime)
 
   return (
@@ -110,8 +111,15 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
         </>
       ) : (
         <p className="text-sm text-zinc-400">
-          Aktuell ist {title} bei keinem Anbieter in Deutschland im Abo- oder Gratis-Stream gelistet
-          {stand ? ` (Stand: ${stand})` : ''}. Sobald ein Dienst den Titel aufnimmt, erscheint er hier.{' '}
+          {/* „Bei keinem Anbieter" nur mit Nachweis (vollständiger Katalog-Durchlauf); sonst keine Aussage zur Nichtverfügbarkeit. */}
+          {anime?.streamingVerifiedAt ? (
+            <>
+              Aktuell ist {title} bei keinem Anbieter in Deutschland im Abo- oder Gratis-Stream gelistet
+              {verified ? ` (geprüft am ${verified})` : ''}. Sobald ein Dienst den Titel aufnimmt, erscheint er hier.
+            </>
+          ) : (
+            <>Für {title} liegen uns noch keine geprüften Streaming-Angebote vor.</>
+          )}{' '}
           <Link href="/plattform" className="text-zinc-300 underline-offset-2 hover:text-accent hover:underline">
             Alle Streaming-Anbieter
           </Link>
