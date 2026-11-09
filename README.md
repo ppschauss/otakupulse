@@ -274,9 +274,15 @@ bleibt für die reine Altersfolge erhalten): Feld
 **`streamingCheckedAt`** merkt sich pro Titel den letzten Abgleich. `justwatch-streaming.py
 --stale N` nimmt die N am längsten nicht geprüften Titel, gleicht sie **autoritativ** ab
 (Offers exakt auf JustWatch-Stand, nur bei sicherem Titel-Match ≥ 0.90; `firstSeenAt`
-bleibt erhalten) und stempelt sie. Rate-Limit 4 Worker + 0,25 s (ein großer Blast hatte
-JustWatch schon mit HTTP 403 geblockt). Voll-Backfill (~11k Titel, ~30 min) über
-`backfill-streaming.sh`.
+bleibt erhalten) und stempelt sie. Rate-Limit: **1 Worker + 1,2 s Pause pro Request**
+(`MAX_WORKERS = 1`, `REQUEST_PAUSE = 1.2`), bei HTTP 403/429 Backoff 30/60/120 s. **Diese Werte
+nicht hochdrehen:** JustWatch sperrt die IP für rund eine Stunde, sobald das Volumen zu hoch
+ist. Am 2026-09-10 reichten dafür nacheinander 4 Worker (TLS pro Titel), 3 Worker bei rund
+5 Titeln/s über 15 min und 2 Worker bei rund 3 Requests/s nach etwa 4 min (mit parallelem
+Cron). Belegt im Docstring von `justwatch-streaming.py`. Wer die Werte nach einem Umbau
+„wiederherstellt", stellt die Sperre wieder her; auch nie zwei Instanzen parallel (Instanz-Sperre).
+Ein Voll-Backfill über `backfill-streaming.sh` dauert bei dieser Rate entsprechend Stunden;
+für den Alltag deckt der Katalog-Sweep den Bestand mit rund 100 Requests ab.
 
 ### Prüflisten im Payload-Admin
 
