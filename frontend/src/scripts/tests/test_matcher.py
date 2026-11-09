@@ -468,3 +468,72 @@ def test_lizenzende_loescht_auch_kauf_und_leih_in_der_titelsuche():
     assert "confidence IS DISTINCT FROM 'rejected'" in stmts[0]
     assert _inserts(stmts) == []
     assert changed is True
+
+
+# --- Aufgabe 15: gewichtete Rotation und Lücken-Alarm -------------------------------
+
+def test_gewichtete_rotation_bevorzugt_neue_jahrgaenge():
+    sql = jw.stale_order_sql(2026)
+    assert "season_year" in sql
+    assert "streaming_checked_at" in sql
+    assert "DESC" in sql.upper()
+
+
+def test_rotation_reihenfolge_laufend_dann_jahrgang_dann_alter():
+    """Die Reihenfolge der Kriterien IST die Anforderung."""
+    sql = jw.stale_order_sql(2026)
+    i_status = sql.index("RELEASING")
+    i_jahr = sql.index("season_year")
+    i_stempel = sql.index("streaming_checked_at")
+    assert i_status < i_jahr < i_stempel
+    assert "ASC NULLS FIRST" in sql
+
+
+def test_stale_weighted_nutzt_die_gewichtung_und_stale_bleibt_erhalten(monkeypatch):
+    sqls = []
+    monkeypatch.setattr(jw, "psql", lambda sql, read=True: (sqls.append(sql), "[]")[1])
+    jw.load_anime(stale_weighted=150)
+    assert "RELEASING" in sqls[0] and "LIMIT 150" in sqls[0]
+    sqls.clear()
+    jw.load_anime(stale_limit=150)  # bestehender Modus unverändert
+    assert "ORDER BY a.streaming_checked_at ASC NULLS FIRST LIMIT 150" in sqls[0]
+    assert "RELEASING" not in sqls[0]
+
+
+def test_aktuelle_season_nach_monat():
+    import datetime as dt
+    assert jw.current_season(dt.date(2026, 11, 9)) == ("FALL", 2026)
+    assert jw.current_season(dt.date(2026, 1, 1)) == ("WINTER", 2026)
+    assert jw.current_season(dt.date(2026, 6, 30)) == ("SPRING", 2026)
+    assert jw.current_season(dt.date(2026, 7, 1)) == ("SUMMER", 2026)
+
+
+def test_alarm_schweigt_bei_null():
+    assert jw.gap_alarm_text(0, "FALL", 2026) is None
+
+
+def test_alarm_meldet_luecken_mit_zahl_und_season():
+    text = jw.gap_alarm_text(3, "FALL", 2026)
+    assert text and "3" in text and "FALL 2026" in text
+
+
+def test_luecken_abfrage_zaehlt_nur_titel_ohne_angebot_und_ohne_stempel():
+    sql = jw.gap_sql("FALL", 2026)
+    assert "season_year = 2026" in sql and "season = 'FALL'" in sql
+    assert "NOT EXISTS" in sql and "anime_streaming_offers" in sql
+    assert "streaming_verified_at IS NULL" in sql
+    assert "is_hentai IS NOT TRUE" in sql
+
+
+def test_gap_alarm_modus_gibt_bei_null_nichts_aus(monkeypatch, capsys):
+    monkeypatch.setattr(jw, "psql", lambda sql, read=True: "0\n")
+    monkeypatch.setattr(jw.sys, "argv", ["x", "--gap-alarm"])
+    jw.main()
+    assert capsys.readouterr().out == ""
+
+
+def test_gap_alarm_modus_gibt_bei_luecke_text_aus(monkeypatch, capsys):
+    monkeypatch.setattr(jw, "psql", lambda sql, read=True: "4\n")
+    monkeypatch.setattr(jw.sys, "argv", ["x", "--gap-alarm"])
+    jw.main()
+    assert "4" in capsys.readouterr().out

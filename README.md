@@ -122,7 +122,10 @@ otakupulse/
 ├── backup-db.sh                    # nächtliches DB-Backup (lokal + B2-Offsite)
 ├── watchdog.sh                     # Uptime-Watchdog (Auto-Neustart + Telegram-Alarm)
 ├── otakupulse-sync.sh              # täglicher Sync-Wrapper (AniList → JustWatch → News → Telegram → IndexNow)
-├── refresh-streaming.sh            # rollierender Streaming-Refresh (--stale)
+├── refresh-streaming.sh            # rollierender Streaming-Refresh (--stale-weighted)
+├── catalog-sweep.sh                # wöchentlicher JustWatch-Katalog-Sweep (+ Lücken-Alarm)
+├── crunchyroll-availability.sh     # täglicher Crunchyroll-Direktabgleich
+├── streaming-alarm.sh              # Telegram-Alarm bei Lücken (schweigt bei 0)
 ├── backfill-streaming.sh           # Einmal-Backfill (JustWatch + Dub-Scraper)
 └── README.md
 ```
@@ -229,7 +232,8 @@ Brauchen TLS-Impersonation (Cloudflare) bzw. eine **DE-IP**. Laufen außerhalb d
 | Script | Zweck |
 |---|---|
 | `crunchyroll-dub.py` | Echte Ger-/Eng-Dub & -Sub aus der Crunchyroll-Content-API |
-| `justwatch-streaming.py` | Anbieter-Verfügbarkeit (`--recent N`, `--only-missing`, `--stale N`) → `streamingProviders` |
+| `justwatch-streaming.py` | Anbieter-Verfügbarkeit je Titel (`--recent N`, `--only-missing`, `--stale N`, `--stale-weighted N`, `--gap-alarm`) → `streamingProviders` |
+| `justwatch-catalog.py` | Katalog-Abgleich: pro Anbieter der ganze DE-Anime-Katalog (`--sweep`, `--discovery`, `--count-only`, `--dry-run`); setzt `streamingVerifiedAt` |
 | `wikipedia-dub.py` | Legale Ger-Dub-Ergänzung (Klassiker/Filme) via Wikidata |
 | `studio-logos.py` | Studio-Logos (Wikimedia Commons) + Websites aus Wikidata |
 
@@ -264,7 +268,9 @@ News-Formate aus den Offers: `generate-recurring-news.ts --platform-new` / `--pl
 Detailrouten haben bewusst KEINE `loading.tsx` mehr — eine Suspense-Grenze über dem Segment macht
 `notFound()` zum Soft-404 (Status 200); nur `/suche` behält ihr Skeleton.
 
-**Rollierender Refresh** (`refresh-streaming.sh`, Cron alle 4 h): Feld
+**Rollierender Refresh** (`refresh-streaming.sh`, Cron alle 4 h, `--stale-weighted`: laufende Titel
+zuerst, dann Jahrgang absteigend, innerhalb eines Jahrgangs der am längsten nicht geprüfte; `--stale`
+bleibt für die reine Altersfolge erhalten): Feld
 **`streamingCheckedAt`** merkt sich pro Titel den letzten Abgleich. `justwatch-streaming.py
 --stale N` nimmt die N am längsten nicht geprüften Titel, gleicht sie **autoritativ** ab
 (Offers exakt auf JustWatch-Stand, nur bei sicherem Titel-Match ≥ 0.90; `firstSeenAt`
@@ -321,7 +327,7 @@ sieht ihn also wieder, das heißt nicht, dass die Entscheidung verloren ist.
 - **Eine Zeile einfach zu löschen genügt nicht** — der Sync findet denselben Treffer wieder
   und legt sie wieder an, sobald ein Durchlauf diesen Titel erfasst. Der rollierende
   Abgleich (150 Titel alle vier Stunden, bei 11.061 Titeln rund 74 Läufe) braucht dafür
-  rund zwölf Tage.
+  rund zwölf Tage, spätestens beim wöchentlichen Katalog-Abgleich.
 
 Der Sync spart beim autoritativen Löschen `source = 'manual'` und `confidence = 'rejected'`
 aus und fügt ein Paar `(provider, monetization)` mit `manual`-Zeile nicht doppelt ein. Endet
@@ -559,7 +565,9 @@ Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron
 |---|---|---|
 | `30 3 * * *` | `backup-db.sh` | DB-Backup lokal + B2-Offsite, rotierend |
 | `15 4 * * *` | `otakupulse-sync.sh` | AniList-Sync → JustWatch → News → Telegram → IndexNow |
-| `45 */4 * * *` | `refresh-streaming.sh` | rollierender Streaming-Abgleich (`--stale`) |
+| `45 */4 * * *` | `refresh-streaming.sh` | rollierender Streaming-Abgleich (`--stale-weighted 150`), danach Lücken-Alarm |
+| `20 5 * * 1` | `catalog-sweep.sh` | Katalog-Sweep (`justwatch-catalog.py --sweep`), setzt `streamingVerifiedAt`, danach Lücken-Alarm |
+| `40 5 * * *` | `crunchyroll-availability.sh` | Crunchyroll-Direktbeleg (`crunchyroll-dub.py --availability`) |
 | `55 7 * * 1` | `generate-recurring-news --weekly-preview` | Wochenvorschau (Mo) |
 | `0 12 * * 3` | `generate-recurring-news --genre-spotlight` | Genre-Spotlight (Mi) |
 | `0 8 * * 4` | `generate-recurring-news --platform-new` | „Neu auf <Anbieter>" (Do) |
@@ -568,6 +576,21 @@ Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron
 | `*/30 * * * *` | `telegram-notify.ts` | neue Artikel in den Channel posten |
 | `*/5 * * * *` | `watchdog.sh` | Uptime-Watchdog + Auto-Neustart |
 | `23 * * * *` | `find …/.next/cache/images -size 0 -delete` | 0-Byte-Bilder, die den LRU-Start killen |
+
+**Reihenfolge ist eine Anforderung:** der Sweep (Mo 05:20) läuft **vor** dem Crunchyroll-Lauf
+(täglich 05:40). Der Sweep löscht autoritativ und ignoriert dabei `source` — er überschreibt die
+von Crunchyroll belegte Zeile mit einer geerbten, unbestätigten; der Crunchyroll-Lauf danach
+stellt den Beleg wieder her. Die Alternative (Sweep spart `source='crunchyroll'` aus) wurde
+verworfen: er könnte ein echtes Lizenzende nie mehr entfernen, und die Zeile wäre für Titel
+außerhalb des Crunchyroll-Umfangs dauerhaft eingefroren. Die Begründung steht auch im Kopf von
+`catalog-sweep.sh`.
+
+**Kennzahl und Alarm:** `npx tsx src/scripts/streaming-coverage.ts` weist Angebote und Titel je
+Vertrauensstufe (`confirmed`/`unconfirmed`/`rejected`), `streamingVerifiedAt` und die Lücke der
+laufenden Season aus. Der Alarm (`streaming-alarm.sh`, Token und `ALERT_CHAT_ID` aus `secrets.env`
+wie in `watchdog.sh`) meldet per Telegram, wenn Titel der laufenden Season **weder** ein Angebot
+**noch** `streamingVerifiedAt` haben; bei 0 schweigt er, höchstens eine Meldung pro Tag.
+Abnahmeziel: von 110 Titeln der Season FALL 2026 höchstens 10 ohne Angabe, keiner ohne Stempel.
 
 Der Tages-Digest (`--daily`, früher 06:00) ist seit 9f83275 abgeschafft: rund fünf
 Artikel pro Tag nach Schablone sind „Scaled content". Ersatz ist die Wochenvorschau.

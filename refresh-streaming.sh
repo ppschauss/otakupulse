@@ -1,6 +1,7 @@
 #!/bin/sh
 # Rollierende JustWatch-Auffrischung: pro Lauf ein kleiner Batch der am längsten
-# nicht geprüften Titel (--stale). Über viele kleine Läufe rotiert der ganze
+# nicht geprüften Titel (--stale-weighted: laufende Titel und neue Jahrgänge zuerst,
+# dann nach Alter; alte Jahrgänge deckt der wöchentliche catalog-sweep.sh ab). Über viele kleine Läufe rotiert der ganze
 # ~11k-Katalog durch, ohne die Quelle mit einem Burst aufzuscheuchen (der einmalige
 # --only-missing-Backfill hatte JustWatch mit ~85 Anfragen/Sek. auf 403 geschickt).
 # Autoritativ auf gematchten Titeln: fügt neue Anbieter hinzu UND entfernt
@@ -14,5 +15,8 @@ BATCH=150
 [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 2000000 ] && { tail -n 500 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"; }
 
 cd "$F" || exit 1
-echo "===== $(date) --stale $BATCH =====" >> "$LOG"
-python3 -u src/scripts/justwatch-streaming.py --stale "$BATCH" >> "$LOG" 2>&1
+echo "===== $(date) --stale-weighted $BATCH =====" >> "$LOG"
+python3 -u src/scripts/justwatch-streaming.py --stale-weighted "$BATCH" >> "$LOG" 2>&1
+
+# Lücken-Alarm (schweigt bei 0, höchstens eine Meldung pro Tag).
+/mnt/cache/appdata/otakupulse/streaming-alarm.sh >> "$LOG" 2>&1

@@ -21,6 +21,9 @@ Aufruf (HOST, `pip install curl_cffi` + docker):
   python3 src/scripts/justwatch-streaming.py --recent 3         # Titel der letzten 3 Tage (täglich)
   python3 src/scripts/justwatch-streaming.py --only-missing     # nur Titel ohne Offers
   python3 src/scripts/justwatch-streaming.py --stale 150        # rollierend: die 150 am längsten nicht geprüften
+  python3 src/scripts/justwatch-streaming.py --stale-weighted 150  # wie --stale, aber laufende Titel und neue Jahrgänge zuerst
+  python3 src/scripts/justwatch-streaming.py --gap-alarm           # Ausgabe nur, wenn Titel der laufenden Season weder
+                                                                       # Angebot noch Prüfstempel haben (sonst still)
   python3 src/scripts/justwatch-streaming.py --slugs naruto,clannad [--dry-run]
   python3 src/scripts/justwatch-streaming.py --unmatched-top 150 --not-checked-since 2026-09-13T00:00:00Z
                                                                        # die 150 beliebtesten Titel OHNE Offers, die seit
@@ -233,8 +236,59 @@ def _arg(name, default=None):
     return default
 
 
-def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=None, not_checked_since=None):
+def stale_order_sql(current_year):
+    """ORDER-BY-Klausel der gewichteten Rotation (`--stale-weighted`), rein und testbar.
+
+    Reihenfolge der Kriterien (sie IST die Anforderung):
+      1. laufende Titel (`status = 'RELEASING'`) zuerst — dort suchen Besucher;
+      2. dann Jahrgang absteigend ("neu vor alt"). Angekündigte Titel kommender Jahre
+         zählen wie der laufende Jahrgang (`LEAST`), sonst würden sie die Rotation
+         mit Titeln fluten, für die es noch gar kein Angebot geben kann;
+      3. innerhalb eines Jahrgangs der am längsten nicht geprüfte zuerst
+         (`streaming_checked_at ASC NULLS FIRST`) — so rotiert jeder Jahrgang durch.
+
+    Alte Jahrgänge werden nicht ausgehungert, sondern nur später dran; die Abdeckung
+    sichert ohnehin der wöchentliche Katalog-Sweep (`justwatch-catalog.py --sweep`)."""
+    year = int(current_year)
+    return (" ORDER BY (a.status = 'RELEASING') DESC NULLS LAST,"
+            f" LEAST(COALESCE(a.season_year, 0), {year}) DESC,"
+            " a.streaming_checked_at ASC NULLS FIRST")
+
+
+def current_season(today=None):
+    """(season, jahr) nach AniList-Zählung: WINTER Jan–Mär, SPRING Apr–Jun, SUMMER Jul–Sep, FALL Okt–Dez."""
+    import datetime
+    d = today or datetime.date.today()
+    return ("WINTER", "SPRING", "SUMMER", "FALL")[(d.month - 1) // 3], d.year
+
+
+def gap_sql(season, year):
+    """Zählt Titel der laufenden Season ohne jedes Angebot UND ohne Prüfstempel.
+
+    Nur die Kombination ist eine Lücke: "nachgesehen, es gibt nichts" (Stempel gesetzt)
+    ist eine Aussage; "weder Angebot noch je nachgesehen" ist ein blinder Fleck."""
+    return ("SELECT count(*) FROM anime a "
+            f"WHERE a.season_year = {int(year)} AND a.season = {q(season)} "
+            "AND a.is_hentai IS NOT TRUE AND a.streaming_verified_at IS NULL "
+            "AND NOT EXISTS (SELECT 1 FROM anime_streaming_offers o WHERE o._parent_id = a.id);")
+
+
+def gap_alarm_text(count, season, year):
+    """Meldungstext für Telegram — oder None bei 0. Ein Alarm, der jeden Tag ohne Anlass
+    kommt, wird ignoriert; deshalb ist Schweigen der Normalfall."""
+    if not count or int(count) <= 0:
+        return None
+    return (f"⚠️ OtakuPulse: {int(count)} Titel der laufenden Season {season} {year} haben weder "
+            "ein Streaming-Angebot noch einen Prüfstempel (streaming_verified_at). "
+            "Katalog-Sweep prüfen: /tmp/otaku-catalog-sweep.log")
+
+
+def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=None, not_checked_since=None,
+               stale_weighted=None):
     where, tail = "", ""
+    if stale_weighted:
+        import datetime
+        tail = f"{stale_order_sql(datetime.date.today().year)} LIMIT {int(stale_weighted)}"
     if recent_days:
         where = f" WHERE a.created_at > now() - interval '{int(recent_days)} days'"
     if slugs:
@@ -773,6 +827,14 @@ def other_instance_running():
 
 
 def main():
+    if "--gap-alarm" in sys.argv:
+        # Nur lesen, deshalb vor der Instanz-Sperre. Ausgabe nur bei Lücken (sonst leer):
+        # der Wrapper schickt genau dann eine Telegram-Meldung, wenn etwas ausgegeben wurde.
+        season, year = current_season()
+        text = gap_alarm_text((psql(gap_sql(season, year)).strip() or "0"), season, year)
+        if text:
+            print(text)
+        return
     if other_instance_running():
         print("→ Eine andere Instanz von justwatch-streaming.py läuft bereits — Abbruch (Instanz-Sperre).")
         return
@@ -782,7 +844,8 @@ def main():
     initial = "--initial" in sys.argv
     print("→ Lade Anime + vorhandene Anbieter/Offers …")
     anime = load_anime(recent_days=recent, stale_limit=stale, slugs=slugs.split(",") if slugs else None,
-                       unmatched_top=_arg("--unmatched-top"), not_checked_since=_arg("--not-checked-since"))
+                       unmatched_top=_arg("--unmatched-top"), not_checked_since=_arg("--not-checked-since"),
+                       stale_weighted=_arg("--stale-weighted"))
     if "--only-missing" in sys.argv:
         anime = [a for a in anime if not a["offers"]]
     print(f"  {len(anime)} Anime.")
