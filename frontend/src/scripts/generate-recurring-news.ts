@@ -31,7 +31,7 @@ import config from '../payload.config'
 import Anthropic from '@anthropic-ai/sdk'
 import { displayTitle, animeBanner } from '../lib/anime'
 import { DE_PROVIDER_SLUGS, providerBySlug } from '../lib/streaming'
-import { offerNote, UNCONFIRMED_LABEL, type Confidence } from '../lib/streamingConfidence'
+import { offerNote, offerLanguageLabel, NO_LANGUAGE, UNCONFIRMED_LABEL, type Confidence } from '../lib/streamingConfidence'
 import { toLexical, stripMarkers, type Valid } from '../lib/articleBody'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -483,12 +483,12 @@ async function runGenreSpotlight(payload: Payload, authorId: any, ymd: string): 
 // Modus: --platform-new / --platform-leaving  (aus den Streaming-Offers)
 // ---------------------------------------------------------------------------
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
-const LANG = (audio: string, subs: string) => {
-  const a = (audio || '').split(','), su = (subs || '').split(',')
-  if (a.includes('de')) return 'Deutscher Dub'
-  if (su.includes('de')) return 'Deutscher Sub'
-  return 'Japanisch (OmU)'
-}
+// Sprachfassung einer Angebotszeile — mit der Zuversicht der Zeile als drittem Argument:
+// ein geerbtes Angebot hat leeres `audio`/`subs` (Entscheidung 7), und der alte Rückfall
+// „Japanisch (OmU)" hätte in der Tabelle eine Sprachfassung direkt neben „Staffel nicht
+// bestätigt" behauptet. Implementierung in lib/streamingConfidence.ts (dort getestet, dieses
+// Skript ist nicht importierbar: es startet beim Laden `main()`).
+const LANG = offerLanguageLabel
 const COST: Record<string, string> = { flatrate: 'Abo', ads: 'kostenlos (Werbung)', free: 'kostenlos' }
 
 type OfferRow = { id: number; slug: string; t: string; score: number | null; banner: string | null; cover: string | null; audio: string; subs: string; monet: string; at: string | null; confidence: Confidence | null }
@@ -563,7 +563,7 @@ async function runPlatformNew(payload: Payload, authorId: any, ymd: string): Pro
     const rows = await offerRows(payload, ps, `o.first_seen_at >= greatest(now() - interval '30 days', '${NEU_AB}'::timestamptz) AND ${ECHT_NEU}`)
     if (rows.length < 5) continue
     const slug = `neu-auf-${ps}-${y}-${String(m).padStart(2, '0')}`
-    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]]${offerNote(r.confidence)} | ${LANG(r.audio, r.subs)} | ${COST[r.monet] || r.monet} | ${r.score ? `${r.score}/100` : '—'} |`)
+    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]]${offerNote(r.confidence)} | ${LANG(r.audio, r.subs, r.confidence)} | ${COST[r.monet] || r.monet} | ${r.score ? `${r.score}/100` : '—'} |`)
     await createArticle(payload, authorId, {
       slug,
       category: 'guide',
@@ -576,7 +576,14 @@ async function runPlatformNew(payload: Payload, authorId: any, ymd: string): Pro
         `${rows.length} Anime sind in den letzten 30 Tagen neu in den ${p.name}-Katalog (Deutschland) gekommen.`,
         `Anbieter-Baustein (wörtlich einbauen): [[page:plattform-${ps}|${p.name}]]`,
         `Die drei beliebtesten Neuzugänge (Bausteine wörtlich einbauen):`,
-        ...rows.slice(0, 3).map((r) => `- [[anime:${r.slug}|${r.t}]]${offerNote(r.confidence)} (${LANG(r.audio, r.subs)}, ${COST[r.monet] || r.monet})`),
+        // Fließtext statt Tabellenzelle: „(—, Abo)" liest sich wie ein Fehler. Fehlt die
+        // Sprachangabe (unbestätigte Zeile ohne Sprachdaten), bleibt sie hier ganz weg —
+        // der Zusatz „(Staffel nicht bestätigt)" steht ohnehin direkt davor.
+        ...rows.slice(0, 3).map((r) => {
+          const lang = LANG(r.audio, r.subs, r.confidence)
+          const klammer = [lang === NO_LANGUAGE ? '' : lang, COST[r.monet] || r.monet].filter(Boolean).join(', ')
+          return `- [[anime:${r.slug}|${r.t}]]${offerNote(r.confidence)} (${klammer})`
+        }),
         `Verweise darauf, dass die komplette Liste unten steht und wir die Verfügbarkeit laufend prüfen.`,
         `Titel mit dem Zusatz „(${UNCONFIRMED_LABEL})“ nennst du nur mit diesem Zusatz; behaupte für sie keine Verfügbarkeit der genauen Staffel.`,
         `headline: Muss "${p.name}" und "neu" enthalten, z. B. "Neu auf ${p.name}: …".`,
@@ -594,7 +601,7 @@ async function runPlatformLeaving(payload: Payload, authorId: any, ymd: string):
     if (rows.length < 3) continue
     const slug = `verlaesst-${ps}-${y}-${String(m).padStart(2, '0')}`
     const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Berlin' }) : '—')
-    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]]${offerNote(r.confidence)} | ${fmt(r.at)} | ${LANG(r.audio, r.subs)} | ${r.score ? `${r.score}/100` : '—'} |`)
+    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]]${offerNote(r.confidence)} | ${fmt(r.at)} | ${LANG(r.audio, r.subs, r.confidence)} | ${r.score ? `${r.score}/100` : '—'} |`)
     await createArticle(payload, authorId, {
       slug,
       category: 'guide',

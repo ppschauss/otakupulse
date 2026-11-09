@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isConfirmed, isUnconfirmed, offerNote, UNCONFIRMED_LABEL, rejectedProviderSlugs, unconfirmedOnlyProviderSlugs } from './streamingConfidence'
+import { isConfirmed, isUnconfirmed, offerNote, UNCONFIRMED_LABEL, rejectedProviderSlugs, unconfirmedOnlyProviderSlugs, offerLanguageLabel, NO_LANGUAGE } from './streamingConfidence'
 
 describe('isConfirmed', () => {
   it('behandelt fehlende confidence als belegt (Altbestand ohne Feld)', () => {
@@ -66,5 +66,29 @@ describe('unconfirmedOnlyProviderSlugs', () => {
   it('ein verworfenes Angebot macht den Slug nicht „nur unbestätigt" (dafür gibt es das Veto)', () => {
     const s = unconfirmedOnlyProviderSlugs({ streamingOffers: [o('netflix', 'rejected')] })
     expect(s.size).toBe(0)
+  })
+})
+
+describe('offerLanguageLabel', () => {
+  it('nennt deutschen Dub vor deutschem Sub, sonst OmU (belegte Zeile, unverändert)', () => {
+    expect(offerLanguageLabel('de,ja', 'de', 'confirmed')).toBe('Deutscher Dub')
+    expect(offerLanguageLabel('ja', 'de,en', 'confirmed')).toBe('Deutscher Sub')
+    expect(offerLanguageLabel('ja', 'en', 'confirmed')).toBe('Japanisch (OmU)')
+  })
+  it('belegte Zeile ohne Sprachdaten behält den Rückfall OmU (älter als dieser Branch)', () => {
+    expect(offerLanguageLabel('', '', 'confirmed')).toBe('Japanisch (OmU)')
+    expect(offerLanguageLabel(null, null, null)).toBe('Japanisch (OmU)')
+  })
+  it('unbestätigte Zeile OHNE Sprachdaten behauptet keine Sprachfassung', () => {
+    // Geerbte Angebote tragen leeres audio/subs (Entscheidung 7). „Japanisch (OmU)"
+    // stünde in der Tabelle direkt neben „Staffel nicht bestätigt".
+    expect(offerLanguageLabel('', '', 'unconfirmed')).toBe(NO_LANGUAGE)
+    expect(offerLanguageLabel(null, null, 'unconfirmed')).toBe(NO_LANGUAGE)
+  })
+  it('unbestätigte Zeile MIT Sprachdaten zeigt sie weiter', () => {
+    expect(offerLanguageLabel('de', '', 'unconfirmed')).toBe('Deutscher Dub')
+    expect(offerLanguageLabel('', 'de', 'unconfirmed')).toBe('Deutscher Sub')
+    // Daten sind da, nur die Staffelzuordnung ist unbestätigt.
+    expect(offerLanguageLabel('ja', '', 'unconfirmed')).toBe('Japanisch (OmU)')
   })
 })

@@ -33,6 +33,35 @@ export const isConfirmed = (o: WithConfidence): boolean => o.confidence == null 
 /** Nur aus dem Serien-Angebot geerbt; `rejected` zählt hier nicht dazu. */
 export const isUnconfirmed = (o: WithConfidence): boolean => o.confidence === 'unconfirmed'
 
+/** Platzhalter in Tabellen, wenn es keine belegbare Sprachangabe gibt (wie beim Score). */
+export const NO_LANGUAGE = '—'
+
+/**
+ * Sprachfassung EINER Angebotszeile für die Plattform-News („Neu auf <Anbieter>",
+ * „verlässt <Anbieter>"). `audio`/`subs` sind die Komma-Strings der Angebotszeile.
+ *
+ * Für belegte Zeilen (auch Altbestand ohne `confidence`) bleibt der alte Rückfall
+ * `'Japanisch (OmU)'` — er ist älter als die Vertrauensstufen und bleibt unberührt.
+ * Eine UNBESTÄTIGTE Zeile ohne jede Sprachangabe bekommt dagegen `NO_LANGUAGE`:
+ * geerbte Angebote tragen leeres `audio` und `subs` (Entscheidung 7), und eine
+ * behauptete Sprachfassung direkt neben dem Zusatz „Staffel nicht bestätigt" wäre
+ * genau die Unwahrheit, die die StreamingBox dort schon unterdrückt. Liegen Daten
+ * vor, werden sie auch für eine unbestätigte Zeile gezeigt — die Daten sind belegt,
+ * nur die Staffelzuordnung ist es nicht.
+ */
+export function offerLanguageLabel(
+  audio?: string | null,
+  subs?: string | null,
+  confidence?: Confidence | null,
+): string {
+  const a = (audio || '').split(',')
+  const su = (subs || '').split(',')
+  if (a.includes('de')) return 'Deutscher Dub'
+  if (su.includes('de')) return 'Deutscher Sub'
+  if (isUnconfirmed({ confidence }) && !(audio || '').trim() && !(subs || '').trim()) return NO_LANGUAGE
+  return 'Japanisch (OmU)'
+}
+
 /**
  * Anbieter-Slugs, die der Redakteur für diesen Titel per Veto verworfen hat
  * (`confidence: 'rejected'`). Gemeinsame Quelle für Anzeige und Indexregel, damit
