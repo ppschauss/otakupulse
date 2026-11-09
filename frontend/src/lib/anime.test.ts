@@ -98,6 +98,13 @@ describe('animeIndexable', () => {
     expect(animeIndexable({ streamingOffers: [{ provider: 'netflix', url: 'https://n' }] })).toBe(true)
     expect(animeIndexable({ streamingProviders: ['netflix'] })).toBe(true)
   })
+  it('zählt unbestätigte Angebote nicht als Streaming, belegte und Altbestand ohne Feld schon', () => {
+    const o = { provider: 'netflix', url: 'https://n' }
+    expect(animeIndexable({ streamingOffers: [{ ...o, confidence: 'unconfirmed' }] })).toBe(false)
+    expect(animeIndexable({ streamingOffers: [{ ...o, confidence: 'unconfirmed' }, { ...o, confidence: 'confirmed' }] })).toBe(true)
+    expect(animeIndexable({ streamingOffers: [{ ...o, confidence: null }] })).toBe(true)
+    expect(animeIndexable({ streamingOffers: [{ ...o, confidence: 'unconfirmed' }], streamingProviders: ['netflix'] })).toBe(true)
+  })
   it('indexiert ohne Streaming nur mit deutschem Text ≥ 100 Zeichen und genug Nachfrage', () => {
     expect(animeIndexable({ descriptionDe: de, popularity: 50000 })).toBe(true)
     expect(animeIndexable({ descriptionSource: de, popularity: 50000 })).toBe(false) // englischer Quelltext zählt nicht

@@ -1,5 +1,7 @@
 // Hilfsfunktionen rund um Anime-Daten (Anzeige & Labels).
 
+import { isConfirmed } from './streamingConfidence'
+
 export function displayTitle(a: any): string {
   return a?.titleGerman || a?.titleEnglish || a?.titleRomaji || 'Unbekannt'
 }
@@ -161,8 +163,9 @@ export function animeIndexable(a: any): boolean {
   if (a?.noindex) return false
   // Adult-Policy: gesperrter Bestand ist öffentlich nicht erreichbar (301 → /genre/ecchi).
   if (a?.isHentai === true) return false
+  // Nur belegte Angebote zählen: geerbte (unbestätigte) dürfen keine Seite neu indexierbar machen.
   const hasStream =
-    (Array.isArray(a?.streamingOffers) && a.streamingOffers.length > 0) ||
+    (Array.isArray(a?.streamingOffers) && a.streamingOffers.some((o: any) => isConfirmed(o ?? {}))) ||
     (Array.isArray(a?.streamingProviders) && a.streamingProviders.length > 0)
   if (hasStream) return true
   if (a?.format === 'MUSIC') return false

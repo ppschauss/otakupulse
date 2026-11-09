@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { pageMeta, watchActionsLd, animeLd } from './seo'
-import { streamingOffersOf } from './streaming'
+import { providerBySlug, streamingOffersOf } from './streaming'
 import { url } from './site'
 
 describe('pageMeta', () => {
@@ -67,5 +67,22 @@ describe('watchActionsLd', () => {
     expect(animeLd({ slug: 'x', titleRomaji: 'X' }).potentialAction).toBeUndefined()
     const withOffers = animeLd({ slug: 'x', titleRomaji: 'X', streamingOffers: [{ provider: 'netflix', url: 'https://n', monetization: 'flatrate' }] })
     expect(withOffers.potentialAction).toHaveLength(1)
+  })
+})
+
+describe('watchActionsLd mit Vertrauensstufen', () => {
+  const view = (slug: string, url: string, confidence: string) =>
+    ({ provider: providerBySlug(slug)!, offer: { provider: slug, url, monetization: 'flatrate', audio: [], subs: [], confidence } })
+  it('gibt für unbestätigte Angebote keine WatchAction aus', () => {
+    const ld = watchActionsLd([view('crunchyroll', 'https://crunchyroll.com/a', 'unconfirmed'), view('netflix', 'https://netflix.com/b', 'confirmed')] as any)
+    expect(ld).toHaveLength(1)
+    expect(ld[0].target.urlTemplate).toBe('https://netflix.com/b')
+  })
+  it('liefert eine leere Liste, wenn alle Angebote unbestätigt sind', () => {
+    expect(watchActionsLd([view('crunchyroll', 'https://crunchyroll.com/a', 'unconfirmed')] as any)).toHaveLength(0)
+  })
+  it('animeLd lässt potentialAction weg, wenn nur unbestätigte Angebote existieren', () => {
+    const ld = animeLd({ slug: 'x', streamingOffers: [{ provider: 'crunchyroll', url: 'https://crunchyroll.com/a', monetization: 'flatrate', confidence: 'unconfirmed' }] })
+    expect(ld.potentialAction).toBeUndefined()
   })
 })

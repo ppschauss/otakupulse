@@ -8,6 +8,7 @@ import {
   streamingOffersOf,
   groupOffersByProvider,
   streamingSummary,
+  isAmazonChannelUrl,
 } from './streaming'
 
 describe('providerBySlug', () => {
@@ -166,5 +167,40 @@ describe('streamingSummary', () => {
   })
   it('ohne Anbieter: hasStream=false', () => {
     expect(streamingSummary({}).hasStream).toBe(false)
+  })
+})
+
+describe('streamingSummary mit Vertrauensstufen', () => {
+  const unconfirmed = { provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence: 'unconfirmed' }
+  it('meldet hasUnconfirmed, zählt den Anbieter aber mit', () => {
+    const s = streamingSummary({ streamingOffers: [unconfirmed] })
+    expect(s.hasUnconfirmed).toBe(true)
+    expect(s.hasStream).toBe(true)
+    expect(s.providerNames).toEqual(['Crunchyroll'])
+  })
+  it('leitet aus einem unbestätigten Angebot keine Sprachen ab', () => {
+    const s = streamingSummary({ streamingOffers: [{ ...unconfirmed, audio: 'de', subs: 'de' }] })
+    expect(s.hasDeDub).toBe(false)
+    expect(s.hasDeSub).toBe(false)
+  })
+  it('meldet kein hasFree für ein unbestätigtes Angebot', () => {
+    const s = streamingSummary({ streamingOffers: [{ ...unconfirmed, monetization: 'free' }] })
+    expect(s.hasFree).toBe(false)
+  })
+  it('ist bei rein belegten Angeboten unverändert', () => {
+    const s = streamingSummary({ streamingOffers: [{ provider: 'netflix', url: 'https://netflix.com/x', monetization: 'flatrate', audio: 'de' }] })
+    expect(s.hasUnconfirmed).toBe(false)
+    expect(s.hasDeDub).toBe(true)
+  })
+})
+
+describe('isAmazonChannelUrl', () => {
+  it('erkennt Amazon-Channel-Deep-Links', () => {
+    expect(isAmazonChannelUrl('https://watch.amazon.de/detail?gti=amzn1.dv.gti.abc')).toBe(true)
+  })
+  it('erkennt Direktanbieter-Links nicht als Channel', () => {
+    expect(isAmazonChannelUrl('https://animationdigitalnetwork.com/de/video/1433-suikoden')).toBe(false)
+    expect(isAmazonChannelUrl('https://www.crunchyroll.com/de/series/GABC')).toBe(false)
+    expect(isAmazonChannelUrl(null)).toBe(false)
   })
 })

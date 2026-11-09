@@ -11,7 +11,7 @@
  * die Anbieter-Startseite.
  */
 
-import type { Confidence, OfferSource } from './streamingConfidence'
+import { isConfirmed, isUnconfirmed, type Confidence, type OfferSource } from './streamingConfidence'
 
 export type StreamingProvider = {
   slug: string
@@ -398,6 +398,8 @@ export type StreamingSummary = {
   hasDeDub: boolean
   hasDeSub: boolean
   hasFree: boolean
+  /** Mindestens ein Angebot ist unbestätigt (Staffel nicht belegt, vom Serien-Angebot geerbt). */
+  hasUnconfirmed: boolean
   /** Mindestens ein Angebot ist jünger als 30 Tage. */
   isNew: boolean
   checkedAt: string | null
@@ -410,9 +412,12 @@ const NEW_WINDOW_MS = 30 * 86400_000
 export function streamingSummary(anime: any, now: Date = new Date()): StreamingSummary {
   const views = streamingOffersOf(anime).filter((v) => isStreamingOffer(v.offer))
   const legacy = views.length > 0 && views.every((v) => v.offer.legacy)
+  // Sprachen und „kostenlos" sind nur für belegte Angebote verbürgt; ein geerbtes Angebot
+  // zählt als Anbieter (hasStream, providerNames), behauptet aber nichts darüber hinaus.
+  const confirmed = views.filter((v) => isConfirmed(v.offer))
   const langs: string[] = Array.isArray(anime?.availableLanguages) ? anime.availableLanguages : []
-  const hasDeDub = legacy ? langs.includes('de-dub') : views.some((v) => v.offer.audio.includes('de'))
-  const hasDeSub = legacy ? langs.includes('de-sub') : views.some((v) => v.offer.subs.includes('de'))
+  const hasDeDub = legacy ? langs.includes('de-dub') : confirmed.some((v) => v.offer.audio.includes('de'))
+  const hasDeSub = legacy ? langs.includes('de-sub') : confirmed.some((v) => v.offer.subs.includes('de'))
   const isNew = views.some((v) => {
     const t = v.offer.firstSeenAt ? Date.parse(v.offer.firstSeenAt) : NaN
     return Number.isFinite(t) && now.getTime() - t <= NEW_WINDOW_MS
@@ -422,9 +427,24 @@ export function streamingSummary(anime: any, now: Date = new Date()): StreamingS
     providerNames: groupOffersByProvider(views).map((g) => g.provider.name),
     hasDeDub,
     hasDeSub,
-    hasFree: views.some((v) => v.offer.monetization === 'ads' || v.offer.monetization === 'free'),
+    hasFree: confirmed.some((v) => v.offer.monetization === 'ads' || v.offer.monetization === 'free'),
+    hasUnconfirmed: views.some((v) => isUnconfirmed(v.offer)),
     isNew,
     checkedAt: anime?.streamingCheckedAt || null,
     legacy,
+  }
+}
+
+/**
+ * Amazon-Channel-Link? JustWatch liefert für zubuchbare Channels (Aniverse, ADN,
+ * Crunchyroll …) Deep-Links auf `watch.amazon.*` — der Titel läuft dann über Prime,
+ * nicht beim Direktanbieter.
+ */
+export function isAmazonChannelUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  try {
+    return new URL(url).hostname.toLowerCase().startsWith('watch.amazon.')
+  } catch {
+    return false
   }
 }

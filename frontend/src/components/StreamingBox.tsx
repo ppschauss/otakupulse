@@ -3,11 +3,13 @@ import { formatDateDe, joinNames } from '@/lib/anime'
 import {
   MONETIZATION_LABELS,
   groupOffersByProvider,
+  isAmazonChannelUrl,
   purchaseOffersOf,
   streamingOffersOf,
   streamingSummary,
   type StreamingOffer,
 } from '@/lib/streaming'
+import { UNCONFIRMED_LABEL, isUnconfirmed } from '@/lib/streamingConfidence'
 
 /**
  * „Wo streamen?"-Block der Anime-Seite — ersetzt die frühere /streamen/-Seite.
@@ -33,60 +35,72 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
             {title} läuft in Deutschland bei {joinNames(groups.map((g) => g.provider.name))}
             {s.legacy ? '' : s.hasDeDub ? ' — mit deutscher Synchro' : s.hasDeSub ? ' — im Original mit deutschen Untertiteln' : ''}
             {s.hasFree ? ', teilweise kostenlos' : ''}.{stand ? ` Stand: ${stand}.` : ''}
+            {s.hasUnconfirmed ? ' Bei einzelnen Anbietern ist die konkrete Staffel nicht bestätigt.' : ''}
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
-            {groups.map(({ provider, offers }) => (
-              <a
-                key={provider.slug}
-                href={offers[0].url}
-                target="_blank"
-                rel="nofollow noopener noreferrer"
-                className="group rounded-xl border border-white/10 bg-zinc-900/50 p-4 transition hover:border-accent/50 hover:bg-zinc-900"
-                style={provider.color ? { borderColor: `${provider.color}55` } : undefined}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="inline-block h-3 w-3 shrink-0 rounded-full"
-                      style={{ backgroundColor: provider.color || '#7c3aed' }}
-                      aria-hidden
-                    />
-                    <span className="font-bold text-white group-hover:text-accent">{provider.name}</span>
-                    {isNew(offers) ? (
-                      <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-300">
-                        Neu
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="shrink-0 text-sm font-semibold text-accent">Zum Stream →</span>
-                </div>
-                {offers[0].legacy ? (
-                  <p className="mt-2 text-xs text-zinc-500">Details zur Sprachfassung folgen — bitte beim Anbieter prüfen.</p>
-                ) : (
-                  <ul className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-                    {langBadges(offers)}
-                    {offers.map((o) =>
-                      o.monetization ? (
-                        <li
-                          key={o.monetization}
-                          className={`rounded-md px-2 py-0.5 ${
-                            o.monetization === 'flatrate'
-                              ? 'bg-white/5 text-zinc-300 ring-1 ring-white/10'
-                              : 'bg-emerald-500/15 text-emerald-300'
-                          }`}
-                        >
-                          {MONETIZATION_LABELS[o.monetization]}
-                        </li>
-                      ) : null,
-                    )}
-                    {scope(offers[0]) ? <li className="text-zinc-500">{scope(offers[0])}</li> : null}
-                    {offers[0].availableTo ? (
-                      <li className="text-amber-400/80">bis {formatDateDe(offers[0].availableTo)}</li>
-                    ) : null}
-                  </ul>
-                )}
-              </a>
-            ))}
+            {groups.map(({ provider, offers }) => {
+              const unconfirmed = offers.every(isUnconfirmed)
+              return (
+                <a
+                  key={provider.slug}
+                  href={offers[0].url}
+                  target="_blank"
+                  rel="nofollow noopener noreferrer"
+                  className="group rounded-xl border border-white/10 bg-zinc-900/50 p-4 transition hover:border-accent/50 hover:bg-zinc-900"
+                  style={provider.color ? { borderColor: `${provider.color}55` } : undefined}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="inline-block h-3 w-3 shrink-0 rounded-full"
+                        style={{ backgroundColor: provider.color || '#7c3aed' }}
+                        aria-hidden
+                      />
+                      <span className="font-bold text-white group-hover:text-accent">{provider.name}</span>
+                      {isNew(offers) ? (
+                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-300">
+                          Neu
+                        </span>
+                      ) : null}
+                      {unconfirmed ? (
+                        <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-300">
+                          {UNCONFIRMED_LABEL}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 text-sm font-semibold text-accent">Zum Stream →</span>
+                  </div>
+                  {isAmazonChannelUrl(offers[0].url) ? (
+                    <p className="mt-1 text-[11px] text-zinc-500">über Amazon Prime buchbar</p>
+                  ) : null}
+                  {offers[0].legacy ? (
+                    <p className="mt-2 text-xs text-zinc-500">Details zur Sprachfassung folgen — bitte beim Anbieter prüfen.</p>
+                  ) : (
+                    <ul className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                      {unconfirmed ? null : langBadges(offers)}
+                      {offers.map((o) =>
+                        o.monetization ? (
+                          <li
+                            key={o.monetization}
+                            className={`rounded-md px-2 py-0.5 ${
+                              o.monetization === 'flatrate'
+                                ? 'bg-white/5 text-zinc-300 ring-1 ring-white/10'
+                                : 'bg-emerald-500/15 text-emerald-300'
+                            }`}
+                          >
+                            {MONETIZATION_LABELS[o.monetization]}
+                          </li>
+                        ) : null,
+                      )}
+                      {!unconfirmed && scope(offers[0]) ? <li className="text-zinc-500">{scope(offers[0])}</li> : null}
+                      {!unconfirmed && offers[0].availableTo ? (
+                        <li className="text-amber-400/80">bis {formatDateDe(offers[0].availableTo)}</li>
+                      ) : null}
+                    </ul>
+                  )}
+                </a>
+              )
+            })}
           </div>
         </>
       ) : (
