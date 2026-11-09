@@ -1118,3 +1118,20 @@ def test_vereinigung_eines_einzelnen_knotens_ist_offers_for_title():
     p = _parsed("Crunchyroll", count=2, season_count=12)
     assert cat.offers_for_matches([p], status="FINISHED", year=2013, current_year=2026) == \
         cat.offers_for_title(p, status="FINISHED", year=2013, current_year=2026)
+
+
+# --- Aufgabe 12: Lizenzende im Katalog-Sweep ---------------------------------------------
+
+def test_katalog_lizenzende_loescht_die_abo_zeile_aber_schuetzt_ausnahmen():
+    """Verschwindet der Anbieter aus dem Katalog, verliert der Titel die Abo-Zeile. Das
+    DELETE ist auf Abo/Werbung/Gratis eingeschränkt (Kauf/Leih sieht der Sweep nie) und
+    spart Handarbeit und Veto aus."""
+    anime = {"id": 7, "have": {"crunchyroll"}, "offers": {("crunchyroll", "flatrate"): "2026-01-01T00:00:00Z"}}
+    stmts = cat.build_catalog_sql(anime, [], NOW)
+    sql = " ".join(stmts)
+    assert stmts[0].startswith("DELETE FROM anime_streaming_offers WHERE _parent_id = 7")
+    assert "monetization IN ('flatrate','ads','free')" in stmts[0]
+    assert "'rent'" not in stmts[0] and "'buy'" not in stmts[0]
+    assert "source IS DISTINCT FROM 'manual'" in stmts[0]
+    assert "confidence IS DISTINCT FROM 'rejected'" in stmts[0]
+    assert "INSERT INTO anime_streaming_offers" not in sql

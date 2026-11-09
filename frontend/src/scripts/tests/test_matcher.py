@@ -439,3 +439,32 @@ def test_leere_angebotsliste_laesst_handarbeit_und_veto_im_index_und_in_der_tabe
     assert "source IS DISTINCT FROM 'manual'" in stmts[0]
     assert "confidence IS DISTINCT FROM 'rejected'" in stmts[0]
     assert "'netflix'" in _inserts(stmts, "anime_streaming_providers")[0]
+
+
+# --- Aufgabe 12: das autoritative Löschen überlebt den Handarbeits-Schutz ---------------
+
+def test_echtes_lizenzende_loescht_das_angebot():
+    """Review Focus 2: der Schutz darf den Bestand nicht einfrieren."""
+    a = {"id": 7, "have": {"crunchyroll"}, "offers": {("crunchyroll", "flatrate"): "2026-01-01T00:00:00Z"}}
+    stmts, changed = jw.build_sql(a, [], "2026-11-09T00:00:00Z")
+    sql = " ".join(stmts)
+    assert "DELETE FROM anime_streaming_offers" in sql
+    assert "INSERT INTO anime_streaming_offers" not in sql
+    assert changed is True
+
+
+def test_manuelle_zeile_wird_nicht_geloescht():
+    a = {"id": 7, "have": set(), "offers": {}}
+    sql = " ".join(jw.build_sql(a, [], "2026-11-09T00:00:00Z")[0])
+    assert "source IS DISTINCT FROM 'manual'" in sql
+
+
+def test_lizenzende_loescht_auch_kauf_und_leih_in_der_titelsuche():
+    """Die Titelsuche sieht alle Monetarisierungen: ihr DELETE darf nicht auf
+    Abo/Werbung/Gratis eingeschränkt sein, sonst bleibt ein abgelaufenes Leih-Angebot stehen."""
+    a = _anime(have={"amazon-video"}, offers={("amazon-video", "rent"): None})
+    stmts, changed = jw.build_sql(a, [], NOW)
+    assert "monetization" not in stmts[0]
+    assert "confidence IS DISTINCT FROM 'rejected'" in stmts[0]
+    assert _inserts(stmts) == []
+    assert changed is True
