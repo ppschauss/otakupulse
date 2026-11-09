@@ -207,7 +207,13 @@ def fetch_catalog(session, short, object_type):
         conn = (body.get("data") or {}).get("popularTitles")
         if not isinstance(conn, dict):
             return nodes, False
-        nodes += [e["node"] for e in conn.get("edges") or [] if e.get("node")]
+        edges = conn.get("edges") or []
+        nodes += [e["node"] for e in edges if e.get("node")]
+        if any(not e.get("node") for e in edges):
+            # Eine Kante ohne Knoten wäre ein still verschluckter Titel: er würde später
+            # als "nicht im Katalog" gelten und den Nachweis-Stempel erlauben. Die
+            # übrigen Knoten behalten wir, den Durchlauf werten wir als unvollständig.
+            return nodes, False
         info = conn.get("pageInfo") or {}
         if not info.get("hasNextPage"):
             return nodes, True

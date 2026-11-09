@@ -189,6 +189,37 @@ def test_fetch_leerer_katalog_ist_vollstaendig(monkeypatch):
     assert nodes == [] and complete is True
 
 
+def test_fetch_kante_ohne_node_ist_unvollstaendig_und_behaelt_die_uebrigen(monkeypatch):
+    """Ein verschluckter Knoten würde den Titel später als 'nicht gefunden' erscheinen
+    lassen und fälschlich den Nachweis-Stempel erlauben."""
+    p = page(2, "c1", False)
+    p._body["data"]["popularTitles"]["edges"].insert(1, {"node": None})
+    nodes, complete, _ = run(monkeypatch, [p])
+    assert complete is False
+    assert len(nodes) == 2  # die vorhandenen Knoten gehen nicht verloren
+
+
+def test_fetch_kante_ganz_ohne_node_schluessel_ist_unvollstaendig(monkeypatch):
+    p = page(1, "c1", False)
+    p._body["data"]["popularTitles"]["edges"].append({})
+    nodes, complete, _ = run(monkeypatch, [p])
+    assert complete is False and len(nodes) == 1
+
+
+def test_fetch_vollstaendige_knoten_bleiben_complete(monkeypatch):
+    """Gegenprobe gegen eine zu strenge Bedingung."""
+    nodes, complete, _ = run(monkeypatch, [page(3, "c1", False)])
+    assert complete is True and len(nodes) == 3
+
+
+def test_fetch_max_pages_bricht_ab_und_ist_unvollstaendig(monkeypatch):
+    monkeypatch.setattr(cat, "MAX_PAGES", 3)
+    seiten = [page(1, f"c{i}", True) for i in range(10)]  # immer neue Cursor, nie Ende
+    nodes, complete, sent = run(monkeypatch, seiten)
+    assert complete is False
+    assert len(sent) == 3 and len(nodes) == 3
+
+
 # --- Instanz-Sperre ---------------------------------------------------------------
 
 def test_instanz_sperre_sieht_beide_skripte(monkeypatch):
