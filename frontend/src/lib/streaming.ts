@@ -330,6 +330,8 @@ export function streamingOffersOf(anime: any): OfferView[] {
   for (const o of raw) {
     const provider = providerBySlug(o?.provider)
     if (!provider || !o?.url) continue
+    // Von Hand verworfen (Veto gegen Falschtreffer): darf nirgends erscheinen.
+    if (o.confidence === 'rejected') continue
     views.push({
       provider,
       offer: {

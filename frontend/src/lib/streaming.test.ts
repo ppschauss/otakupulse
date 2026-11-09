@@ -204,3 +204,18 @@ describe('isAmazonChannelUrl', () => {
     expect(isAmazonChannelUrl(null)).toBe(false)
   })
 })
+
+describe('verworfene Angebote (confidence rejected)', () => {
+  const rejected = { provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence: 'rejected', source: 'manual' }
+  const confirmed = { provider: 'netflix', url: 'https://netflix.com/x', monetization: 'flatrate', confidence: 'confirmed' }
+  it('erscheinen nicht in streamingOffersOf', () => {
+    expect(streamingOffersOf({ streamingOffers: [rejected] })).toEqual([])
+  })
+  it('lassen einen Titel mit nur einem verworfenen Angebot ohne Stream', () => {
+    expect(streamingSummary({ streamingOffers: [rejected] }).hasStream).toBe(false)
+  })
+  it('neben einem belegten Angebot bleibt nur das belegte', () => {
+    const views = streamingOffersOf({ streamingOffers: [rejected, confirmed] })
+    expect(views.map((v) => v.provider.slug)).toEqual(['netflix'])
+  })
+})
