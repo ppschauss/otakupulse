@@ -18,7 +18,7 @@ import {
   type StreamingOffer,
   type StreamingProvider,
 } from './streaming'
-import { isConfirmed } from './streamingConfidence'
+import { isConfirmed, isUnconfirmed } from './streamingConfidence'
 import type { FaqItem } from '@/components/Faq'
 
 type Group = { provider: StreamingProvider; offers: StreamingOffer[] }
@@ -176,7 +176,8 @@ export type StreamingGuideData = {
 export function streamingGuide(anime: any): StreamingGuideData | null {
   // Fließtext und FAQ (→ FAQPage-JSON-LD) sprechen nur über belegte Angebote; unbestätigte
   // zeigt die Karte in der StreamingBox mit Badge. Bleibt nichts Belegtes, gibt es keinen Guide.
-  const views = streamingOffersOf(anime).filter((v) => isConfirmed(v.offer))
+  const allViews = streamingOffersOf(anime)
+  const views = allViews.filter((v) => isConfirmed(v.offer))
   const groups = groupOffersByProvider(views)
   if (!groups.length) return null
   const title = displayTitle(anime)
@@ -373,7 +374,10 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
   })
   const bigs = ['Netflix', 'Crunchyroll', 'Amazon Prime Video']
   const yes = bigs.filter((b) => names.includes(b))
-  const no = bigs.filter((b) => !names.includes(b))
+  // „Nicht gelistet" nur mit Nachweis (vollständiger Katalog-Durchlauf) und nie für Anbieter mit unbestätigtem Angebot:
+  // dort liegt ein positiver Hinweis vor, keine erwiesene Abwesenheit.
+  const unconfirmedNames = new Set(allViews.filter((v) => isUnconfirmed(v.offer)).map((v) => v.provider.name))
+  const no = anime?.streamingVerifiedAt ? bigs.filter((b) => !names.includes(b) && !unconfirmedNames.has(b)) : []
   faq.push({
     q: `Streamen auch Dienste wie Netflix, Crunchyroll oder Amazon Prime Video ${title}?`,
     a: `Ob neben ${plain} noch weitere große Plattformen ${title} im Abo anbieten, hängt vom jeweiligen Rechtekatalog im deutschsprachigen Raum ab. Es kommt häufig vor, dass Serien bei mehreren Anbietern gleichzeitig oder zeitversetzt laufen.${

@@ -85,6 +85,21 @@ describe('streamingGuide (Vorlagen-Wortlaut + Datenzusätze)', () => {
       expect(g.overview[0].value).toBe('Crunchyroll')
       expect(JSON.stringify(g)).not.toContain('https://nf/x')
     })
+    const nfConfirmed = { provider: 'netflix', url: 'https://nf/x', monetization: 'flatrate', audio: 'ja', subs: 'de', confidence: 'confirmed' }
+    const crUnconfirmed = { provider: 'crunchyroll', url: 'https://cr/x', monetization: 'flatrate', audio: '', subs: '', confidence: 'unconfirmed' }
+    it('„nicht gelistet" nur mit streamingVerifiedAt', () => {
+      const offers = [nfConfirmed]
+      const ohne = streamingGuide({ ...naruto, streamingOffers: offers, streamingVerifiedAt: null })!
+      expect(ohne.faq.some((f) => f.a.includes('derzeit nicht gelistet'))).toBe(false)
+      const mit = streamingGuide({ ...naruto, streamingOffers: offers, streamingVerifiedAt: '2026-11-09T00:00:00Z' })!
+      expect(faqBig(mit)).toContain('Bei Crunchyroll und Amazon Prime Video ist Naruto derzeit nicht gelistet')
+    })
+    it('Anbieter mit unbestätigtem Angebot gilt auch mit Nachweis nie als „nicht gelistet"', () => {
+      const g = streamingGuide({ ...naruto, streamingOffers: [nfConfirmed, crUnconfirmed], streamingVerifiedAt: '2026-11-09T00:00:00Z' })!
+      expect(faqBig(g)).toContain('Amazon Prime Video ist Naruto derzeit nicht gelistet')
+      expect(faqBig(g)).not.toContain('Crunchyroll ist')
+      expect(faqBig(g)).not.toMatch(/Crunchyroll[^.]*nicht gelistet/)
+    })
     it('nur belegte Angebote (auch ohne confidence): unverändert', () => {
       const legacyRow = { provider: 'netflix', url: 'https://nf/x', monetization: 'flatrate', audio: '', subs: '' }
       const g = streamingGuide({ ...naruto, streamingOffers: [cr, legacyRow] })!
@@ -93,7 +108,8 @@ describe('streamingGuide (Vorlagen-Wortlaut + Datenzusätze)', () => {
     })
   })
   it('übernimmt die Vorlagensätze wörtlich und hängt Fakten an', () => {
-    const g = streamingGuide({ ...naruto, streamingOffers: [...naruto.streamingOffers, { provider: 'amazon-video', url: 'https://av', monetization: 'buy', audio: '', subs: '' }] })!
+    // streamingVerifiedAt gesetzt: dieser Fall prüft den Vorlagenwortlaut inkl. „nicht gelistet" (nur mit Nachweis).
+    const g = streamingGuide({ ...naruto, streamingVerifiedAt: '2026-09-10T00:00:00.000Z', streamingOffers: [...naruto.streamingOffers, { provider: 'amazon-video', url: 'https://av', monetization: 'buy', audio: '', subs: '' }] })!
     expect(g.heading).toBe('Wer streamt Naruto? Alle Anbieter & Optionen')
     expect(g.intro).toContain('Auf der Suche nach dem passenden Stream für **Naruto**? Wir zeigen dir, wo du die Serie aktuell findest.')
     expect(g.intro).toContain('Seit dem **Herbst 2002** führen **Crunchyroll**, **Amazon Prime Video** und **Joyn** den Anime im Sortiment.')
