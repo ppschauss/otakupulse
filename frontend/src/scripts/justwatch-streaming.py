@@ -408,6 +408,47 @@ def _slug_and_monet(o):
     return slug, m
 
 
+def confidence_for(season_offers, series_offers, provider, status, year, current_year):
+    """Vertrauensstufe eines Anbieters für GENAU EINEN unserer Titel: `'confirmed'`,
+    `'unconfirmed'` oder None (= keine Zeile schreiben).
+
+    Die gemeinsame Regel von Titelsuche (`aggregate_offers`) und Katalog-Abgleich
+    (`justwatch-catalog.py` re-exportiert sie als `confidence_for`). Sie steht hier und
+    nicht im Katalog-Skript, weil jenes aus diesem importiert — umgekehrt entstünde ein
+    Importzyklus. Eine Regel, eine Implementierung: zwei Kopien hätten über kurz oder
+    lang zwei verschiedene Vererbungsgrenzen.
+
+    `season_offers` sind die Anbieter-Slugs, die AM GEMATCHTEN OBJEKT selbst hängen —
+    bei der Titelsuche das JustWatch-Staffel-Objekt, beim Katalog-Abgleich der
+    Serien-Knoten, den `match_node` gewählt hat. `series_offers` sind die Slugs des
+    ganzen Werks (Serie samt aller Staffeln).
+
+      - am gematchten Objekt belegt          -> `confirmed`
+      - nur am übergeordneten Werk vorhanden -> `unconfirmed`, aber NUR wenn der Titel
+                                                läuft (`RELEASING`) oder zum laufenden
+                                                Jahrgang gehört
+      - sonst                                -> None
+
+    Das ist Entscheidung 24 in der engsten Lesart. Begründung: bei einem laufenden
+    Simulcast liegt die neue Staffel praktisch immer beim Anbieter der Vorgängerstaffel
+    (Regressionsfall `kikansha-no-mahou-wa-tokubetsu-desu-2nd-season`), das Risiko ist
+    nahe null. Die weite Lesart (alle Staffeln, Specials und Filme einer Serie) hätte
+    alte Staffeln mit dem Logo eines Anbieters versehen, bei dem sie nicht liegen — bei
+    1.349 Crunchyroll-Serien bis zu zwei Größenordnungen mehr Einträge, jeder einzelne
+    eine unbelegte Behauptung."""
+    if provider in season_offers:
+        return "confirmed"
+    if provider not in series_offers:
+        return None  # der Anbieter kommt nirgends vor: es gibt nichts zu erben
+    if status == "RELEASING":
+        return "unconfirmed"
+    try:
+        aktuell = year is not None and current_year is not None and int(year) == int(current_year)
+    except (TypeError, ValueError):
+        aktuell = False  # unlesbares Jahr ist kein Beleg für den laufenden Jahrgang
+    return "unconfirmed" if aktuell else None
+
+
 def aggregate_offers(node, season=None):
     """JustWatch-Node -> Liste von Offer-Dicts (SD/HD dedupliziert, Sprachen vereinigt).
 

@@ -28,13 +28,26 @@ Gemessen am 2026-11-09 (Genre `ani`, DE, FLATRATE/ADS/FREE):
   - `packages(country:DE)` liefert nur 161 Pakete und enthält die Amazon-Channels
     NICHT. Deshalb steht die Liste `PACKAGES` fest im Code, nicht aus jener Abfrage.
 
-Zuständigkeit dieser Datei: Abruf und Paginierung (+ `--count-only`). Die Zuordnung
-auf unsere Titel und das Schreiben der Angebote kommen in eigenen Schritten dazu;
-hier wird nichts gematcht und die Datenbank nicht berührt.
+Zuständigkeit dieser Datei: Abruf, Paginierung, Zuordnung UND Schreiben.
 
 Aufruf (HOST, `pip install curl_cffi`):
   python3 justwatch-catalog.py --count-only                 # alle Pakete, SHOW + MOVIE zählen
   python3 justwatch-catalog.py --count-only --packages ava,cru
+  python3 justwatch-catalog.py --dry-run                    # Bericht, schreibt nichts
+  python3 justwatch-catalog.py --discovery                  # erster echter Lauf: kein first_seen_at
+  python3 justwatch-catalog.py --sweep                      # Regelbetrieb (wöchentlich per Cron)
+
+Exit-Code: 0 = vollständiger Durchlauf, 1 = unvollständiger Durchlauf (dann wird KEIN
+Nachweis gestempelt), 2 = gar nicht gelaufen, weil die Instanz-Sperre griff. Die drei
+Fälle sind für einen Cron-Wrapper verschiedene Dinge: 1 ist ein Fehler, 2 ist bloß
+Terminkollision. (Das Nachbarskript bleibt bei 0, damit sich das Verhalten des
+laufenden Produktionsskripts nicht ändert.) `--packages` mit einer Teilmenge ist nie
+ein vollständiger Durchlauf: so ein Lauf stempelt nicht und endet mit 1 — er ist ein
+Diagnosewerkzeug, kein Betriebsmodus.
+
+Was der Sweep NICHT anfasst: Kauf- und Leih-Angebote. Der Katalog-Abruf blättert nur
+FLATRATE/ADS/FREE (`CATALOG_MONETIZATION`), also ist er auch nur dafür autoritativ —
+Einzelheiten samt Messzahlen am `DELETE` in `build_catalog_sql`.
 
 Rate-Limit: dasselbe wie im Nachbarskript — 1 Worker, 1.2 s Pause, Backoff
 (30, 60, 120) bei 403/429. Wir posten NICHT selbst, sondern nur über dessen
@@ -43,7 +56,9 @@ für ~1 h, sobald zu viel Volumen kommt. Instanz-Sperre: `other_instance_running
 erkennt beide JustWatch-Skripte gegenseitig.
 """
 import importlib.util
+import json
 import sys
+import time
 from pathlib import Path
 
 # Das Nachbarskript wird relativ zum EIGENEN Dateistandort gesucht, nicht zum
@@ -63,9 +78,16 @@ jw = _load_neighbor("justwatch-streaming")
 api_post = jw.api_post
 CLEARNAME_TO_SLUG = jw.CLEARNAME_TO_SLUG
 MONETIZATION = jw.MONETIZATION
-IMPERSONATE = jw.IMPERSONATE
-psql = jw.psql  # für die späteren Schritte bereitgehalten; hier ungenutzt
+STREAMING = jw.STREAMING
+AUDIO_TO_LANG = jw.AUDIO_TO_LANG
+SUB_TO_LANG = jw.SUB_TO_LANG
+psql = jw.psql
+q = jw.q
 other_instance_running = jw.other_instance_running
+# Die Vererbungsregel wohnt im Nachbarskript (sonst Importzyklus: jenes importiert
+# nicht, dieses schon) und wird hier nur re-exportiert. Eine Regel, eine
+# Implementierung — Aufgabe 11 benutzt sie von dort aus für die Titelsuche.
+confidence_for = jw.confidence_for
 
 # JustWatch-`shortName` -> unser Provider-Slug (muss zu lib/streaming.ts passen).
 # Alle am 2026-11-09 aus echten Angeboten ermittelt. Amazon-Channels und die
@@ -97,6 +119,10 @@ LANGUAGE = "de"
 # Die Abfrage nach Monetarisierung filtert den KATALOG (nur Streaming), nicht die
 # Angebotsliste je Titel — Kauf/Leih-Stores können also trotzdem in `offers` stehen.
 CATALOG_MONETIZATION = ["FLATRATE", "ADS", "FREE"]
+# Dieselben Monetarisierungen in DB-Schreibweise — ABGELEITET, nicht getippt: wer den
+# Abruf erweitert, erweitert damit automatisch den Rahmen, in dem der Sweep autoritativ
+# löscht und schreibt. Beide dürfen nie auseinanderlaufen (siehe `build_catalog_sql`).
+SWEEP_MONETIZATION = tuple(MONETIZATION[m] for m in CATALOG_MONETIZATION)
 GENRE = "ani"
 # Notbremse gegen Endlosschleifen bei kaputter Paginierung: größter gemessener
 # Katalog (Crunchyroll, 1349 Serien) sind 34 Seiten; 200 lässt reichlich Luft.
@@ -365,6 +391,361 @@ def dedupe_offers(offers):
     return out
 
 
+def title_index(anime):
+    """Nachschlagewerk „Normalform/Basistitel -> unsere Titel" für die Zuordnung.
+
+    Ohne Index würde jeder Katalogknoten gegen alle 11.061 Titel gerechnet: rund
+    6.000 Knoten mal 11.061 Titel mal `norm_variants` — Stunden statt Sekunden, und
+    das bei laufendem Rate-Limit-Budget. Der Index liefert nur Kandidaten, die mit dem
+    Knoten mindestens eine Normalform oder einen Basistitel teilen. Genau diese können
+    in `_score_title` überhaupt einen Punktwert > 0 bekommen; alle anderen hätten 0 und
+    würden verworfen. Die Auswahl von `match_node` — einschließlich „Gleichstand =
+    kein Match" — bleibt damit unverändert (`candidates_for` ist eine Vorauswahl, keine
+    zweite Match-Regel)."""
+    idx = {}
+    for a in anime:
+        keys = set()
+        for t in a.get("titles") or []:
+            if not t:
+                continue
+            keys |= set(norm_variants(t))
+            if _has_subtitle(t):
+                keys.add("base:" + title_base(t))  # eigener Namensraum, damit ein
+                # Basistitel nie mit einer Normalform kollidiert
+        for k in keys:
+            idx.setdefault(k, []).append(a)
+    return idx
+
+
+def candidates_for(parsed, idx):
+    """Unsere Titel, die für diesen Knoten überhaupt in Frage kommen (siehe
+    `title_index`). Reihenfolge ist stabil, Dubletten fallen über die id weg."""
+    keys = set()
+    for c in (parsed.get("original_title"), parsed.get("title")):
+        if not c:
+            continue
+        keys |= set(norm_variants(c))
+        if _has_subtitle(c):
+            keys.add("base:" + title_base(c))
+    out, seen = [], set()
+    for k in sorted(keys):
+        for a in idx.get(k, ()):
+            if a["id"] not in seen:
+                seen.add(a["id"])
+                out.append(a)
+    return out
+
+
+# --- Lader ------------------------------------------------------------------------
+
+
+def load_all_anime():
+    """ALLE Titel mit allem, was die Zuordnung und das Schreiben brauchen.
+
+    Der Katalog-Abgleich fragt nicht pro Titel, sondern pro Anbieter — er braucht
+    deshalb den ganzen Bestand im Speicher, nicht eine Batch-Auswahl wie
+    `load_anime()` im Nachbarskript.
+
+    Kein `is_hentai`-Filter: der Schutz für Erwachsenen-Inhalte sitzt in den Listen-
+    und News-Abfragen (`a.is_hentai IS NOT TRUE`), nicht im Schreibweg. Ein
+    Hentai-Titel bekommt seine Angebote wie jeder andere und erscheint trotzdem in
+    keiner öffentlichen Liste; den Filter hier nachzubauen würde ihn nur an einer
+    zweiten Stelle wiederholen, ihn hier zu *umgehen* ginge gar nicht — es gibt
+    nichts zu umgehen (Review Focus 5).
+
+    Pro Titel:
+      `titles`/`want`/`year` — für `match_node`,
+      `status`/`year`        — für `confidence_for` (Entscheidung 24),
+      `offers`   (provider, monetization) -> `first_seen_at`: bleibt über Läufe
+                 erhalten, auch wenn es NULL ist („seit Beginn bekannt"),
+      `manual`   Positiv-Zeilen von Hand (`source='manual'`, nicht verworfen): der
+                 Sweep löscht sie nicht und muss ihren Anbieter deshalb im
+                 Filter-Index stehen lassen,
+      `rejected` Veto-Zeilen (`confidence='rejected'`): diese Paare werden nicht
+                 wieder eingefügt (Entscheidung 21)."""
+    rows = json.loads(psql(
+        "SELECT COALESCE(json_agg(json_build_object('id',a.id,'slug',a.slug,'fmt',a.format,"
+        "'yr',a.season_year,'st',a.status,'de',a.title_german,'en',a.title_english,"
+        "'ro',a.title_romaji,'na',a.title_native)),'[]') FROM anime a;").strip() or "[]")
+    anime = {r["id"]: {"id": r["id"], "slug": r["slug"],
+                       "want": "MOVIE" if r.get("fmt") == "MOVIE" else "SHOW",
+                       "year": r.get("yr"), "status": r.get("st"),
+                       "titles": [r.get("de") or "", r.get("en") or "", r.get("ro") or "", r.get("na") or ""],
+                       "offers": {}, "manual": set(), "rejected": set()}
+             for r in rows}
+    if not anime:
+        return []
+    for o in json.loads(psql(
+        "SELECT COALESCE(json_agg(json_build_object('pid',_parent_id,'p',provider,'m',monetization,"
+        "'f',first_seen_at,'s',source,'c',confidence)),'[]') FROM anime_streaming_offers;").strip() or "[]"):
+        a = anime.get(o["pid"])
+        if not a:
+            continue
+        key = (o["p"], o["m"])
+        a["offers"][key] = o["f"]
+        if o.get("c") == "rejected":
+            a["rejected"].add(key)
+        elif o.get("s") == "manual":
+            a["manual"].add(key)
+    return list(anime.values())
+
+
+# --- Schreiben --------------------------------------------------------------------
+
+
+def _csv(v):
+    """Sprachfeld ins DB-Format. `dedupe_offers` liefert MENGEN (anders als
+    `aggregate_offers` im Nachbarskript, das schon Komma-Strings baut), die Spalten
+    `audio`/`subs` wollen eine sortierte Komma-Liste. Fertige Strings gehen unverändert
+    durch, damit Aufrufer wie der Crunchyroll-Direktbeleg (Aufgabe 14) ihre Zeilen
+    direkt übergeben können."""
+    if not v:
+        return ""
+    if isinstance(v, str):
+        return v
+    return ",".join(sorted(v))
+
+
+def offers_for_title(parsed, status=None, year=None, current_year=None):
+    """Angebotszeilen für GENAU DEN EINEN Titel, den `match_node` gewählt hat.
+
+    Zuschnitt: ein Katalogknoten ist eine ganze Serie, und eine Staffel-Zuordnung gibt
+    es bewusst nicht (JustWatchs Staffelnummern sind nicht auf AniList abbildbar, siehe
+    `match_node`). Das gematchte Objekt ist also der Knoten selbst:
+
+      - Anbieter hängt am Knoten          -> `confirmed`. Das ist der Regelfall; der
+        Katalog liefert die Serien-Angebote mit `elementCount`.
+      - Anbieter hängt NUR an Staffeln    -> `confidence_for` entscheidet: bei
+        laufendem Titel oder laufendem Jahrgang `unconfirmed`, sonst keine Zeile
+        (Entscheidung 24, engste Lesart).
+
+    Geerbte Zeilen tragen `flatrate` (Entscheidung 17: NULL fiele aus den SQL-Filtern
+    der Plattform-Listen heraus und `ads`/`free` wäre eine Behauptung über den Preis),
+    den Deep-Link ihres Staffel-Angebots und KEINE Sprach-, Staffel- oder Episodenzahl
+    (Entscheidung 7: was wir nicht belegen, behaupten wir nicht im Detail).
+
+    Staffel- und Episodenzahl wie in `aggregate_offers`: `elementCount` am
+    Serien-Angebot sind die Staffeln beim Anbieter, `elementCount` am Staffel-Angebot
+    sind Episoden — pro Staffel das Maximum, über die Staffeln summiert. Filme tragen
+    beides nicht.
+
+    Kauf- und Leih-Angebote werden hier schon verworfen: der Sweep löscht sie nicht
+    (siehe `build_catalog_sql`), also darf er sie auch nicht anlegen oder gar als
+    geerbtes `flatrate` missdeuten."""
+    own = [o for o in dedupe_offers(parsed.get("offers") or []) if o["monetization"] in SWEEP_MONETIZATION]
+    own_providers = {o["provider"] for o in own}
+    is_show = parsed.get("object_type") == "SHOW"
+    episodes, season_link = {}, {}
+    for s in parsed.get("seasons") or []:
+        for o in dedupe_offers(s.get("offers") or []):
+            if o["monetization"] not in SWEEP_MONETIZATION:
+                continue
+            key = (o["provider"], o["monetization"])
+            if o.get("episodes"):
+                episodes[key] = episodes.get(key, 0) + int(o["episodes"])
+            season_link.setdefault(o["provider"], o)  # Link-Quelle für die Vererbung
+    rows = {(o["provider"], o["monetization"]): o for o in own}
+    for prov, o in season_link.items():
+        if prov not in own_providers:
+            # Vererbung immer als flatrate, nie als ads/free (Entscheidung 17).
+            rows.setdefault((prov, "flatrate"), o)
+    out = []
+    for (prov, monet), o in sorted(rows.items()):
+        conf = confidence_for(own_providers, own_providers | set(season_link), prov,
+                              status, year, current_year)
+        if conf is None:
+            continue  # nicht belegt und nicht vererbbar: keine Zeile
+        geerbt = conf != "confirmed"
+        out.append({
+            "provider": prov,
+            "monetization": monet,
+            "url": o["url"],
+            "audio": "" if geerbt else _csv(o.get("audio")),
+            "subs": "" if geerbt else _csv(o.get("subs")),
+            # `episodes` aus `parse_node` ist der rohe `elementCount` — am Serien-
+            # Angebot sind das die Staffeln beim Anbieter.
+            "seasons": None if (geerbt or not is_show) else (int(o["episodes"]) if o.get("episodes") else None),
+            "episodes": None if (geerbt or not is_show) else (episodes.get((prov, monet)) or None),
+            "available_to": None if geerbt else o.get("available_to"),
+            "confidence": conf,
+        })
+    return out
+
+
+def build_catalog_sql(anime, offers, now_iso, discovery=False):
+    """SQL für EINEN Titel: Angebote, Anbieter-Index, Sprachen. Schreibt selbst nichts.
+
+    Folgt `build_sql` im Nachbarskript (`DELETE` + `INSERT` pro Titel), mit einer
+    entscheidenden Einschränkung:
+
+    *** Der Sweep ist autoritativ NUR für die Monetarisierungen, die er blättert. ***
+
+    `fetch_catalog` fragt `monetizationTypes: [FLATRATE, ADS, FREE]` — Kauf- und
+    Leih-Angebote sieht der Katalog-Abruf nie. Im Bestand hängen daran (gemessen
+    2026-11-09): amazon-video 952 von 952 Angeboten, magenta-tv 223 von 223,
+    rakuten-tv 126 von 127, sky-store 99 von 99 — zusammen 1.400 Angebote, ein Viertel
+    des Bestands. Aufgefallen ist es daran, dass das Paket `etv` (MagentaTV) im Sweep
+    0 Treffer liefert, obwohl die Datenbank 223 MagentaTV-Angebote führt. Ein
+    autoritatives `DELETE` über ALLE Monetarisierungen würde diese 1.400 Zeilen beim
+    ersten Entdeckungslauf löschen und nie wieder einfügen; wiederherstellbar wären sie
+    nur über einen zwölftägigen Durchlauf der Titelsuche. Deshalb das
+    `monetization IN (…)` am `DELETE` — und deshalb werden Kauf/Leih-Angebote auch nicht
+    eingefügt: was nicht gelöscht wird, darf nicht doppelt angelegt werden. Für Kauf und
+    Leih bleibt die rollierende Titelsuche zuständig, die in ihrer Antwort ohnehin alle
+    Monetarisierungen sieht.
+
+    Eine Anbieter-Einschränkung braucht es dagegen NICHT: die Angebotsliste eines
+    Knotens ist vollständig über alle Anbieter (der `packages`-Filter wirkt auf die
+    Trefferliste, nicht auf `offers` je Titel). Für einen gefundenen Titel sieht der
+    Sweep also auch Anbieter ohne eigenes Paket (Paramount+, Apple TV+, HIDIVE) und
+    schreibt sie korrekt neu.
+
+    Weiter gilt:
+      - `source = 'manual'` wird nicht gelöscht (Entscheidung 8) und ein Paar mit
+        `rejected`-Zeile nicht wieder eingefügt (Entscheidung 21). Beides sind
+        Entscheidungen eines Redakteurs, der Sync überschreibt sie nicht. Die
+        Granularität ist die Zeile, nicht der Titel — ein eingefrorener Titel würde
+        echte Neuzugänge verpassen.
+      - `first_seen_at` bleibt pro `(provider, monetization)` erhalten, auch als NULL.
+        Bei `discovery=True` bekommen Titel OHNE bisherige Angebote NULL („seit Beginn
+        bekannt"), nie `now()` — sonst wäre der halbe Katalog 30 Tage lang „Neu auf
+        <Anbieter>" (Anti-Ziel; die Kaltstart-Sperre `ECHT_NEU` in
+        `generate-recurring-news.ts` prüft genau auf `first_seen_at IS NULL`).
+      - `anime_streaming_providers` (Filter-Index) wird neu gebaut und zählt
+        unbestätigte Angebote mit (Entscheidung 4), `anime_available_languages` nur aus
+        belegten (Entscheidung 7) und bleibt rein additiv.
+      - Hentai-Titel werden nicht ausgenommen — der Schutz sitzt in den Listen-Abfragen
+        (Review Focus 5); hier kommt `is_hentai` bewusst nicht vor.
+
+    Warnung für weitere Aufrufer (Aufgabe 14): das `DELETE` macht den Aufrufer
+    autoritativ für ALLE Abo-/Werbe-/Gratis-Angebote des Titels. Eine Quelle, die nur
+    einen Anbieter kennt, darf diese Funktion nur mit der vollständigen Angebotsliste
+    des Titels aufrufen."""
+    aid = anime["id"]
+    monets = ",".join(q(m) for m in SWEEP_MONETIZATION)
+    stmts = [f"DELETE FROM anime_streaming_offers WHERE _parent_id = {aid} "
+             f"AND source IS DISTINCT FROM 'manual' AND monetization IN ({monets});"]
+    known = anime.get("offers") or {}
+    rejected = set(anime.get("rejected") or ())
+    slugs, langs = set(), set()
+    for e in offers:
+        key = (e["provider"], e["monetization"])
+        if e["monetization"] not in SWEEP_MONETIZATION:
+            continue  # Kauf/Leih: nicht gelöscht, also auch nicht eingefügt
+        if key in rejected:
+            continue  # Veto des Redakteurs
+        audio, subs = _csv(e.get("audio")), _csv(e.get("subs"))
+        conf = e.get("confidence") or "confirmed"
+        # `first_seen_at` nur dann NULL, wenn der Titel noch gar keine Angebote hatte —
+        # dieselbe Regel wie `--initial` im Nachbarskript. Ein Titel mit Bestand
+        # bekommt bei einem neuen Paar den Zeitstempel des Laufs, damit „Neu auf
+        # <Anbieter>" für echte Neuzugänge weiter funktioniert.
+        first = known[key] if key in known else (None if (discovery and not known) else now_iso)
+        slugs.add(e["provider"])  # auch unbestätigte zählen im Filter-Index mit
+        if conf == "confirmed":
+            for code in audio.split(","):
+                if code in AUDIO_TO_LANG:
+                    langs.add(AUDIO_TO_LANG[code])
+            for code in subs.split(","):
+                if code in SUB_TO_LANG:
+                    langs.add(SUB_TO_LANG[code])
+        seasons, episodes = e.get("seasons"), e.get("episodes")
+        stmts.append(
+            "INSERT INTO anime_streaming_offers "
+            "(_order,_parent_id,id,provider,monetization,url,audio,subs,seasons,episodes,"
+            "available_to,first_seen_at,last_seen_at,confidence,source) VALUES ("
+            # Das DELETE lässt Kauf/Leih- und Handarbeits-Zeilen stehen; `_order` darf
+            # deshalb nicht wieder bei 1 anfangen, sonst gäbe es die Reihenfolge doppelt.
+            f"COALESCE((SELECT max(_order) FROM anime_streaming_offers WHERE _parent_id = {aid}), 0) + 1, "
+            f"{aid}, substr(md5(random()::text || clock_timestamp()::text), 1, 24), "
+            f"{q(e['provider'])}, {q(e['monetization'])}::enum_anime_streaming_offers_monetization, "
+            f"{q(e['url'])}, {q(audio or None)}, {q(subs or None)}, "
+            f"{seasons if seasons is not None else 'NULL'}, {episodes if episodes is not None else 'NULL'}, "
+            # `confidence` und `source` ohne Typumwandlung: das Stringliteral wird vom
+            # Enum der Spalte übernommen. Die Typnamen sind lokal nicht prüfbar (keine
+            # Datenbank), ein falscher Cast würde den ganzen INSERT scheitern lassen.
+            f"{q(e.get('available_to'))}, {q(first)}, {q(now_iso)}, {q(conf)}, {q(e.get('source') or 'justwatch')});"
+        )
+    # Handarbeits-Zeilen überleben das DELETE — ihr Anbieter muss also auch den neu
+    # gebauten Filter-Index überleben, sonst wäre die Handarbeit aus Suche und
+    # Plattform-Listen verschwunden, obwohl die Zeile noch da steht (Entscheidung 8).
+    slugs |= {p for p, m in (anime.get("manual") or ()) if m in SWEEP_MONETIZATION}
+    stmts.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {aid};")
+    if slugs:
+        vals = ",".join(f"({i + 1}, {aid}, {q(s)}::enum_anime_streaming_providers)"
+                        for i, s in enumerate(sorted(slugs)))
+        stmts.append(f'INSERT INTO anime_streaming_providers ("order", parent_id, value) VALUES {vals};')
+    for lang in sorted(langs):
+        stmts.append(
+            'INSERT INTO anime_available_languages ("order", parent_id, value) '
+            f"SELECT COALESCE((SELECT max(\"order\") FROM anime_available_languages WHERE parent_id = {aid}), 0) + 1, {aid}, "
+            f"{q(lang)}::enum_anime_available_languages "
+            f"WHERE NOT EXISTS (SELECT 1 FROM anime_available_languages WHERE parent_id = {aid} AND value = {q(lang)});"
+        )
+    return stmts
+
+
+def diff_offers(anime, offers):
+    """`(neu, weggefallen)` der `(provider, monetization)`-Paare im Rahmen des Sweeps —
+    Grundlage für den Trockenlauf-Bericht und für die Frage, ob sich am Titel etwas
+    geändert hat.
+
+    Kauf/Leih-Paare, Handarbeit und Veto können nie „wegfallen": das `DELETE` fasst sie
+    nicht an. Sie als Wegfall zu melden hätte den Trockenlauf unlesbar gemacht — 1.400
+    Phantom-Meldungen, die keine sind."""
+    manual = set(anime.get("manual") or ())
+    rejected = set(anime.get("rejected") or ())
+    have = {k for k in (anime.get("offers") or {}) if k[1] in SWEEP_MONETIZATION}
+    want = {(e["provider"], e["monetization"]) for e in offers
+            if e["monetization"] in SWEEP_MONETIZATION
+            and (e["provider"], e["monetization"]) not in rejected}
+    return sorted(want - have), sorted(have - want - manual - rejected)
+
+
+def verified_sql(ids, now_iso, complete=False):
+    """Der Nachweis-Stempel `anime.streaming_verified_at` — oder eine leere Liste.
+
+    Bedeutung des Stempels: „dieser Titel war Teil eines vollständigen
+    Katalog-Durchlaufs über alle gemappten Anbieter". Er wird für JEDEN erfassten Titel
+    gesetzt, nicht nur für die ohne Treffer: in der engen Lesart („nirgends gefunden")
+    trüge ein Titel MIT Angeboten nie einen Stempel, und die Aussage „bei Netflix nicht
+    gelistet" wäre für ihn dauerhaft unbelegbar, obwohl der Durchlauf Netflix' Katalog
+    gerade geprüft hat. Die Textschicht (`lib/streamingText.ts`) liest das Feld genau so.
+
+    Der Stempel deckt Abo, Werbung und Gratis ab — NICHT Kauf und Leih, denn die
+    blättert der Abruf nicht (siehe `build_catalog_sql`). Die öffentliche Formulierung
+    ist genau so eingegrenzt („bei keinem Anbieter in Deutschland im Abo- oder
+    Gratis-Stream"), das passt zusammen; niemand darf den Stempel später weiter lesen,
+    als er trägt.
+
+    Bei `complete=False` wird NICHTS gestempelt (Review Focus 1): ein Abbruch mitten im
+    Durchlauf — 403/429, kaputte Paginierung, eine Kante ohne Knoten — darf nicht den
+    halben Katalog als „in Deutschland nicht im Stream" verifizieren. Der Standardwert
+    ist deshalb `False`: wer nichts über die Vollständigkeit sagt, stempelt nicht.
+
+    `content_updated_at` bleibt absichtlich unberührt: der Stempel ist ein Nachweis über
+    unsere Prüfung, keine inhaltliche Änderung am Titel."""
+    if not complete or not ids:
+        return []
+    return [f"UPDATE anime SET streaming_verified_at = {q(now_iso)} "
+            f"WHERE id IN ({','.join(str(int(i)) for i in ids)});"]
+
+
+def run_complete(flags, shorts):
+    """War DER GANZE Durchlauf vollständig? `flags` sind die `complete`-Flags aller
+    Abrufe (je Paket und Objekttyp), `shorts` die geblätterten Pakete.
+
+    Ein einziges unvollständiges Paket macht den ganzen Durchlauf unvollständig — nur
+    dann ist „bei keinem Anbieter gefunden" ein Nachweis und nicht bloß die Folge eines
+    Netzwerkfehlers. Zwei Sonderfälle gehören dazu:
+      - leere Flag-Liste: es wurde nichts geblättert, also ist nichts belegt;
+      - `--packages` mit einer Teilmenge: der Abruf kann vollständig gewesen sein, aber
+        der Stempel behauptet „über ALLE gemappten Anbieter nachgesehen". Das wäre
+        falsch, also wird nicht gestempelt."""
+    flags = list(flags)
+    return bool(flags) and all(flags) and set(shorts) == set(PACKAGES)
+
+
 def count_only(shorts):
     """Zählt pro Paket SHOW und MOVIE; schreibt nichts. Unvollständige Abrufe werden
     markiert, damit man sie nicht für eine echte Katalogzahl hält."""
@@ -380,9 +761,124 @@ def count_only(shorts):
     return all_complete
 
 
+# Schreiben in Häppchen: ein Abbruch verliert höchstens die letzten Titel, und eine
+# einzelne Transaktion über 11.061 Titel wäre unnötig lang offen.
+FLUSH_EVERY = 500
+
+
+def sweep(shorts, mode):
+    """Der Durchlauf: Kataloge blättern, zuordnen, schreiben, stempeln. Gibt zurück,
+    ob er vollständig war (das ist der Exit-Code).
+
+    Nur GEMATCHTE Titel werden geschrieben. Ein Titel, der in keinem Katalog
+    auftauchte, behält seinen Bestand — „nicht im Katalog gefunden" ist auch der
+    Zustand eines fehlgeschlagenen Matches, und der darf keine Angebote löschen. Der
+    Nachweis-Stempel geht dagegen an jeden erfassten Titel (siehe `verified_sql`).
+
+    Derselbe Titel steht in mehreren Katalogen (Crunchyroll UND Prime). Der erste
+    Treffer gewinnt: die Angebotsliste eines Knotens ist über alle Anbieter
+    vollständig, ein zweiter Knoten brächte nichts Neues — und zwei Knoten
+    aufzuaddieren würde die Episodenzahlen doppelt zählen.
+
+    `anime.streaming_checked_at` wird bewusst NICHT gesetzt. Dieser Stempel steuert die
+    Rotation der Titelsuche (`--stale`); würde der Sweep ihn wöchentlich für alle 11.061
+    Titel erneuern, käme die Titelsuche nie wieder an einen Titel — und genau sie ist
+    für Kauf, Leih und die Anbieter ohne Paket zuständig."""
+    dry = mode == "--dry-run"
+    discovery = mode == "--discovery"
+    print("→ Lade alle Titel samt Bestandsangeboten …", flush=True)
+    anime = load_all_anime()
+    print(f"  {len(anime)} Titel.", flush=True)
+    if not anime:
+        return False
+    idx = title_index(anime)
+    by_id = {a["id"]: a for a in anime}
+    sess = jw.session()
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
+    current_year = time.gmtime().tm_year
+    flags, treffer, mehrfach = [], {}, 0
+
+    for short in shorts:
+        for typ in ("SHOW", "MOVIE"):
+            nodes, complete = fetch_catalog(sess, short, typ)
+            flags.append(complete)
+            neu = 0
+            for node in nodes:
+                parsed = parse_node(node)
+                a = match_node(parsed, candidates_for(parsed, idx))
+                if a is None:
+                    continue
+                if a["id"] in treffer:
+                    mehrfach += 1
+                    continue
+                treffer[a["id"]] = parsed
+                neu += 1
+            print(f"  {short} ({PACKAGES[short]}) {typ}: {len(nodes)} Knoten, {neu} Zuordnungen"
+                  + ("" if complete else "  — UNVOLLSTÄNDIG"), flush=True)
+
+    sql, changed, dazu, weg = [], [], {}, {}
+
+    def flush():
+        """Angesammelte Anweisungen in EINER Transaktion schreiben."""
+        nonlocal sql
+        if sql and not dry:
+            psql("BEGIN;\n" + "\n".join(sql) + "\nCOMMIT;", read=False)
+        sql = []
+
+    for done, (aid, parsed) in enumerate(treffer.items(), 1):
+        a = by_id[aid]
+        offers = offers_for_title(parsed, a.get("status"), a.get("year"), current_year)
+        add, rem = diff_offers(a, offers)
+        for p, _m in add:
+            dazu[p] = dazu.get(p, 0) + 1
+        for p, _m in rem:
+            weg[p] = weg.get(p, 0) + 1
+        if add or rem:
+            changed.append(aid)
+            if dry:
+                print(f"  {a['slug']}: " + " ".join(
+                    [f"+{p}/{m}" for p, m in add] + [f"-{p}/{m}" for p, m in rem]))
+        sql.extend(build_catalog_sql(a, offers, now_iso, discovery))
+        if done % FLUSH_EVERY == 0:
+            flush()
+    flush()
+
+    if changed and not dry and not discovery:
+        # Geänderte Streaming-Angaben sind eine Inhaltsänderung (Sitemap-lastmod,
+        # IndexNow) — im Entdeckungslauf aber NICHT: der ändert tausende Titel auf
+        # einmal, und ein Schwall über den halben Katalog ist kein redaktioneller
+        # Vorgang, sondern Lärm in der Sitemap.
+        ids = ",".join(str(i) for i in changed)
+        psql(f"UPDATE anime SET content_updated_at = now(), updated_at = now() WHERE id IN ({ids});",
+             read=False)
+
+    complete = run_complete(flags, shorts)
+    stamp = verified_sql([a["id"] for a in anime], now_iso, complete)
+    if stamp and not dry:
+        psql(stamp[0], read=False)
+
+    print(f"  Fertig: {len(treffer)} Titel zugeordnet ({mehrfach} Mehrfachtreffer übersprungen), "
+          f"{len(changed)} geändert.")
+    for p in sorted(set(dazu) | set(weg)):
+        print(f"    {p}: +{dazu.get(p, 0)} neu, -{weg.get(p, 0)} weggefallen")
+    if dry:
+        print("  Trockenlauf: nichts geschrieben.")
+    elif stamp:
+        print(f"✓ Geschrieben, {len(anime)} Titel mit streaming_verified_at gestempelt.")
+    else:
+        print("→ Durchlauf unvollständig oder nur Teilmenge der Pakete: KEIN Nachweis gestempelt.")
+    return complete
+
+
 def main():
-    if "--count-only" not in sys.argv:
-        sys.exit("Aufruf: justwatch-catalog.py --count-only [--packages ava,cru]")
+    modes = [m for m in ("--count-only", "--dry-run", "--sweep", "--discovery") if m in sys.argv]
+    if len(modes) != 1:
+        sys.exit("Aufruf: justwatch-catalog.py (--count-only|--dry-run|--sweep|--discovery) "
+                 "[--packages ava,cru]\n"
+                 "  --count-only  nur Katalogzahlen, schreibt nichts\n"
+                 "  --dry-run     zuordnen und berichten, schreibt nichts\n"
+                 "  --sweep       Regelbetrieb: schreibt Angebote und Nachweis\n"
+                 "  --discovery   wie --sweep, aber ohne first_seen_at für Titel ohne Bestand")
     shorts = list(PACKAGES)
     if "--packages" in sys.argv:
         shorts = sys.argv[sys.argv.index("--packages") + 1].split(",")
@@ -391,8 +887,13 @@ def main():
             sys.exit(f"Unbekannte Pakete: {', '.join(unknown)}")
     if other_instance_running():
         print("→ Eine andere JustWatch-Instanz läuft bereits — Abbruch (Instanz-Sperre).")
-        return
-    sys.exit(0 if count_only(shorts) else 1)
+        # Exit 2, nicht 0: dieser Lauf hat gar nicht stattgefunden. Er ist weder
+        # vollständig (0) noch ein unvollständiger Abruf (1), und ein Cron-Wrapper muss
+        # „war schon belegt" von „Abruf kaputt" unterscheiden können.
+        sys.exit(2)
+    if modes[0] == "--count-only":
+        sys.exit(0 if count_only(shorts) else 1)
+    sys.exit(0 if sweep(shorts, modes[0]) else 1)
 
 
 if __name__ == "__main__":

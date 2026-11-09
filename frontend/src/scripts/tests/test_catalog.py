@@ -1,3 +1,5 @@
+import pytest
+
 from .conftest import load
 cat = load("justwatch-catalog")
 
@@ -446,3 +448,536 @@ def test_dedupe_verwirft_ohne_deeplink_und_veraendert_die_eingabe_nicht():
     out = cat.dedupe_offers([ohne, mit])
     assert [o["provider"] for o in out] == ["netflix"]
     assert mit["audio"] == ["de"]  # Eingabe unverändert (Liste, nicht Set)
+
+
+# --- Aufgabe 10: Vertrauensstufe ---------------------------------------------------
+
+def test_staffel_mit_eigenem_angebot_ist_belegt():
+    assert cat.confidence_for(["crunchyroll"], ["crunchyroll"], "crunchyroll", "FINISHED", 2023, 2026) == "confirmed"
+
+
+def test_leere_staffel_bei_laufendem_titel_ist_unbestaetigt():
+    """Regressionsfall Returner S2: Serie bei Crunchyroll, Staffel leer, Titel laeuft."""
+    assert cat.confidence_for([], ["crunchyroll"], "crunchyroll", "RELEASING", 2026, 2026) == "unconfirmed"
+
+
+def test_leere_staffel_bei_aktuellem_jahrgang_ist_unbestaetigt():
+    assert cat.confidence_for([], ["crunchyroll"], "crunchyroll", "FINISHED", 2026, 2026) == "unconfirmed"
+
+
+def test_leere_staffel_bei_altem_titel_wird_nicht_uebernommen():
+    """Entscheidung 24, engste Lesart: alte Staffeln bleiben leer."""
+    assert cat.confidence_for([], ["crunchyroll"], "crunchyroll", "FINISHED", 2014, 2026) is None
+
+
+def test_confidence_for_ist_die_regel_des_nachbarskripts():
+    """Eine Regel, eine Implementierung: definiert in justwatch-streaming.py (sonst
+    Importzyklus), hier nur re-exportiert. Aufgabe 11 nutzt sie von dort."""
+    assert cat.confidence_for is cat.jw.confidence_for
+
+
+def test_anbieter_der_nirgends_vorkommt_ergibt_keine_zeile():
+    assert cat.confidence_for([], [], "crunchyroll", "RELEASING", 2026, 2026) is None
+
+
+def test_unbekanntes_jahr_erbt_nicht():
+    """Ohne Jahr und ohne RELEASING fehlt die Begruendung fuer die Vererbung."""
+    assert cat.confidence_for([], ["crunchyroll"], "crunchyroll", "FINISHED", None, 2026) is None
+
+
+def test_belegtes_staffel_angebot_gilt_auch_fuer_alte_titel():
+    """Die Einschraenkung aus Entscheidung 24 gilt NUR fuer die Vererbung."""
+    assert cat.confidence_for(["adn"], [], "adn", "FINISHED", 1998, 2026) == "confirmed"
+
+
+# --- Aufgabe 10: Nachweis (streaming_verified_at) ---------------------------------
+
+def test_verified_at_wird_nur_nach_vollstaendigem_durchlauf_gesetzt():
+    """Review Focus 1: ein Abbruch darf den Katalog nicht als geprueft stempeln."""
+    assert cat.verified_sql([1, 2, 3], "2026-11-09T00:00:00Z", complete=False) == []
+    assert len(cat.verified_sql([1, 2, 3], "2026-11-09T00:00:00Z", complete=True)) == 1
+
+
+def test_verified_sql_stempelt_genau_die_uebergebenen_ids():
+    sql = cat.verified_sql([1, 2, 3], "2026-11-09T00:00:00Z", complete=True)[0]
+    assert "UPDATE anime SET streaming_verified_at = '2026-11-09T00:00:00Z'" in sql
+    assert "WHERE id IN (1,2,3)" in sql
+    assert "is_hentai" not in sql  # Review Focus 5: kein Sonderweg im Schreibweg
+
+
+def test_verified_sql_ohne_titel_schreibt_nichts():
+    assert cat.verified_sql([], "2026-11-09T00:00:00Z", complete=True) == []
+
+
+def test_verified_sql_ist_im_zweifel_still():
+    """Standardwert: ohne ausdrueckliches complete wird nicht gestempelt."""
+    assert cat.verified_sql([1], "2026-11-09T00:00:00Z") == []
+
+
+def test_durchlauf_ist_nur_vollstaendig_wenn_jedes_paket_vollstaendig_war():
+    alle = list(cat.PACKAGES)
+    assert cat.run_complete([True, True], alle) is True
+    assert cat.run_complete([True, False, True], alle) is False
+
+
+def test_durchlauf_ohne_abruf_ist_nicht_vollstaendig():
+    """Leere Flag-Liste: es wurde nichts geblaettert, also ist nichts belegt."""
+    assert cat.run_complete([], list(cat.PACKAGES)) is False
+
+
+def test_teilmenge_der_pakete_belegt_nichts():
+    """Der Stempel heisst 'ueber ALLE gemappten Anbieter nachgesehen' — mit
+    --packages cru ist das falsch, auch wenn der Abruf selbst vollstaendig war."""
+    assert cat.run_complete([True, True], ["cru"]) is False
+
+
+# --- Aufgabe 10: Schreiben (build_catalog_sql) ------------------------------------
+
+NOW = "2026-11-09T00:00:00Z"
+
+
+def _offer(provider="crunchyroll", monetization="flatrate", **kw):
+    o = {"provider": provider, "monetization": monetization, "url": "https://crunchyroll.com/x",
+         "audio": "de", "subs": "", "seasons": 1, "episodes": 12, "available_to": None,
+         "confidence": "confirmed"}
+    o.update(kw)
+    return o
+
+
+def test_entdeckungslauf_schreibt_kein_first_seen_at():
+    """Sonst ist der Katalog 30 Tage lang 'Neu auf <Anbieter>' (Anti-Ziel)."""
+    a = {"id": 7, "offers": {}}
+    offers = [{"provider": "crunchyroll", "monetization": "flatrate", "url": "https://crunchyroll.com/x",
+               "audio": "de", "subs": "", "seasons": 1, "episodes": 12, "available_to": None,
+               "confidence": "confirmed"}]
+    sql = " ".join(cat.build_catalog_sql(a, offers, "2026-11-09T00:00:00Z", discovery=True))
+    assert "NULL" in sql
+    sql2 = " ".join(cat.build_catalog_sql(a, offers, "2026-11-09T00:00:00Z", discovery=False))
+    assert "2026-11-09T00:00:00Z" in sql2
+
+
+def test_entdeckungslauf_schreibt_first_seen_at_genau_als_null():
+    """Praeziser als der Brieftest: NULL steht an der Stelle von first_seen_at,
+    last_seen_at traegt trotzdem den Zeitstempel des Laufs."""
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}}, [_offer()], NOW, discovery=True))
+    assert f"NULL, NULL, '{NOW}', 'confirmed', 'justwatch');" in sql
+
+
+def test_normaler_lauf_schreibt_den_zeitstempel_als_first_seen_at():
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}}, [_offer()], NOW, discovery=False))
+    assert f"NULL, '{NOW}', '{NOW}', 'confirmed', 'justwatch');" in sql
+
+
+def test_first_seen_at_bleibt_fuer_bekannte_paare_erhalten():
+    a = {"id": 7, "offers": {("crunchyroll", "flatrate"): "2025-01-01T00:00:00Z"}}
+    sql = " ".join(cat.build_catalog_sql(a, [_offer()], NOW, discovery=False))
+    assert f"NULL, '2025-01-01T00:00:00Z', '{NOW}', 'confirmed', 'justwatch');" in sql
+
+
+def test_entdeckungslauf_stempelt_neue_paare_bei_titeln_mit_bestand():
+    """NULL bedeutet 'seit Beginn bekannt' — das gilt nur fuer Titel, die noch gar
+    keine Angebote hatten. Ein Titel mit Bestand bekommt bei einem neuen Paar
+    denselben Zeitstempel wie im Regelbetrieb (wie --initial im Nachbarskript)."""
+    a = {"id": 7, "offers": {("netflix", "flatrate"): "2025-01-01T00:00:00Z"}}
+    sql = " ".join(cat.build_catalog_sql(a, [_offer()], NOW, discovery=True))
+    assert f"NULL, '{NOW}', '{NOW}', 'confirmed', 'justwatch');" in sql
+
+
+def test_delete_ist_auf_die_geblaetterten_monetarisierungen_eingeschraenkt():
+    """DIE Zeile, an der 1.400 Angebote haengen: der Katalog-Abruf blaettert nur
+    FLATRATE/ADS/FREE, Kauf- und Leih-Angebote sieht er nie. Gemessen am 2026-11-09:
+    amazon-video 952, magenta-tv 223, rakuten-tv 126, sky-store 99 Kauf/Leih-Zeilen —
+    ein autoritatives DELETE ueber alle Monetarisierungen wuerde sie loeschen und
+    nie wieder einfuegen."""
+    sql = cat.build_catalog_sql({"id": 7, "offers": {}}, [], NOW, discovery=False)[0]
+    assert sql.startswith("DELETE FROM anime_streaming_offers WHERE _parent_id = 7 ")
+    assert "monetization IN ('flatrate','ads','free')" in sql
+    assert "'buy'" not in sql and "'rent'" not in sql
+
+
+def test_das_delete_haengt_an_den_wirklich_geblaetterten_monetarisierungen():
+    """Die Einschraenkung wird aus CATALOG_MONETIZATION abgeleitet, nicht getippt:
+    wer den Abruf erweitert, erweitert das DELETE mit."""
+    erwartet = tuple(cat.MONETIZATION[m] for m in cat.CATALOG_MONETIZATION)
+    assert cat.SWEEP_MONETIZATION == erwartet
+    sql = cat.build_catalog_sql({"id": 7, "offers": {}}, [], NOW, discovery=False)[0]
+    assert "monetization IN (" + ",".join(f"'{m}'" for m in erwartet) + ")" in sql
+
+
+def test_kauf_und_leih_angebote_werden_nicht_eingefuegt():
+    """Der Sweep loescht sie nicht — dann darf er sie auch nicht einfuegen, sonst
+    stehen zwei Zeilen fuer dasselbe (Anbieter, Monetarisierung)."""
+    offers = [_offer(provider="amazon-video", monetization="buy"),
+              _offer(provider="rakuten-tv", monetization="rent")]
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}}, offers, NOW, discovery=False))
+    assert "INSERT INTO anime_streaming_offers" not in sql
+    assert "amazon-video" not in sql and "rakuten-tv" not in sql
+
+
+def test_verworfene_angebote_bleiben_erhalten():
+    """Review Focus 2 / Entscheidung 21: das Veto ueberlebt den Lauf."""
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}}, [], "2026-11-09T00:00:00Z", discovery=False))
+    assert "source" in sql and "manual" in sql
+
+
+def test_delete_nimmt_handarbeit_aus():
+    """Entscheidung 8: `source='manual'` gewinnt gegen den Sync."""
+    sql = cat.build_catalog_sql({"id": 7, "offers": {}}, [], NOW, discovery=False)[0]
+    assert "source IS DISTINCT FROM 'manual'" in sql
+
+
+def test_veto_zeile_verhindert_das_wiedereinfuegen():
+    """Entscheidung 21: pro Zeile, nicht pro Titel — das zweite Paar kommt durch."""
+    a = {"id": 7, "offers": {}, "rejected": {("crunchyroll", "flatrate")}}
+    offers = [_offer(), _offer(provider="netflix")]
+    sql = " ".join(cat.build_catalog_sql(a, offers, NOW, discovery=False))
+    assert "'crunchyroll'" not in sql
+    assert "'netflix'" in sql
+
+
+def test_veto_gilt_nur_fuer_sein_eigenes_paar():
+    a = {"id": 7, "offers": {}, "rejected": {("crunchyroll", "ads")}}
+    sql = " ".join(cat.build_catalog_sql(a, [_offer(monetization="flatrate")], NOW, discovery=False))
+    assert "'crunchyroll', 'flatrate'" in sql
+
+
+def test_order_haengt_sich_an_den_bestand_an():
+    """Das DELETE laesst Kauf/Leih- und Handarbeits-Zeilen stehen; _order darf
+    deshalb nicht wieder bei 1 anfangen."""
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}}, [_offer()], NOW, discovery=False))
+    assert "COALESCE((SELECT max(_order) FROM anime_streaming_offers WHERE _parent_id = 7), 0) + 1" in sql
+
+
+def test_insert_traegt_vertrauensstufe_und_herkunft():
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}},
+                                         [_offer(confidence="unconfirmed")], NOW, discovery=False))
+    assert "first_seen_at,last_seen_at,confidence,source) VALUES" in sql
+    assert "'unconfirmed', 'justwatch');" in sql
+
+
+def test_herkunft_kann_der_aufrufer_setzen():
+    """Aufgabe 14 schreibt Crunchyroll-Direktbelege ueber dieselbe Funktion."""
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}},
+                                         [_offer(source="crunchyroll")], NOW, discovery=False))
+    assert "'confirmed', 'crunchyroll');" in sql
+
+
+def test_sprachmengen_werden_zu_sortierten_komma_listen():
+    """`dedupe_offers` liefert Mengen; die Datenbank will Komma-Strings."""
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}},
+                                         [_offer(audio={"ja", "de"}, subs={"de"})], NOW, discovery=False))
+    assert "'de,ja', 'de'" in sql
+
+
+def test_anbieter_index_zaehlt_unbestaetigte_mit():
+    """Entscheidung 4: unbestaetigte Angebote zaehlen in den Plattform-Listen voll mit."""
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}},
+                                         [_offer(confidence="unconfirmed", audio="", subs="")], NOW, discovery=False))
+    assert "INSERT INTO anime_streaming_providers" in sql
+    assert "'crunchyroll'::enum_anime_streaming_providers" in sql
+
+
+def test_sprachen_nur_aus_belegten_angeboten():
+    """Entscheidung 7: was wir nicht belegen, behaupten wir nicht im Detail."""
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}},
+                                         [_offer(confidence="unconfirmed", audio="de", subs="de")], NOW, discovery=False))
+    assert "anime_available_languages" not in sql
+
+
+def test_sprachen_werden_aus_belegten_angeboten_nachgetragen():
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}},
+                                         [_offer(audio="de,ja", subs="de")], NOW, discovery=False))
+    assert "'de-dub'::enum_anime_available_languages" in sql
+    assert "'ja'::enum_anime_available_languages" in sql
+    assert "'de-sub'::enum_anime_available_languages" in sql
+
+
+def test_handarbeit_bleibt_im_anbieter_index():
+    """Der Anbieter-Index wird neu gebaut; eine manuelle Zeile bleibt stehen, also
+    muss ihr Anbieter im Index bleiben — sonst waere die Handarbeit aus allen
+    Filtern und Plattform-Listen verschwunden (Entscheidung 8)."""
+    a = {"id": 7, "offers": {("adn", "flatrate"): None}, "manual": {("adn", "flatrate")}}
+    sql = " ".join(cat.build_catalog_sql(a, [_offer()], NOW, discovery=False))
+    assert "'adn'::enum_anime_streaming_providers" in sql
+    assert "INSERT INTO anime_streaming_offers" in sql and "'adn', 'flatrate'" not in sql
+
+
+def test_leerer_treffer_loescht_den_anbieter_index():
+    """Review Focus 2: ein echtes Lizenzende muss den Filter-Index raeumen."""
+    a = {"id": 7, "offers": {("crunchyroll", "flatrate"): NOW}}
+    sql = " ".join(cat.build_catalog_sql(a, [], NOW, discovery=False))
+    assert "DELETE FROM anime_streaming_providers WHERE parent_id = 7;" in sql
+    assert "INSERT INTO anime_streaming_providers" not in sql
+
+
+def test_hentai_titel_bekommen_offers_aber_keinen_sonderweg():
+    """Review Focus 5: der Schutz sitzt in den Listen-Abfragen (a.is_hentai IS NOT TRUE),
+    nicht im Schreibweg — der Schreibweg darf ihn also nicht umgehen wollen und
+    auch nicht heimlich aufheben."""
+    a = {"id": 9, "offers": {}, "is_hentai": True}
+    offers = [{"provider": "crunchyroll", "monetization": "flatrate", "url": "https://crunchyroll.com/x",
+               "audio": "", "subs": "", "seasons": None, "episodes": None, "available_to": None,
+               "confidence": "confirmed"}]
+    sql = " ".join(cat.build_catalog_sql(a, offers, "2026-11-09T00:00:00Z", discovery=False))
+    assert "is_hentai" not in sql
+
+
+# --- Aufgabe 10: Angebotszeilen fuer den gematchten Titel -------------------------
+#
+# `match_node` ordnet einen Katalogknoten (eine ganze Serie) genau EINEM unserer
+# Titel zu; eine Staffel-Zuordnung gibt es bewusst nicht. Das gematchte Objekt ist
+# also der Knoten selbst — Angebote an ihm sind belegt, Angebote nur an Staffeln
+# werden in der engsten Lesart (Entscheidung 24) vererbt.
+
+def _jw_offer(clear="Crunchyroll", monet="FLATRATE", url="https://crunchyroll.com/x", count=None,
+              audio=("ja",), subs=("de",)):
+    return {"monetizationType": monet, "standardWebURL": url, "package": {"clearName": clear},
+            "audioLanguages": list(audio), "subtitleLanguages": list(subs), "elementCount": count}
+
+
+def test_eigenes_angebot_am_knoten_ist_belegt_mit_staffel_und_episodenzahl():
+    """elementCount am Serien-Angebot = Staffeln beim Anbieter, elementCount am
+    Staffel-Angebot = Episoden (ueber die Staffeln summiert) — wie aggregate_offers."""
+    parsed = cat.parse_node({
+        "objectType": "SHOW",
+        "content": {"title": "A", "originalTitle": "A", "originalReleaseYear": 2013},
+        "offers": [_jw_offer(count=2)],
+        "seasons": [
+            {"content": {"title": "S1", "seasonNumber": 1, "originalReleaseYear": 2013},
+             "offers": [_jw_offer(count=12, url="https://crunchyroll.com/s1")]},
+            {"content": {"title": "S2", "seasonNumber": 2, "originalReleaseYear": 2014},
+             "offers": [_jw_offer(count=13, url="https://crunchyroll.com/s2")]},
+        ]})
+    rows = cat.offers_for_title(parsed, status="FINISHED", year=2013, current_year=2026)
+    assert len(rows) == 1
+    o = rows[0]
+    assert (o["provider"], o["monetization"], o["confidence"]) == ("crunchyroll", "flatrate", "confirmed")
+    assert o["url"] == "https://crunchyroll.com/x"  # der Serien-Deep-Link
+    assert (o["seasons"], o["episodes"]) == (2, 25)
+    assert (o["audio"], o["subs"]) == ("ja", "de")
+
+
+def test_film_traegt_keine_staffel_oder_episodenzahl():
+    parsed = cat.parse_node({
+        "objectType": "MOVIE",
+        "content": {"title": "A", "originalTitle": "A", "originalReleaseYear": 2013},
+        "offers": [_jw_offer(count=1)], "seasons": []})
+    o = cat.offers_for_title(parsed, status="FINISHED", year=2013, current_year=2026)[0]
+    assert o["seasons"] is None and o["episodes"] is None
+
+
+def test_nur_staffel_angebot_wird_bei_laufendem_titel_vererbt():
+    """Entscheidung 24: der Anbieter haengt nur an einer Staffel, das gematchte
+    Objekt traegt ihn nicht — bei einem laufenden Titel wird er uebernommen,
+    aber als unbestaetigt, mit flatrate und ohne Sprach- oder Episodenangaben."""
+    parsed = cat.parse_node({
+        "objectType": "SHOW",
+        "content": {"title": "A", "originalTitle": "A", "originalReleaseYear": 2026},
+        "offers": [],
+        "seasons": [{"content": {"title": "S1", "seasonNumber": 1, "originalReleaseYear": 2026},
+                     "offers": [_jw_offer(count=12, url="https://crunchyroll.com/s1", monet="FREE")]}]})
+    rows = cat.offers_for_title(parsed, status="RELEASING", year=2026, current_year=2026)
+    assert len(rows) == 1
+    o = rows[0]
+    assert (o["provider"], o["monetization"], o["confidence"]) == ("crunchyroll", "flatrate", "unconfirmed")
+    assert o["url"] == "https://crunchyroll.com/s1"
+    assert (o["audio"], o["subs"], o["seasons"], o["episodes"]) == ("", "", None, None)
+
+
+def test_nur_staffel_angebot_wird_bei_altem_titel_nicht_vererbt():
+    parsed = cat.parse_node({
+        "objectType": "SHOW",
+        "content": {"title": "A", "originalTitle": "A", "originalReleaseYear": 2010},
+        "offers": [],
+        "seasons": [{"content": {"title": "S1", "seasonNumber": 1, "originalReleaseYear": 2010},
+                     "offers": [_jw_offer(count=12)]}]})
+    assert cat.offers_for_title(parsed, status="FINISHED", year=2010, current_year=2026) == []
+
+
+def test_kauf_und_leih_angebote_am_knoten_werden_nicht_zur_zeile():
+    """Der Abruf blaettert sie nicht, das DELETE raeumt sie nicht — der Sweep laesst
+    sie deshalb vollstaendig in Ruhe (1.400 Zeilen im Bestand)."""
+    parsed = cat.parse_node({
+        "objectType": "SHOW",
+        "content": {"title": "A", "originalTitle": "A", "originalReleaseYear": 2013},
+        "offers": [_jw_offer(clear="Amazon Video", monet="BUY", url="https://amazon.de/x"),
+                   _jw_offer(clear="MagentaTV", monet="RENT", url="https://magenta.de/x")],
+        "seasons": []})
+    assert cat.offers_for_title(parsed, status="FINISHED", year=2013, current_year=2026) == []
+
+
+def test_kauf_angebot_an_einer_staffel_wird_nicht_als_abo_vererbt():
+    """Sonst wuerde aus einem Leih-Angebot ein geerbtes 'flatrate'."""
+    parsed = cat.parse_node({
+        "objectType": "SHOW",
+        "content": {"title": "A", "originalTitle": "A", "originalReleaseYear": 2026},
+        "offers": [],
+        "seasons": [{"content": {"title": "S1", "seasonNumber": 1, "originalReleaseYear": 2026},
+                     "offers": [_jw_offer(clear="Amazon Video", monet="BUY", url="https://amazon.de/x")]}]})
+    assert cat.offers_for_title(parsed, status="RELEASING", year=2026, current_year=2026) == []
+
+
+def test_doppelter_anbieter_wird_ueber_dedupe_offers_zusammengefuehrt():
+    """Review Focus 3: Direktanbieter + Amazon-Channel ergeben genau eine Zeile mit
+    dem Direktlink und den vereinigten Sprachen — die Regel aus Aufgabe 9."""
+    parsed = cat.parse_node({
+        "objectType": "SHOW",
+        "content": {"title": "A", "originalTitle": "A", "originalReleaseYear": 2013},
+        "offers": [_jw_offer(clear="Crunchyroll Amazon Channel", url="https://watch.amazon.de/x",
+                             audio=("de",), subs=()),
+                   _jw_offer(clear="Crunchyroll", url="https://crunchyroll.com/x", audio=("ja",), subs=("de",))],
+        "seasons": []})
+    rows = cat.offers_for_title(parsed, status="FINISHED", year=2013, current_year=2026)
+    assert len(rows) == 1
+    assert rows[0]["url"] == "https://crunchyroll.com/x"
+    assert rows[0]["audio"] == "de,ja"
+
+
+def test_mehrere_anbieter_bleiben_nebeneinander():
+    parsed = cat.parse_node({
+        "objectType": "SHOW",
+        "content": {"title": "A", "originalTitle": "A", "originalReleaseYear": 2013},
+        "offers": [_jw_offer(), _jw_offer(clear="Netflix", url="https://netflix.com/x"),
+                   _jw_offer(clear="Joyn", monet="ADS", url="https://joyn.de/x")],
+        "seasons": []})
+    rows = cat.offers_for_title(parsed, status="FINISHED", year=2013, current_year=2026)
+    assert {(o["provider"], o["monetization"]) for o in rows} == {
+        ("crunchyroll", "flatrate"), ("netflix", "flatrate"), ("joyn", "ads")}
+
+
+# --- Aufgabe 10: Trockenlauf-Bericht ----------------------------------------------
+
+def test_diff_offers_meldet_neue_und_weggefallene_paare():
+    a = {"id": 7, "offers": {("netflix", "flatrate"): None, ("amazon-video", "buy"): None}}
+    neu, weg = cat.diff_offers(a, [_offer()])
+    assert neu == [("crunchyroll", "flatrate")]
+    assert weg == [("netflix", "flatrate")]  # Kauf/Leih faellt nie weg
+
+
+def test_diff_offers_zaehlt_handarbeit_und_veto_nicht_als_wegfall():
+    a = {"id": 7, "offers": {("adn", "flatrate"): None, ("wow", "flatrate"): None},
+         "manual": {("adn", "flatrate")}, "rejected": {("wow", "flatrate")}}
+    neu, weg = cat.diff_offers(a, [])
+    assert (neu, weg) == ([], [])
+
+
+# --- Aufgabe 10: Vorauswahl der Kandidaten ----------------------------------------
+
+def test_vorauswahl_aendert_die_zuordnung_nicht():
+    """`candidates_for` ist eine Vorauswahl, keine zweite Match-Regel: ueber alle
+    Knoten der Matcher-Tests muss dasselbe herauskommen wie ohne Index."""
+    idx = cat.title_index(ANIME)
+    knoten = [
+        _node("Suikoden", "幻想水滸伝", 2026),
+        _node("Die Rebellen vom Liang Shan Po", "Suikoden", 1973),
+        _node("One Piece", "One Piece", 2023),
+        _node("Attack on Titan", "Shingeki no Kyojin", 2013),
+        _node("Wotakoi: Love ist schwer", "Wotakoi: Love is Hard for Otaku", 2018),
+        _node("Kaijuu Movie", "Kaijuu Movie", 2020, "MOVIE"),
+        _node("Kaijuu Movie", "Kaijuu Movie", 2020, "SHOW"),
+        _node("Voellig unbekannt", "Voellig unbekannt", 2001),
+        _node("", "", None),
+    ]
+    for p in knoten:
+        ohne = cat.match_node(p, ANIME)
+        mit = cat.match_node(p, cat.candidates_for(p, idx))
+        assert (ohne or {}).get("slug") == (mit or {}).get("slug")
+
+
+def test_vorauswahl_findet_ueber_normalform_und_basistitel():
+    idx = cat.title_index(ANIME)
+    slugs = {a["slug"] for a in cat.candidates_for(_node("Attack on Titan", "Shingeki no Kyojin", 2013), idx)}
+    assert "shingeki-no-kyojin" in slugs
+    basis = {a["slug"] for a in cat.candidates_for(_node("Wotakoi: Liebe ist schwer", "Wotakoi: Love is Hard", 2018), idx)}
+    assert "wotakoi" in basis
+    assert cat.candidates_for(_node("Gar nichts davon", "Gar nichts davon", 2001), idx) == []
+
+
+# --- Aufgabe 10: Modi und Exit-Codes ----------------------------------------------
+
+def test_instanz_sperre_bricht_mit_exit_code_zwei_ab(monkeypatch):
+    """Exit 2 heisst 'hat gar nicht stattgefunden' — weder vollstaendiger Durchlauf (0)
+    noch unvollstaendiger Abruf (1). Ein Cron-Wrapper muss das unterscheiden koennen,
+    und geschrieben werden darf dabei nichts."""
+    monkeypatch.setattr(cat.sys, "argv", ["justwatch-catalog.py", "--sweep"])
+    monkeypatch.setattr(cat, "other_instance_running", lambda: True)
+    monkeypatch.setattr(cat, "psql", lambda *a, **kw: pytest.fail("kein Datenbankzugriff bei gesperrter Instanz"))
+    with pytest.raises(SystemExit) as e:
+        cat.main()
+    assert e.value.code == 2
+
+
+def test_ohne_modus_laeuft_nichts(monkeypatch):
+    """Kein versehentliches Schreiben: der Modus muss ausdruecklich dastehen."""
+    monkeypatch.setattr(cat.sys, "argv", ["justwatch-catalog.py"])
+    monkeypatch.setattr(cat, "other_instance_running", lambda: pytest.fail("zu frueh"))
+    with pytest.raises(SystemExit) as e:
+        cat.main()
+    assert "--discovery" in str(e.value.code)
+
+
+def test_zwei_modi_gleichzeitig_laufen_nicht(monkeypatch):
+    monkeypatch.setattr(cat.sys, "argv", ["justwatch-catalog.py", "--dry-run", "--discovery"])
+    monkeypatch.setattr(cat, "other_instance_running", lambda: pytest.fail("zu frueh"))
+    with pytest.raises(SystemExit) as e:
+        cat.main()
+    assert "--count-only" in str(e.value.code)
+
+
+# --- Aufgabe 10: der ganze Durchlauf, mit gestopftem Netz und gestopfter DB -------
+#
+# Die reinen Funktionen sind oben einzeln geprueft; hier laeuft `main()` einmal durch,
+# damit die Verdrahtung nicht unbemerkt auseinanderfaellt (Lader -> Zuordnung ->
+# Schreiben -> Stempel) und damit der Abbruch-Fall auch am fertigen Lauf haengt.
+
+def _run(monkeypatch, mode, complete=True):
+    geschrieben = []
+    anime = [{"id": 1, "slug": "testtitel", "titles": ["", "", "Testtitel", ""], "year": 2026,
+              "want": "SHOW", "status": "RELEASING", "offers": {}, "manual": set(), "rejected": set()}]
+    node = {"objectType": "SHOW",
+            "content": {"title": "Testtitel", "originalTitle": "Testtitel", "originalReleaseYear": 2026},
+            "offers": [{"monetizationType": "FLATRATE", "standardWebURL": "https://crunchyroll.com/x",
+                        "package": {"clearName": "Crunchyroll"}, "audioLanguages": ["ja"],
+                        "subtitleLanguages": ["de"], "elementCount": 1}],
+            "seasons": []}
+    monkeypatch.setattr(cat, "load_all_anime", lambda: anime)
+    monkeypatch.setattr(cat.jw, "session", lambda: None)
+    monkeypatch.setattr(cat, "fetch_catalog",
+                        lambda sess, short, typ: ([node] if typ == "SHOW" else [], complete))
+    monkeypatch.setattr(cat, "psql", lambda sql, read=True: (geschrieben.append(sql), "")[1])
+    monkeypatch.setattr(cat.sys, "argv", ["justwatch-catalog.py", mode])
+    monkeypatch.setattr(cat, "other_instance_running", lambda: False)
+    with pytest.raises(SystemExit) as e:
+        cat.main()
+    return e.value.code, "\n".join(geschrieben)
+
+
+def test_vollstaendiger_sweep_schreibt_angebote_und_stempelt(monkeypatch):
+    code, sql = _run(monkeypatch, "--sweep")
+    assert code == 0
+    assert "INSERT INTO anime_streaming_offers" in sql and "'crunchyroll'" in sql
+    assert "UPDATE anime SET streaming_verified_at" in sql
+    assert "content_updated_at" in sql  # geaenderte Angabe ist eine Inhaltsaenderung
+
+
+def test_abbruch_mitten_im_durchlauf_schreibt_angebote_aber_keinen_stempel(monkeypatch):
+    """Review Focus 1 am fertigen Lauf: die gefundenen Angebote sind echt und bleiben,
+    aber ein Netzwerkfehler darf den halben Katalog nicht als geprueft stempeln."""
+    code, sql = _run(monkeypatch, "--sweep", complete=False)
+    assert code == 1
+    assert "INSERT INTO anime_streaming_offers" in sql
+    assert "streaming_verified_at" not in sql
+
+
+def test_trockenlauf_schreibt_nichts(monkeypatch):
+    code, sql = _run(monkeypatch, "--dry-run")
+    assert code == 0
+    assert sql == ""
+
+
+def test_entdeckungslauf_laesst_first_seen_at_leer_und_schweigt_in_der_sitemap(monkeypatch):
+    code, sql = _run(monkeypatch, "--discovery")
+    assert code == 0
+    assert ", NULL, NULL, '" in sql  # available_to und first_seen_at
+    assert "content_updated_at" not in sql
+    assert "UPDATE anime SET streaming_verified_at" in sql
