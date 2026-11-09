@@ -9,7 +9,7 @@ export const Anime: CollectionConfig = {
   labels: { singular: 'Anime', plural: 'Anime' },
   admin: {
     useAsTitle: 'titleRomaji',
-    defaultColumns: ['titleRomaji', 'format', 'status', 'seasonYear', 'averageScore'],
+    defaultColumns: ['titleRomaji', 'format', 'status', 'seasonYear', 'averageScore', 'streamingVerifiedAt'],
     group: 'Katalog',
   },
   access: { read: () => true },

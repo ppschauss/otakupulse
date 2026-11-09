@@ -272,6 +272,66 @@ bleibt erhalten) und stempelt sie. Rate-Limit 4 Worker + 0,25 s (ein großer Bla
 JustWatch schon mit HTTP 403 geblockt). Voll-Backfill (~11k Titel, ~30 min) über
 `backfill-streaming.sh`.
 
+### Prüflisten im Payload-Admin
+
+Unsichere Angaben zeigt die Seite als „nicht bestätigt" statt zu schweigen — damit sind sie
+eine **Arbeitsliste**: von Hand prüfen muss man nur diese Zeilen, nicht den ganzen Katalog.
+Der Admin liegt unter `/legal/admin` (`routes.admin` in `payload.config.ts`); die Collection
+heißt `anime`. Beide Listen sind normale Admin-Listenansichten mit Filter in der URL — es gibt
+bewusst keine eigene Oberfläche. Die Felder bleiben unverändert, ein späteres Werkzeug kann
+sie über die Payload-API lesen. Die Listenansicht hat dafür die Spalte `streamingVerifiedAt`.
+
+**1. „Unbestätigt"** — Titel mit mindestens einem Angebot, das nur geerbt/vermutet ist:
+
+```
+/legal/admin/collections/anime?where[streamingOffers.confidence][equals]=unconfirmed&sort=-seasonYear
+```
+
+**2. „Kein Nachweis"** — Titel, die noch kein vollständiger Katalog-Durchlauf erfasst hat
+(`streamingVerifiedAt` leer; heute **alle**, der erste Durchlauf steht aus):
+
+```
+/legal/admin/collections/anime?where[streamingVerifiedAt][exists]=false&sort=-seasonYear
+```
+
+Größenordnung (gemessen am 09.11.2026): 11.061 Titel, davon 7.864 ohne jedes Angebot; in
+der laufenden Season FALL 2026 haben 52 von 110 Titeln keine Angabe. Liste 2 ist also zu
+Beginn riesig und schrumpft mit jedem Katalog-Durchlauf; zum Abarbeiten sind die neuesten
+Titel (`-seasonYear`) sinnvoll, weil dort Besucher tatsächlich suchen.
+
+**So wird von Hand entschieden** (im Angebot, Array `Streaming-Angebote`):
+
+- **Stimmt es:** `confidence` auf `confirmed` **und** `source` auf `manual`. Erst `manual`
+  schützt die Zeile vor dem Sync; mit `confirmed` allein darf der Sync sie wieder überschreiben.
+- **Stimmt es nicht:** `confidence` auf `rejected` **und** `source` auf `manual`. Diese
+  Veto-Zeile bleibt stehen und verhindert, dass der Sync den Falschtreffer wieder einfügt;
+  die Seite zeigt sie nicht an.
+- **Eine Zeile einfach zu löschen genügt nicht** — der Sync findet denselben Treffer wieder
+  und legt sie nach spätestens vier Stunden neu an.
+
+Der Sync spart beim autoritativen Löschen `source = 'manual'` und `confidence = 'rejected'`
+aus und fügt ein Paar `(provider, monetization)` mit `manual`-Zeile nicht doppelt ein. Endet
+eine Lizenz wirklich, löscht der Sync trotzdem die übrigen Zeilen des Titels; die manuelle
+Zeile muss dann ebenfalls von Hand entfernt werden.
+
+**Was belegt ist und was nicht** (ich konnte die URLs nicht gegen den laufenden Admin
+ausprobieren — dort ist dieser Code noch nicht ausgerollt, und die Spalten fehlen in der
+Produktionsdatenbank bis zum Schema-Push):
+
+- Belegt im installierten Payload 3.85.0: der Admin liest die Query mit `qs-esm`
+  (`@payloadcms/ui/dist/utilities/parseSearchParams.js`), also `where[feld][operator]=wert`;
+  `exists` und `equals` sind gültige Operatoren; der Drizzle-Adapter löst Array-Unterfelder
+  über den Punktpfad `streamingOffers.confidence` auf (`@payloadcms/drizzle/dist/queries/getTableColumnFromPath.js`,
+  Fall `array`); das Sortierfeld heißt tatsächlich `seasonYear` (`Anime.ts`, `index: true`).
+- **Unsicher:** (a) `exists]=false` auf einem Datumsfeld — der Operator ist da, das
+  `false`-Verhalten (IS NULL) habe ich nur im Adapter-Code gelesen, nicht ausgeführt.
+  (b) Der Admin übernimmt `sort` aus der URL **und speichert es als Nutzereinstellung**
+  (`collection-anime` in den Preferences) — die Sortierung bleibt also auch beim nächsten
+  Öffnen der Liste. Bei Zweifel die Liste über das Filter-Menü des Admins aufbauen; dann
+  bekommt man die korrekte URL aus der Adresszeile. (c) Titel ohne `seasonYear` landen
+  je nach Datenbank am Anfang oder Ende. (d) Hentai-Titel sind in den Admin-Listen
+  nicht ausgeblendet.
+
 ---
 
 ## Redaktion & Automatik
