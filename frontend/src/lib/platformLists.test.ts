@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { staticFilter, filterCondition, platformListCounts } from './platformLists'
+import { staticFilter, filterCondition, platformListCounts, platformListStats } from './platformLists'
 
 describe('platformLists', () => {
   it('kennt die statischen Filter mit deutschem Title', () => {
@@ -40,5 +40,15 @@ describe('platformLists', () => {
     const genre = sqls.find((q) => q.includes('JOIN genres g'))!
     expect(genre).toContain("o.confidence IS DISTINCT FROM 'rejected'")
     expect(genre).not.toContain('unconfirmed')
+  })
+  it('schliesst unbestaetigte Angebote aus den Stats-Zaehlern dub, sub, free aus, nicht aus total', async () => {
+    const sqls: string[] = []
+    const payload = { db: { pool: { query: async (sql: string) => (sqls.push(sql), { rows: [] }) } } }
+    await platformListStats(payload, 'netflix', staticFilter('filme')!)
+    const agg = sqls.find((q) => q.includes('AS total'))!
+    const clause = (alias: string) => agg.match(new RegExp(`FILTER \\(WHERE ([^\\n]*?)\\)::int AS ${alias}\\b`))![1]
+    for (const a of ['dub', 'sub', 'free']) expect(clause(a)).toContain("o.confidence IS DISTINCT FROM 'unconfirmed'")
+    expect(clause('fresh')).not.toContain('unconfirmed')
+    expect(agg).toMatch(/count\(DISTINCT a\.id\)::int AS total,/)
   })
 })

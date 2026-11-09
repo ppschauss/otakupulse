@@ -187,9 +187,9 @@ export async function platformListStats(payload: any, providerSlug: string, f: L
   const [agg, top] = await Promise.all([
     p.query(
       `SELECT count(DISTINCT a.id)::int AS total,
-              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%')::int AS dub,
-              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.subs,'') || ',') LIKE '%,de,%')::int AS sub,
-              count(DISTINCT a.id) FILTER (WHERE o.monetization IN ('ads','free'))::int AS free,
+              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%' AND ${NOT_UNCONFIRMED})::int AS dub,
+              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.subs,'') || ',') LIKE '%,de,%' AND ${NOT_UNCONFIRMED})::int AS sub,
+              count(DISTINCT a.id) FILTER (WHERE o.monetization IN ('ads','free') AND ${NOT_UNCONFIRMED})::int AS free,
               count(DISTINCT a.id) FILTER (WHERE o.first_seen_at >= now() - interval '${NEW_DAYS} days')::int AS fresh,
               max(o.last_seen_at) AS checked
        ${base}`,
