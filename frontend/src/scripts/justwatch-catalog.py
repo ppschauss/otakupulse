@@ -526,8 +526,9 @@ def offers_for_title(parsed, status=None, year=None, current_year=None):
 
     Staffel- und Episodenzahl wie in `aggregate_offers`: `elementCount` am
     Serien-Angebot sind die Staffeln beim Anbieter, `elementCount` am Staffel-Angebot
-    sind Episoden — pro Staffel das Maximum, über die Staffeln summiert. Filme tragen
-    beides nicht.
+    sind Episoden — je Staffel die Zahl des zusammengeführten Angebots (`dedupe_offers`
+    wählt dort den Direktanbieter), über die Staffeln summiert. Filme tragen beides
+    nicht.
 
     Kauf- und Leih-Angebote werden hier schon verworfen: der Sweep löscht sie nicht
     (siehe `build_catalog_sql`), also darf er sie auch nicht anlegen oder gar als
