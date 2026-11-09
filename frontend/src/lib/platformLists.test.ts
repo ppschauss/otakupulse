@@ -16,4 +16,21 @@ describe('platformLists', () => {
     expect(g.sql).toContain('$2')
     expect(g.params).toEqual(['isekai'])
   })
+  it('schliesst unbestaetigte Angebote aus dem Gratis-Filter aus', () => {
+    const sql = filterCondition(staticFilter('kostenlos')!).sql
+    expect(sql).toContain("('ads','free')")
+    expect(sql).toContain("o.confidence IS DISTINCT FROM 'unconfirmed'")
+  })
+  it('schliesst unbestaetigte Angebote aus den Sprach-Filtern aus', () => {
+    for (const key of ['deutscher-dub', 'deutscher-sub']) {
+      expect(filterCondition(staticFilter(key)!).sql).toContain("o.confidence IS DISTINCT FROM 'unconfirmed'")
+    }
+  })
+  it('laesst unbestaetigte Angebote in den uebrigen Filtern zu', () => {
+    expect(filterCondition(staticFilter('filme')!).sql).not.toContain('unconfirmed')
+    expect(filterCondition(staticFilter('neu')!).sql).not.toContain('unconfirmed')
+  })
+  it('schliesst verworfene Angebote ueberall aus', () => {
+    expect(filterCondition(staticFilter('filme')!).sql).toContain("o.confidence IS DISTINCT FROM 'rejected'")
+  })
 })

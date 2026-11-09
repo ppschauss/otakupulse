@@ -75,8 +75,28 @@ const genreFilter = (g: { slug: string; name: string }): ListFilter => ({
   intro: (p, n) => `${n} ${g.name}-Anime laufen aktuell auf ${p} — sortiert nach Beliebtheit.`,
 })
 
-/** SQL-Fragment über Aliase `a` (anime) und `o` (anime_streaming_offers); $1 ist der Provider. */
+/**
+ * Vertrauensstufe: `confidence` ist für den Bestand NULL und bedeutet „belegt" —
+ * deshalb IS DISTINCT FROM (ein `<>` wäre bei NULL nicht wahr und würde alles verwerfen).
+ * Literale statt Platzhalter, damit $1/$2 nicht verrutschen.
+ */
+const NOT_REJECTED = "o.confidence IS DISTINCT FROM 'rejected'"
+const NOT_UNCONFIRMED = "o.confidence IS DISTINCT FROM 'unconfirmed'"
+
+/**
+ * SQL-Fragment über Aliase `a` (anime) und `o` (anime_streaming_offers); $1 ist der Provider.
+ * Verworfene Angebote fallen überall heraus. Unbestätigte zählen mit, gelten aber nicht als
+ * „kostenlos" und tragen keine Sprachfassung — beides sind Detailbehauptungen ohne Beleg.
+ */
 export function filterCondition(f: ListFilter): { sql: string; params: any[] } {
+  const c = baseCondition(f)
+  const needsConfirmed = f.kind === 'static' && ['deutscher-dub', 'deutscher-sub', 'kostenlos'].includes(f.key)
+  const parts = [`(${c.sql})`, NOT_REJECTED]
+  if (needsConfirmed) parts.push(NOT_UNCONFIRMED)
+  return { sql: parts.join(' AND '), params: c.params }
+}
+
+function baseCondition(f: ListFilter): { sql: string; params: any[] } {
   switch (f.kind === 'genre' ? 'genre' : f.key) {
     case 'deutscher-dub':
       return { sql: "(',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%'", params: [] }
