@@ -327,7 +327,22 @@ Als Entscheidung des Autors dieses Dokuments, nicht abgestimmt:
     Web-Client-Token in einer Grauzone; 11.000 Suchanfragen pro Runde darüber
     würden auch den bestehenden Dub-Sync in eine Sperre ziehen. Breite kommt aus
     dem Katalog-Abgleich (11), nicht von hier.
-    **ADN ist nicht verifiziert.** Gemessen am 2026-11-09:
+    **NACHTRAG 2026-11-09, spaeter am Tag: ADN IST VERIFIZIERT.** Der Befund unten
+    war unvollstaendig — geprueft wurde nur der Header `X-Target-Distribution`, und das
+    ist genau die eine Variante, die NICHT wirkt. Vom VPS aus gemessen liefert
+    `GET https://gw.api.animationdigitalnetwork.com/show/catalog?limit=5&lang=de`
+    den **deutschen** Katalog: `languages: {vostde: 5}` und Deep-Links mit `/de/`-Praefix
+    (`https://animationdigitalnetwork.com/de/video/1433-suikoden`). Ebenso wirken
+    `?country=de` und ein `Referer: https://animationdigitalnetwork.com/de`.
+    NICHT wirken: `X-Target-Distribution: de` und `Accept-Language: de-DE` (beide
+    liefern `vostf`/`vf`), ein `/de/`-Pfadpraefix (HTTP 403) und die Hosts
+    `de.gw.api.…` und `gw.api.….de` (beide ohne Verbindung). `?language=de` und
+    `?distribution=de` geben HTTP 400.
+    Damit ist eine ADN-Direktquelle nach dem Muster von Task 14 moeglich. Der Plan sah
+    dafuer eine eigene Aufgabe vor; sie wurde in diesem Durchlauf NICHT gebaut (siehe
+    Ledger-Ruling R39).
+
+    **Ursprünglicher, unvollstaendiger Befund.** Gemessen am 2026-11-09:
     `GET https://gw.api.animationdigitalnetwork.com/show/catalog?limit=50`
     antwortet HTTP 200 mit `{shows:[…], total:…}`, `limit=200` bereits HTTP 400.
     Der erste Eintrag ist wörtlich unser Regressionsfall (`title='Suikoden'`,
