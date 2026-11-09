@@ -42,7 +42,7 @@ IMMER autoritativ (Angebote sind der neue Wahrheitsbestand); first_seen_at
 bleibt über Läufe hinweg erhalten.
 
 Rate-Limit: 1 Worker + 1.2 s Pause pro Request (~0.7 req/s), Keep-Alive-Session,
-max. 2 Suchanfragen pro Titel. Bei 403/429 langer Backoff (30/60/120 s). JustWatch
+max. 3 Suchanfragen pro Titel (die dritte, mit dem nativen Titel, nur ohne de/en). Bei 403/429 langer Backoff (30/60/120 s). JustWatch
 sperrt die IP für ~1 h, sobald zu viel Volumen kommt — am 2026-09-10 reichten dafür
 nacheinander 4 Worker (TLS pro Titel), 3 Worker bei ~5 Titel/s über 15 min und
 2 Worker bei ~3 req/s nach ~4 min (mit parallelem Cron). Große Läufe deshalb nur in
@@ -170,6 +170,24 @@ _LONG_VOWELS = str.maketrans({"ô": "ou", "ō": "ou", "û": "uu", "ū": "uu", "�
                               "Ê": "ee", "Ē": "ee", "Î": "ii", "Ī": "ii"})
 
 
+def norm_cjk(s):
+    """Vergleichsform, die japanische (und jede andere nicht-lateinische) Schrift
+    behält. `norm` wirft alles außer a-z0-9 weg — ein Titel wie „幻想水滸伝" wird dort
+    zum leeren String, der Vergleich gegen JustWatchs `originalTitle` kann nie greifen.
+
+    NFKC faltet Vollbreite-Zeichen („Ｚ" → „Z") und zusammengesetzte Kana. Behalten
+    wird, was `unicodedata.category` als Buchstabe (L*), Ziffer (N*) oder Zeichen-
+    Marker (M*, z. B. Dakuten) führt; Leerraum und Satzzeichen (P*, S*, Z*) fallen
+    weg. Das Längungszeichen „ー" ist ein Buchstabe (Lm) und bleibt, die japanische
+    Interpunktion „・" (Po) und „、" fällt: „ドラゴンボール超 ビルス" →
+    „ドラゴンボール超ビルス". `norm` bleibt unverändert, die lateinischen Vergleiche
+    im Skript hängen daran."""
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKC", s).lower()
+    return "".join(ch for ch in s if unicodedata.category(ch)[0] in "LNM")
+
+
 _PAREN = re.compile(r"\s*\((?:tv|ova|ona|movie|film|\d{4})\)\s*$", re.I)
 _ROMAN = {"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6"}
 
@@ -177,7 +195,9 @@ _ROMAN = {"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6"}
 def norm_variants(s):
     """Normalformen eines Titels: ohne Diakritika, mit Doppelvokal-Romanisierung,
     ohne Klammerzusatz („JoJo's Bizarre Adventure (TV)"), römische Staffelziffer
-    als Zahl („Sword Art Online II" → „swordartonline2")."""
+    als Zahl („Sword Art Online II" → „swordartonline2"). Dazu die CJK-Form
+    (`norm_cjk`), wenn sie sich von `norm` unterscheidet — bei japanischen Titeln
+    ist sie die einzige nicht-leere Form."""
     if not s:
         return []
     base = _PAREN.sub("", s)
@@ -185,6 +205,9 @@ def norm_variants(s):
     m = re.search(r"\s(ii|iii|iv|v|vi)$", base.strip(), re.I)
     if m:
         out.add(norm(base[: m.start()] + " " + _ROMAN[m.group(1).lower()]))
+    cjk = norm_cjk(base)
+    if cjk and cjk != norm(base):
+        out.add(cjk)
     return [v for v in out if v]
 
 
@@ -306,7 +329,13 @@ def best_match(data, our_titles, want="SHOW", year=None):
                 short, long_ = sorted((t, cn), key=len)
                 # Substring nur bei ähnlicher Länge: „journeysend" steckt zwar in
                 # „frierenbeyondjourneysend", ist aber ein anderer Film.
-                if len(short) >= 8 and short in long_ and len(short) / len(long_) >= 0.6:
+                # Schwelle 0.55 (vorher 0.6), belegt an zwei echten Fällen:
+                #   „suikoden" ⊂ „gensousuikoden"            = 0.571 → soll matchen
+                #   „journeysend" ⊂ „frierenbeyondjourneysend" = 0.458 → soll nicht
+                # Zwischen den Belegen liegt Luft, aber keine große — jede weitere
+                # Lockerung braucht eine neue Gegenprobe (siehe tests/test_matcher.py);
+                # die lockere Alt-Heuristik hatte „Hyouge Mono" auf „Mono" gematcht.
+                if len(short) >= 8 and short in long_ and len(short) / len(long_) >= 0.55:
                     ratio = max(ratio, 0.95)
                 if ratio > score:
                     score, rem = ratio, ""
@@ -430,6 +459,26 @@ def aggregate_offers(node, season=None):
     return out
 
 
+def search_queries(a):
+    """Suchbegriffe für einen Titel, in Reihenfolge, dedupliziert (max. 3).
+
+    Deutscher (sonst englischer) Titel, dann Romaji. Fehlen deutscher UND englischer
+    Titel, kommt der native Titel als dritte Anfrage dazu: JustWatch führt solche
+    Titel oft anders als das Romaji („Suikoden" statt „Gensou Suikoden"), findet sie
+    aber über die Originalschrift. Mit de oder en bleibt es bei zwei Anfragen.
+    Das Rate-Limit bleibt unberührt — `api_post` hält die Pause je Request."""
+    titles = [(t or "").strip() for t in a["titles"]]
+    de, en, ro, na = titles[0], titles[1], titles[2], titles[3]
+    cands = [de or en, ro]
+    if not de and not en:
+        cands.append(na)
+    queries = []
+    for t in cands:
+        if t and t not in queries:
+            queries.append(t)
+    return queries
+
+
 def fetch_offers(session, a):
     """None = API-Fehler, False = kein sicherer Match, sonst Offer-Liste.
 
@@ -437,12 +486,7 @@ def fetch_offers(session, a):
     bis ein sicherer Match kommt — die JustWatch-Suche findet „Frieren – Nach dem
     Ende der Reise" nicht zuverlässig über den englischen Titel.
     """
-    # Max. 2 Suchanfragen: deutscher (falls vorhanden) oder englischer Titel, dann Romaji.
-    queries = []
-    for t in [a["titles"][0] or a["titles"][1], a["titles"][2]]:
-        t = (t or "").strip()
-        if t and t not in queries:
-            queries.append(t)
+    queries = search_queries(a)
     if not queries:
         return False
     for query in queries:
