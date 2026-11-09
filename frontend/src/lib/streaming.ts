@@ -11,6 +11,8 @@
  * die Anbieter-Startseite.
  */
 
+import type { Confidence, OfferSource } from './streamingConfidence'
+
 export type StreamingProvider = {
   slug: string
   name: string
@@ -296,6 +298,10 @@ export type StreamingOffer = {
   lastSeenAt?: string | null
   /** true = aus den Legacy-Flags abgeleitet: kein Deep-Link-Nachweis, keine Sprachen. */
   legacy?: boolean
+  /** Vertrauensstufe; null = Altbestand ohne Feld (gilt als belegt, siehe `isConfirmed`). */
+  confidence: Confidence | null
+  /** Herkunft des Angebots; null = Altbestand bzw. Legacy-Flag. */
+  source: OfferSource | null
 }
 
 export type OfferView = { provider: StreamingProvider; offer: StreamingOffer }
@@ -308,7 +314,9 @@ export const splitCsv = (s?: string | null): string[] =>
     .filter(Boolean)
 
 const MONETIZATIONS: readonly string[] = ['flatrate', 'ads', 'free', 'buy', 'rent']
-const providerRank = (slug: string) => PROVIDER_SLUGS.indexOf(slug)
+const CONFIDENCES: readonly string[] = ['confirmed', 'unconfirmed', 'rejected']
+const SOURCES: readonly string[] = ['justwatch', 'crunchyroll', 'adn', 'manual']
+const providerRank =(slug: string) => PROVIDER_SLUGS.indexOf(slug)
 
 /**
  * Alle Angebote eines Anime, sortiert wie das Register (wichtigste Anbieter zuerst).
@@ -335,6 +343,8 @@ export function streamingOffersOf(anime: any): OfferView[] {
         availableTo: o.availableTo ?? null,
         firstSeenAt: o.firstSeenAt ?? null,
         lastSeenAt: o.lastSeenAt ?? null,
+        confidence: CONFIDENCES.includes(o.confidence) ? (o.confidence as Confidence) : null,
+        source: SOURCES.includes(o.source) ? (o.source as OfferSource) : null,
       },
     })
   }
@@ -344,13 +354,13 @@ export function streamingOffersOf(anime: any): OfferView[] {
     if (views.some((v) => isStreamingOffer(v.offer))) return views
     const legacy = streamingProvidersOf(anime).map(({ provider, url }) => ({
       provider,
-      offer: { provider: provider.slug, url, monetization: null as Monetization | null, audio: [] as string[], subs: [] as string[], legacy: true },
+      offer: { provider: provider.slug, url, monetization: null as Monetization | null, audio: [] as string[], subs: [] as string[], legacy: true, confidence: null, source: null },
     }))
     return [...legacy, ...views]
   }
   return streamingProvidersOf(anime).map(({ provider, url }) => ({
     provider,
-    offer: { provider: provider.slug, url, monetization: null, audio: [], subs: [], legacy: true },
+    offer: { provider: provider.slug, url, monetization: null, audio: [], subs: [], legacy: true, confidence: null, source: null },
   }))
 }
 

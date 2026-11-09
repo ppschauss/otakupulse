@@ -255,6 +255,10 @@ export interface Anime {
    */
   streamingCheckedAt?: string | null;
   /**
+   * Zuletzt über ALLE Anbieter-Kataloge nachgesehen — Nachweis für „in DE nicht im Stream".
+   */
+  streamingVerifiedAt?: string | null;
+  /**
    * Anbieter-genaue Angebote (JustWatch DE). Wird vom Sync gepflegt.
    */
   streamingOffers?:
@@ -264,6 +268,11 @@ export interface Anime {
          */
         provider: string;
         monetization?: ('flatrate' | 'ads' | 'free' | 'buy' | 'rent') | null;
+        /**
+         * belegt / Serien-Angebot geerbt / von Hand verworfen
+         */
+        confidence?: ('confirmed' | 'unconfirmed' | 'rejected') | null;
+        source?: ('justwatch' | 'crunchyroll' | 'adn' | 'manual') | null;
         /**
          * Deep-Link zum Titel beim Anbieter.
          */
@@ -1155,11 +1164,14 @@ export interface AnimeSelect<T extends boolean = true> {
   descriptionDe?: T;
   streamingProviders?: T;
   streamingCheckedAt?: T;
+  streamingVerifiedAt?: T;
   streamingOffers?:
     | T
     | {
         provider?: T;
         monetization?: T;
+        confidence?: T;
+        source?: T;
         url?: T;
         audio?: T;
         subs?: T;

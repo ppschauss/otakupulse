@@ -107,6 +107,28 @@ describe('streamingOffersOf', () => {
     expect(v[0].offer.legacy).toBe(true)
     expect(v[1].offer.url).toBe('https://www.joyn.de')
   })
+  it('reicht confidence und source durch', () => {
+    const anime = {
+      streamingOffers: [
+        { provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence: 'unconfirmed', source: 'justwatch' },
+      ],
+    }
+    const [v] = streamingOffersOf(anime)
+    expect(v.offer.confidence).toBe('unconfirmed')
+    expect(v.offer.source).toBe('justwatch')
+  })
+  it('setzt confidence und source auf null, wenn das Angebot sie nicht trägt', () => {
+    const anime = { streamingOffers: [{ provider: 'netflix', url: 'https://netflix.com/x', monetization: 'flatrate' }] }
+    const [v] = streamingOffersOf(anime)
+    expect(v.offer.confidence).toBeNull()
+    expect(v.offer.source).toBeNull()
+  })
+  it('normalisiert unbekannte Werte auf null', () => {
+    const anime = { streamingOffers: [{ provider: 'netflix', url: 'https://netflix.com/x', confidence: 'bogus', source: 'tiktok' }] }
+    const [v] = streamingOffersOf(anime)
+    expect(v.offer.confidence).toBeNull()
+    expect(v.offer.source).toBeNull()
+  })
 })
 
 describe('groupOffersByProvider', () => {
