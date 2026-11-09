@@ -18,6 +18,7 @@ import {
   type StreamingOffer,
   type StreamingProvider,
 } from './streaming'
+import { isConfirmed } from './streamingConfidence'
 import type { FaqItem } from '@/components/Faq'
 
 type Group = { provider: StreamingProvider; offers: StreamingOffer[] }
@@ -173,7 +174,9 @@ export type StreamingGuideData = {
  * null ohne Streaming-Anbieter.
  */
 export function streamingGuide(anime: any): StreamingGuideData | null {
-  const views = streamingOffersOf(anime)
+  // Fließtext und FAQ (→ FAQPage-JSON-LD) sprechen nur über belegte Angebote; unbestätigte
+  // zeigt die Karte in der StreamingBox mit Badge. Bleibt nichts Belegtes, gibt es keinen Guide.
+  const views = streamingOffersOf(anime).filter((v) => isConfirmed(v.offer))
   const groups = groupOffersByProvider(views)
   if (!groups.length) return null
   const title = displayTitle(anime)

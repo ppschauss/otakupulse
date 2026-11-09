@@ -71,6 +71,27 @@ describe('streamingGuide (Vorlagen-Wortlaut + Datenzusätze)', () => {
     expect(streamingGuide({ id: 1, titleEnglish: 'X' })).toBeNull()
     expect(streamingGuide({ id: 1, titleEnglish: 'X', streamingOffers: [{ provider: 'amazon-video', url: 'https://a', monetization: 'buy', audio: '', subs: '' }] })).toBeNull()
   })
+  describe('unbestätigte Angebote', () => {
+    const cr = { provider: 'crunchyroll', url: 'https://cr/x', monetization: 'flatrate', audio: 'ja', subs: 'de', confidence: 'confirmed' }
+    const nf = { provider: 'netflix', url: 'https://nf/x', monetization: 'flatrate', audio: '', subs: '', confidence: 'unconfirmed' }
+    const faqBig = (g: NonNullable<ReturnType<typeof streamingGuide>>) => g.faq.find((f) => f.q.startsWith('Streamen auch Dienste'))!.a
+    it('nur unbestätigtes Angebot: kein Guide', () => {
+      expect(streamingGuide({ ...naruto, streamingOffers: [nf] })).toBeNull()
+    })
+    it('belegt + unbestätigt: nur der belegte Anbieter wird genannt', () => {
+      const g = streamingGuide({ ...naruto, streamingOffers: [cr, nf] })!
+      expect(faqBig(g)).toContain('Aktuell: Crunchyroll hat Naruto im Programm.')
+      expect(faqBig(g)).not.toContain('Netflix hat')
+      expect(g.overview[0].value).toBe('Crunchyroll')
+      expect(JSON.stringify(g)).not.toContain('https://nf/x')
+    })
+    it('nur belegte Angebote (auch ohne confidence): unverändert', () => {
+      const legacyRow = { provider: 'netflix', url: 'https://nf/x', monetization: 'flatrate', audio: '', subs: '' }
+      const g = streamingGuide({ ...naruto, streamingOffers: [cr, legacyRow] })!
+      expect(g.overview[0].value).toBe('Crunchyroll und Netflix')
+      expect(faqBig(g)).toContain('Aktuell: Netflix und Crunchyroll haben Naruto im Programm.')
+    })
+  })
   it('übernimmt die Vorlagensätze wörtlich und hängt Fakten an', () => {
     const g = streamingGuide({ ...naruto, streamingOffers: [...naruto.streamingOffers, { provider: 'amazon-video', url: 'https://av', monetization: 'buy', audio: '', subs: '' }] })!
     expect(g.heading).toBe('Wer streamt Naruto? Alle Anbieter & Optionen')
