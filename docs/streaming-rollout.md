@@ -1,8 +1,12 @@
 # Rollout: Streaming-Verfügbarkeit (Branch `streaming-aktualitaet`)
 
 Diese Anleitung ist für jemanden geschrieben, der den Branch ausrollt, ohne die
-Entwicklungssitzung zu kennen. **Die Reihenfolge ist Teil der Anforderung** — Schritt 1
-ist ein Deploy-Blocker, Schritt 2 ist einmalig und hinterher nicht mehr korrigierbar.
+Entwicklungssitzung zu kennen. **Die Reihenfolge ist Teil der Anforderung** — der
+Schema-Push muss vor dem ersten Skriptlauf liegen, und der Entdeckungslauf ist einmalig
+und hinterher nicht mehr korrigierbar.
+
+> **Die Reihenfolge in einem Satz:** Quellstand holen → Schema-Push → verifizieren →
+> App deployen → Entdeckungslauf → Crunchyroll-Lauf → Wrapper → Cron.
 
 Stand der VPS-Angaben: **am VPS gemessen am 2026-11-09**. Alles andere folgt aus dem
 Repo-Code und ist dort nachlesbar.
@@ -14,7 +18,37 @@ Crunchyroll als Direktquelle (`crunchyroll-dub.py --availability`) und den Lück
 
 ---
 
-## 1. Schema-Push ZUERST (Deploy-Blocker)
+## 1. Quellstand holen — vor dem Push, ohne die App anzufassen
+
+Der Push braucht den **neuen** Code, die App darf ihn aber noch nicht ausliefern. Beides
+geht, weil der enrich-Container die Quelle mountet statt sie einzubacken:
+`/srv/sites/otakupulse/app-src/frontend → /app` (am VPS gemessen am 2026-11-09). Er führt
+`tsx` direkt darauf aus, braucht also keinen Build. Die App hängt dagegen am gebauten
+`.next` und wechselt erst, wenn `deploy-vps.sh` sie neu startet (dessen Schritt 5/6).
+
+```sh
+cd /srv/sites/otakupulse/app-src
+git fetch --depth 1 origin main
+git reset --hard "$(git rev-parse FETCH_HEAD)"
+```
+
+Das sind genau die Zeilen aus `deploy-vps.sh` (Schritt 1/6); der spätere Deploy holt
+denselben Stand noch einmal und ist damit ein No-op. Unversioniertes (`secrets.env`,
+`node_modules`, `.next*`) überlebt `reset --hard`.
+
+> **Warum nicht einfach `deploy-vps.sh` zuerst:** dann startet die App mit dem neuen Code,
+> bevor die Spalten existieren. Umgekehrt scheitert der Push mit dem alten Code —
+> `db-push.ts` importiert `../payload.config` und damit die Collections aus dem Mount;
+> kennt die Konfiguration `confidence`, `source` und `streamingVerifiedAt` nicht, meldet
+> der Push brav „Schema-Push abgeschlossen" und legt **nichts** an. Dieser Schritt löst
+> beides: neuer Code für den Push, alter Build für die Besucher.
+>
+> **Schmales Fenster, das man kennen sollte:** zwischen diesem Schritt und dem Push laufen
+> die enrich-Cronjobs bereits auf dem neuen Code (`telegram-notify` alle 30 Minuten, die
+> News-Läufe zu ihren festen Zeiten, siehe `/etc/cron.d/otakupulse`). Darum Schritt 1 und
+> 2 unmittelbar hintereinander ausführen und nicht zur Minute 00 oder 30 beginnen.
+
+## 2. Schema-Push
 
 Die neuen Felder fehlen in der Produktionsdatenbank. Payload läuft hier **ohne
 Migrationen** (Dev-Push-Modus), der Push geht über `db-push.ts` und **nur** mit
@@ -39,12 +73,12 @@ genau diese drei neu: **`hbo-max`**, **`akibapass`**, **`pluto-tv`**. Die Enum s
 `streamingProviders` (Tabelle `anime_streaming_providers`), und dort schreiben die Skripte
 mit explizitem Cast `::enum_anime_streaming_providers`.
 
-**Warum zuerst:** wird der Code vor dem Push ausgerollt, laufen die Skripte gegen
-fehlende Spalten — jedes `INSERT` in `anime_streaming_offers` nennt `confidence` und
-`source`, jeder Nachweis-Stempel schreibt `anime.streaming_verified_at`. Ein Schreibversuch
-mit einem Enum-Wert, den die Datenbank nicht kennt, scheitert ebenfalls (siehe Schritt 3).
+**Warum vor jedem Skriptlauf:** die Skripte schreiben die neuen Spalten unbedingt — jedes
+`INSERT` in `anime_streaming_offers` nennt `confidence` und `source`, jeder Nachweis-Stempel
+schreibt `anime.streaming_verified_at`. Ein Schreibversuch mit einem Enum-Wert, den die
+Datenbank nicht kennt, scheitert ebenfalls (siehe Schritt 3).
 
-## 2. Verifikation nach dem Push, VOR dem ersten Skriptlauf
+## 3. Verifikation nach dem Push, VOR dem ersten Skriptlauf
 
 Erst prüfen, dann schreiben lassen. Spalten:
 
@@ -75,10 +109,24 @@ reißt die ganze Transaktion des Laufs mit (`psql -v ON_ERROR_STOP=1`). Der Swee
 in Häppchen von 500 Titeln — man verliert also nicht alles, aber jeden Häppchen-Block mit
 einem neuen Anbieter.
 
-## 3. `justwatch-catalog.py --discovery` — GENAU EINMAL, vor dem ersten `--sweep`
+## 4. App deployen
+
+Jetzt darf die App den neuen Code ausliefern — die Spalten sind da und geprüft.
 
 ```sh
-cd /srv/sites/otakupulse/app-src/frontend   # Pfad des VPS, siehe Schritt 4
+ssh administrator@100.64.244.17 '/srv/sites/otakupulse/app-src/deploy-vps.sh'
+```
+
+Schritt 1/6 holt denselben Quellstand wie Schritt 1 dieser Anleitung und ist damit ein
+No-op. Danach: Build im Wegwerf-Container, `.next` tauschen, App neu starten, auf HTTP 200
+warten (bei Misserfolg rollt das Skript selbst auf den alten Build zurück) und den
+Cloudflare-Cache leeren. Letzteres ist Pflicht: die Cache-Regeln legen `/anime` für acht
+Stunden an den Edge, ohne Purge sieht man die Wirkung nicht.
+
+## 5. `justwatch-catalog.py --discovery` — GENAU EINMAL, vor dem ersten `--sweep`
+
+```sh
+cd /srv/sites/otakupulse/app-src/frontend   # Pfad des VPS, siehe Schritt 7
 python3 -u src/scripts/justwatch-catalog.py --discovery
 ```
 
@@ -109,7 +157,27 @@ Instanz-Sperre griff (Terminkollision, kein Fehler). Ein `--discovery`, das mit 
 **wiederholt man** — das ist der eine Fall, in dem ein zweiter Lauf richtig ist, weil der
 erste den Katalog nicht vollständig gesehen hat.
 
-## 4. Wrapper nach `/opt/otakupulse-cron/` kopieren und anpassen
+## 6. Crunchyroll-Direktbeleg — erster Lauf von Hand
+
+Ohne diesen Schritt kommt der erste Beleg erst mit dem Cron um 05:40. Von Hand sieht man
+sofort, ob die Quelle trägt — und die Fälle, die den Branch ausgelöst haben, sind genau
+Fortsetzungsstaffeln laufender Titel.
+
+```sh
+cd /srv/sites/otakupulse/app-src/frontend
+python3 -u src/scripts/crunchyroll-dub.py --availability
+```
+
+Schreibt `confidence='confirmed'`, `source='crunchyroll'` — aber nur bei direktem Beleg
+(eigener Serien-Link am Titel oder exakter Slug-Treffer), nie aus einem unscharfen Treffer.
+Umfang: laufende Titel sowie laufender und vorheriger Jahrgang.
+
+> **Reihenfolge gegenüber dem Sweep:** dieser Lauf muss **nach** einem Katalog-Sweep
+> liegen, nie davor. Der Sweep löscht autoritativ und ignoriert `source`, überschreibt den
+> Beleg also mit einer geerbten, unbestätigten Zeile; dieser Lauf stellt ihn wieder her.
+> Deshalb im Cron: Sweep montags 05:20, dieser Lauf täglich 05:40 (siehe Schritt 9).
+
+## 7. Wrapper nach `/opt/otakupulse-cron/` kopieren und anpassen
 
 Der Cron ruft die Wrapper **nicht** aus dem Repo, sondern aus `/opt/otakupulse-cron/`
 (`root:root`, Modus `0750`). Dort liegen heute `backup-db.sh`, `otakupulse-sync.sh`,
@@ -177,7 +245,7 @@ Die drei neuen Wrapper also nach `/opt/otakupulse-cron/` kopieren, dort anpassen
 > Höchstens eine Meldung pro Tag (Stempeldatei `/tmp/otaku-streaming-alarm.day`) — wer
 > den Versand zweimal am selben Tag sehen will, löscht sie vorher.
 
-## 5. `refresh-streaming.sh` neu ausrollen (sonst bleibt die Rotation unwirksam)
+## 8. `refresh-streaming.sh` neu ausrollen (sonst bleibt die Rotation unwirksam)
 
 Die ausgerollte Kopie ist **älter als das Repo**: sie ruft `justwatch-streaming.py --stale`,
 das Repo `--stale-weighted` (laufende Titel und neue Jahrgänge zuerst, dann nach Alter).
@@ -185,7 +253,7 @@ Die gewichtete Rotation — ein Kernstück dieses Branches — wirkt erst, wenn 
 neu ausgerollt ist, in denselben zwei (bzw. drei, siehe Kasten) Zeilen angepasst. Vorher
 sieht alles grün aus, während die Gewichtung nichts tut.
 
-## 6. Cron-Einträge
+## 9. Cron-Einträge
 
 Es gibt **kein** `crontab -l` für root oder den Benutzer; die Einträge stehen ausschließlich
 in **`/etc/cron.d/otakupulse`**, z. B.:
@@ -208,7 +276,7 @@ verdoppelt. Für neue Zeilen gilt:
   Aktivieren/Deaktivieren einzelner Zeilen. Wer eine neue Zeile zunächst deaktiviert
   anlegt, folgt demselben Muster.
 
-## 7. Nach dem Rollout: hat es gewirkt?
+## 10. Nach dem Rollout: hat es gewirkt?
 
 ```sh
 cd /srv/sites/otakupulse/app-src/frontend && npx tsx src/scripts/streaming-coverage.ts

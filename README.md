@@ -117,7 +117,7 @@ otakupulse/
 ├── docs/
 │   ├── PROJEKT.md                  # vollständige Pfad-Referenz (+ PDF)
 │   ├── BETRIEB.md                  # Betrieb, Deployment, Cron, Sicherheit (Detail)
-│   ├── streaming-rollout.md        # Rollout-Reihenfolge Streaming (Schema-Push, --discovery, Wrapper)
+│   ├── streaming-rollout.md        # Rollout-Reihenfolge Streaming (Push vor Deploy, --discovery, Wrapper)
 │   └── ARCHITEKTUR-BLUEPRINT.md
 ├── n8n-workflows/                  # Autoposter-Workflow (+ README) für n8n
 ├── backup-db.sh                    # nächtliches DB-Backup (lokal + B2-Offsite)
@@ -606,9 +606,11 @@ Lauf (403/429, Token-Fehler, keine einzige Auflösung) räumt **nichts** ab. Fol
 Ausfalls: belegte Crunchyroll-Zeilen verschwinden nach einer Woche, und die betroffenen Titel
 fallen auf die als „nicht bestätigt" gekennzeichnete JustWatch-Angabe zurück.
 
-**Erstmaliger Rollout:** die Reihenfolge ist eine Anforderung — Schema-Push zuerst,
-`justwatch-catalog.py --discovery` genau einmal vor dem ersten `--sweep`, dann die Wrapper
-nach `/opt/otakupulse-cron/` samt Pfadanpassung. Vollständig in
+**Erstmaliger Rollout:** die Reihenfolge ist eine Anforderung — Quellstand holen,
+Schema-Push, verifizieren, **dann** die App deployen (`db-push.ts` liest die Collections
+aus dem enrich-Mount, braucht also den neuen Code, während die App noch den alten Build
+fährt), danach `justwatch-catalog.py --discovery` genau einmal vor dem ersten `--sweep`
+und zuletzt die Wrapper nach `/opt/otakupulse-cron/` samt Pfadanpassung. Vollständig in
 [`docs/streaming-rollout.md`](docs/streaming-rollout.md); die Cron-Wrapper laufen **nicht**
 aus dem Repo.
 
