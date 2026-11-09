@@ -159,12 +159,23 @@ Die drei neuen Wrapper also nach `/opt/otakupulse-cron/` kopieren, dort anpassen
 > tail -n 20 /tmp/otaku-streaming-refresh.log
 > ```
 >
-> Im Log muss **eine** dieser Zeilen stehen: `Lücken-Alarm gesendet`, oder eine der drei
-> Konfigurationsmeldungen (`… secrets.env fehlt oder ist nicht lesbar`,
-> `… TELEGRAM_BOT_TOKEN fehlt in secrets.env`, `… ALERT_CHAT_ID fehlt in secrets.env`),
-> oder `Lücken-Abfrage fehlgeschlagen` / `Versand FEHLGESCHLAGEN`.
-> **Stille allein beweist hier nichts**: der Alarm schweigt auch dann, wenn es keine Lücke
-> gibt (und höchstens eine Meldung pro Tag, Stempeldatei `/tmp/otaku-streaming-alarm.day`).
+> **Entscheidend ist der Exit-Code, nicht das Log** — denn ohne Lücke endet das Skript,
+> bevor es irgendetwas schreibt (`[ -n "$MSG" ] || exit 0`). Ein leeres Log ist also der
+> Normalfall und kein Fehler:
+>
+> | `exit=` | Bedeutung | zu tun |
+> |---|---|---|
+> | `127` | `bash` fand das Skript nicht — **die Falle hat zugeschlagen**, Pfad noch falsch | Zeile 3 des Wrappers korrigieren |
+> | `0` ohne Logzeile | gelaufen, keine Lücke gefunden | nichts, das ist der Normalfall |
+> | `0` mit `Lücken-Alarm gesendet` | gelaufen, Lücke gemeldet | Telegram prüfen |
+> | `1` | Konfiguration kaputt oder Versand gescheitert — die Meldung sagt, was | Log lesen, Ursache beheben |
+>
+> Die `1`-Meldungen im Klartext: `… secrets.env fehlt oder ist nicht lesbar`,
+> `… TELEGRAM_BOT_TOKEN fehlt in secrets.env`, `… ALERT_CHAT_ID fehlt in secrets.env`,
+> `Lücken-Abfrage fehlgeschlagen`, `Versand FEHLGESCHLAGEN`.
+>
+> Höchstens eine Meldung pro Tag (Stempeldatei `/tmp/otaku-streaming-alarm.day`) — wer
+> den Versand zweimal am selben Tag sehen will, löscht sie vorher.
 
 ## 5. `refresh-streaming.sh` neu ausrollen (sonst bleibt die Rotation unwirksam)
 

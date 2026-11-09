@@ -414,6 +414,16 @@ def expiry_sql(complete: bool) -> list[str]:
     sich selbst gelöscht (Entscheidung 21). `IS DISTINCT FROM`, nie `<>`: der Altbestand
     trägt `confidence IS NULL` und muss erfasst bleiben.
 
+    `last_seen_at IS NULL` gilt als veraltet, nicht als frisch. Dieser Lauf schreibt den
+    Stempel immer mit, NULL kann also nur von Hand entstehen: `source` ist im Admin ein
+    editierbares Select mit der Option `crunchyroll`, `lastSeenAt` ist nicht `required`.
+    Ohne diesen Zweig wäre `NULL < now() - …` UNKNOWN, die Zeile bliebe liegen — und auf
+    einer Fortsetzungsstaffel räumte sie niemand mehr ab (Sweep kein Match, Titelsuche
+    spart `source='crunchyroll'` aus, Verfall greift nicht). Genau der Zustand, gegen den
+    diese Funktion gebaut ist, nur über den redaktionellen Eingang. Wer eine Zeile von
+    Hand setzt, nimmt `source='manual'` — die ist in beiden Schreibwegen ausgespart und
+    bleibt dauerhaft stehen.
+
     `complete=False` erzeugt NICHTS (siehe `availability_complete`): ein Lauf, der an
     der Token-Beschaffung oder an 403/429 scheitert, darf keine belegten Zeilen
     abräumen."""
@@ -422,7 +432,8 @@ def expiry_sql(complete: bool) -> list[str]:
     q = _catalog_module().q
     return [f"DELETE FROM anime_streaming_offers WHERE source = {q(AVAIL_PROVIDER)} "
             f"AND confidence IS DISTINCT FROM 'rejected' "
-            f"AND last_seen_at < now() - interval '{int(AVAIL_STALE_DAYS)} days';"]
+            f"AND (last_seen_at IS NULL "
+            f"OR last_seen_at < now() - interval '{int(AVAIL_STALE_DAYS)} days');"]
 
 
 def is_direct_evidence(series, method) -> bool:

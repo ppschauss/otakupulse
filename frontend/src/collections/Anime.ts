@@ -105,7 +105,7 @@ export const Anime: CollectionConfig = {
       name: 'streamingVerifiedAt',
       type: 'date',
       index: true,
-      admin: { description: 'Zuletzt über ALLE Anbieter-Kataloge nachgesehen — Nachweis für „in DE nicht im Stream".' },
+      admin: { description: 'Zuletzt über die geprüften Anbieter-Kataloge nachgesehen (Abo/Werbung/Gratis, Anbieter mit JustWatch-Paket — ohne HIDIVE, Paramount+, Anime on Demand, Apple TV+). Nachweis für „bei keinem der von uns geprüften Anbieter im Stream", nicht für „nirgends".' },
     },
     {
       // Anbieter-genaue Streaming-Angebote (Quelle: JustWatch DE, Skript

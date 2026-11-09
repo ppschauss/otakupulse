@@ -324,6 +324,21 @@ def test_verfall_erfasst_acht_tage_alte_zeile_aber_keine_sechs_tage_alte():
     assert now - datetime.timedelta(days=6) > grenze   # sechs Tage alt: bleibt stehen
 
 
+def test_verfall_behandelt_fehlenden_stempel_als_veraltet():
+    """`NULL < now() - interval` ist UNKNOWN, die Zeile bliebe sonst liegen — und auf einer
+    Fortsetzungsstaffel raeumt sie dann niemand ab. Erreichbar ueber den Admin: `source` ist
+    ein editierbares Select mit Option 'crunchyroll', `lastSeenAt` ist nicht required. Also
+    genau der Zustand, gegen den der Verfall gebaut ist, nur ueber den redaktionellen
+    Eingang. Wer von Hand setzt, nimmt source='manual' (in beiden Schreibwegen ausgespart)."""
+    sql = cr.expiry_sql(True)[0]
+    assert "last_seen_at IS NULL" in sql
+    # Die NULL-Bedingung muss mit der Altersbedingung geODERt sein, nicht geANDet —
+    # sonst erfasst der Verfall nur noch Zeilen, die beides sind (also keine).
+    assert "(last_seen_at IS NULL OR last_seen_at < now() - interval" in sql
+    # Und sie darf das Veto nicht aushebeln: die rejected-Bedingung bleibt AND-verknuepft.
+    assert "AND confidence IS DISTINCT FROM 'rejected' AND (last_seen_at IS NULL" in sql
+
+
 def test_verfall_nennt_nur_crunchyroll():
     sql = cr.expiry_sql(True)[0]
     assert "source = 'crunchyroll'" in sql
