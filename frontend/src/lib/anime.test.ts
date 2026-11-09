@@ -103,7 +103,21 @@ describe('animeIndexable', () => {
     expect(animeIndexable({ streamingOffers: [{ ...o, confidence: 'unconfirmed' }] })).toBe(false)
     expect(animeIndexable({ streamingOffers: [{ ...o, confidence: 'unconfirmed' }, { ...o, confidence: 'confirmed' }] })).toBe(true)
     expect(animeIndexable({ streamingOffers: [{ ...o, confidence: null }] })).toBe(true)
-    expect(animeIndexable({ streamingOffers: [{ ...o, confidence: 'unconfirmed' }], streamingProviders: ['netflix'] })).toBe(true)
+    // Der Slug-Index zählt unbestätigte Anbieter bewusst mit (Entscheidung 4, Plattform-Listen),
+    // er ist aber kein Indexbeleg: ein geerbtes Angebot darf keine Seite indexierbar machen
+    // (Entscheidung 20). Sonst überspringt der Titel über den Slug-Zweig die Schwellen für
+    // Musikvideo, zu dünnen Text und Popularität.
+    expect(animeIndexable({ streamingOffers: [{ ...o, confidence: 'unconfirmed' }], streamingProviders: ['netflix'] })).toBe(false)
+    // Ein belegtes Angebot desselben Slugs trägt den Index weiter …
+    expect(animeIndexable({
+      streamingOffers: [{ ...o, confidence: 'unconfirmed' }, { ...o, confidence: 'confirmed' }],
+      streamingProviders: ['netflix'],
+    })).toBe(true)
+    // … und ein belegtes Angebot bei einem ANDEREN Slug ebenfalls.
+    expect(animeIndexable({
+      streamingOffers: [{ ...o, confidence: 'unconfirmed' }, { provider: 'crunchyroll', url: 'https://c', confidence: 'confirmed' }],
+      streamingProviders: ['netflix', 'crunchyroll'],
+    })).toBe(true)
   })
   it('indexiert ohne Streaming nur mit deutschem Text ≥ 100 Zeichen und genug Nachfrage', () => {
     expect(animeIndexable({ descriptionDe: de, popularity: 50000 })).toBe(true)

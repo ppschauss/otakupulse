@@ -43,3 +43,24 @@ export function rejectedProviderSlugs(anime: any): Set<string> {
   const offers: any[] = Array.isArray(anime?.streamingOffers) ? anime.streamingOffers : []
   return new Set(offers.filter((o) => o?.confidence === 'rejected').map((o) => o?.provider))
 }
+
+/**
+ * Anbieter-Slugs, deren Angebote für diesen Titel AUSSCHLIESSLICH unbestätigt sind
+ * (vom Serien-Angebot geerbt). Ein Slug mit mindestens einem belegten Angebot — auch
+ * Altbestand ohne `confidence` — gehört nicht dazu.
+ *
+ * Gegenstück zu `rejectedProviderSlugs` für die Indexregel: der Slug-Index
+ * `streamingProviders` enthält unbestätigte Anbieter bewusst (Entscheidung 4, damit die
+ * Plattform-Listen sie zeigen), aber ein geerbtes Angebot ist kein Indexbeleg
+ * (Entscheidung 20). Genauso tolerant wie `rejectedProviderSlugs`: sind die
+ * `streamingOffers` nicht geladen, ist nichts bekannt und die Menge bleibt leer.
+ */
+export function unconfirmedOnlyProviderSlugs(anime: any): Set<string> {
+  const offers: any[] = Array.isArray(anime?.streamingOffers) ? anime.streamingOffers : []
+  const confirmed = new Set(offers.filter((o) => isConfirmed(o ?? {})).map((o) => o?.provider))
+  return new Set(
+    offers
+      .filter((o) => isUnconfirmed(o ?? {}) && !confirmed.has(o?.provider))
+      .map((o) => o?.provider),
+  )
+}

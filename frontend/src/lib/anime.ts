@@ -1,6 +1,6 @@
 // Hilfsfunktionen rund um Anime-Daten (Anzeige & Labels).
 
-import { isConfirmed, rejectedProviderSlugs } from './streamingConfidence'
+import { isConfirmed, rejectedProviderSlugs, unconfirmedOnlyProviderSlugs } from './streamingConfidence'
 
 export function displayTitle(a: any): string {
   return a?.titleGerman || a?.titleEnglish || a?.titleRomaji || 'Unbekannt'
@@ -165,10 +165,17 @@ export function animeIndexable(a: any): boolean {
   if (a?.isHentai === true) return false
   // Nur belegte Angebote zählen: geerbte (unbestätigte) dürfen keine Seite neu indexierbar machen.
   // Per Veto verworfene Anbieter zählen auch im Slug-Index nicht (die Seite zeigt sie nicht mehr).
+  // Dasselbe gilt im Slug-Index für Anbieter, deren Angebote NUR geerbt sind: der Index
+  // `streamingProviders` führt sie bewusst (Entscheidung 4, Plattform-Listen), als Indexbeleg
+  // taugen sie aber nicht (Entscheidung 20) — sonst überspringt der Titel über diesen Zweig die
+  // Schwellen für Musikvideo, zu dünnen Text und Popularität. Sind die Offers nicht geladen,
+  // sind beide Mengen leer und der Slug-Index zählt wie bisher.
   const rejected = rejectedProviderSlugs(a)
+  const unconfirmedOnly = unconfirmedOnlyProviderSlugs(a)
   const hasStream =
     (Array.isArray(a?.streamingOffers) && a.streamingOffers.some((o: any) => isConfirmed(o ?? {}))) ||
-    (Array.isArray(a?.streamingProviders) && a.streamingProviders.some((slug: string) => !rejected.has(slug)))
+    (Array.isArray(a?.streamingProviders) &&
+      a.streamingProviders.some((slug: string) => !rejected.has(slug) && !unconfirmedOnly.has(slug)))
   if (hasStream) return true
   if (a?.format === 'MUSIC') return false
   if (textTooThin(a?.descriptionDe)) return false

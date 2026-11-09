@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isConfirmed, isUnconfirmed, offerNote, UNCONFIRMED_LABEL } from './streamingConfidence'
+import { isConfirmed, isUnconfirmed, offerNote, UNCONFIRMED_LABEL, rejectedProviderSlugs, unconfirmedOnlyProviderSlugs } from './streamingConfidence'
 
 describe('isConfirmed', () => {
   it('behandelt fehlende confidence als belegt (Altbestand ohne Feld)', () => {
@@ -34,5 +34,37 @@ describe('offerNote', () => {
   })
   it('kennzeichnet unbestätigte Angebote für den Artikeltext', () => {
     expect(offerNote('unconfirmed')).toBe(' (Staffel nicht bestätigt)')
+  })
+})
+
+describe('unconfirmedOnlyProviderSlugs', () => {
+  const o = (provider: string, confidence: string | null) => ({ provider, url: 'https://x', confidence })
+  it('nennt Slugs, deren Angebote ausschließlich unbestätigt sind', () => {
+    const s = unconfirmedOnlyProviderSlugs({ streamingOffers: [o('netflix', 'unconfirmed')] })
+    expect([...s]).toEqual(['netflix'])
+  })
+  it('nennt einen Slug mit mindestens einem belegten Angebot nicht', () => {
+    const s = unconfirmedOnlyProviderSlugs({
+      streamingOffers: [o('netflix', 'unconfirmed'), o('netflix', 'confirmed')],
+    })
+    expect(s.size).toBe(0)
+  })
+  it('zählt Altbestand ohne confidence als belegt', () => {
+    const s = unconfirmedOnlyProviderSlugs({ streamingOffers: [o('netflix', 'unconfirmed'), o('netflix', null)] })
+    expect(s.size).toBe(0)
+  })
+  it('trennt die Slugs: A unbestätigt, B belegt', () => {
+    const s = unconfirmedOnlyProviderSlugs({ streamingOffers: [o('netflix', 'unconfirmed'), o('crunchyroll', 'confirmed')] })
+    expect([...s]).toEqual(['netflix'])
+  })
+  it('ist leer, wenn die Offers nicht geladen sind (nichts bekannt — tolerant wie rejectedProviderSlugs)', () => {
+    expect(unconfirmedOnlyProviderSlugs({ streamingProviders: ['netflix'] }).size).toBe(0)
+    expect(unconfirmedOnlyProviderSlugs({}).size).toBe(0)
+    expect(unconfirmedOnlyProviderSlugs(null).size).toBe(0)
+    expect(rejectedProviderSlugs(null).size).toBe(0)
+  })
+  it('ein verworfenes Angebot macht den Slug nicht „nur unbestätigt" (dafür gibt es das Veto)', () => {
+    const s = unconfirmedOnlyProviderSlugs({ streamingOffers: [o('netflix', 'rejected')] })
+    expect(s.size).toBe(0)
   })
 })
