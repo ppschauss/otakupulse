@@ -324,12 +324,23 @@ def test_verfall_erfasst_acht_tage_alte_zeile_aber_keine_sechs_tage_alte():
     assert now - datetime.timedelta(days=6) > grenze   # sechs Tage alt: bleibt stehen
 
 
-def test_verfall_nennt_nur_crunchyroll_und_keine_zuversicht():
+def test_verfall_nennt_nur_crunchyroll():
     sql = cr.expiry_sql(True)[0]
     assert "source = 'crunchyroll'" in sql
     for fremd in ("justwatch", "adn", "manual"):
         assert fremd not in sql
-    assert "confidence" not in sql
+
+
+def test_verfall_laesst_das_veto_stehen():
+    """Der Lader erkennt ein Veto allein an `confidence` (load_all_anime), unabhaengig von
+    `source`. Eine `rejected`-Zeile mit source='crunchyroll' — ein Redakteur, der die
+    CR-Zeile an Ort und Stelle verwirft — wuerde der Verfall sonst nach sieben Tagen
+    loeschen, und der naechste Lauf legte das Angebot wieder als Beleg an: das Veto haette
+    sich selbst geloescht (Entscheidung 21, dieselbe Bedingung wie in build_catalog_sql)."""
+    sql = cr.expiry_sql(True)[0]
+    assert "confidence IS DISTINCT FROM 'rejected'" in sql
+    # Niemals `<>`: der Altbestand traegt confidence NULL und muss erfasst bleiben.
+    assert "<>" not in sql and "!=" not in sql
 
 
 def test_verfall_nur_nach_erfolgreichem_durchlauf():

@@ -362,8 +362,10 @@ Als Entscheidung des Autors dieses Dokuments, nicht abgestimmt:
     Zeilen neu, eine gepflegte Zeile trägt also immer ein frisches `last_seen_at`. Am
     Ende eines **erfolgreichen** Durchlaufs löscht der Lauf alle Zeilen mit
     `source = 'crunchyroll'`, deren `last_seen_at` älter als sieben Tage ist
-    (`AVAIL_STALE_DAYS`, `expiry_sql` in `crunchyroll-dub.py`; keine Bedingung auf
-    `confidence`, keine andere Quelle). „Erfolgreich" heißt wie beim Sweep: kein
+    (`AVAIL_STALE_DAYS`, `expiry_sql` in `crunchyroll-dub.py`; keine andere Quelle, und
+    auf `confidence` nur die eine Einschränkung, die `build_catalog_sql` auch hat: eine
+    Veto-Zeile (`rejected`) bleibt stehen, sonst löschte sich das Veto selbst — der Lader
+    erkennt es allein an `confidence`, unabhängig von `source`, Entscheidung 21). „Erfolgreich" heißt wie beim Sweep: kein
     Abruffehler (403/429 nach Backoff) und mindestens ein Beleg im ganzen Durchlauf —
     sonst räumt der Lauf nichts ab, denn eine IP-Sperre sieht sonst aus wie ein
     Katalogabgang. Sieben Tage = sechs geduldete Fehlläufe in Folge bei täglichem Cron.

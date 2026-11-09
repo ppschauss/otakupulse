@@ -599,7 +599,8 @@ fasst nur gematchte Titel an, und eine Fortsetzungsstaffel matcht er nie (`match
 bewusst nur die Erststaffel) — eine dort liegende `confirmed`-Zeile könnte er also nie abräumen.
 Das tut der Crunchyroll-Lauf selbst: nach einem **erfolgreichen** Durchlauf löscht er alle Zeilen
 mit `source = 'crunchyroll'`, deren `lastSeenAt` älter als **7 Tage** ist (`AVAIL_STALE_DAYS`,
-`expiry_sql` in `crunchyroll-dub.py`). Jeder Lauf schreibt seine Zeilen neu, eine gepflegte Zeile
+`expiry_sql` in `crunchyroll-dub.py`) — Veto-Zeilen (`confidence = 'rejected'`) ausgenommen,
+sonst löschte sich das Veto selbst. Jeder Lauf schreibt seine Zeilen neu, eine gepflegte Zeile
 ist also immer frisch; ein Lizenzende verschwindet spätestens nach einer Woche. Ein unvollständiger
 Lauf (403/429, Token-Fehler, keine einzige Auflösung) räumt **nichts** ab. Folge eines längeren
 Ausfalls: belegte Crunchyroll-Zeilen verschwinden nach einer Woche, und die betroffenen Titel

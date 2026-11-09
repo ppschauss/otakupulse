@@ -402,10 +402,17 @@ def expiry_sql(complete: bool) -> list[str]:
     die Seite nach einem Lizenzende dauerhaft eine als BELEGT gekennzeichnete
     Verfügbarkeit samt Deep-Link, `WatchAction` und Platz in den Plattform-Listen.
 
-    Nur auf `source`, nie auf `confidence`: eine unbestätigte Crunchyroll-Zeile gibt es
-    nicht (dieser Lauf schreibt ausschließlich Belege), und eine Bedingung auf
-    `confidence` würde den Altbestand mit `confidence IS NULL` falsch behandeln.
-    Fremde Quellen bleiben unberührt — für die ist der JustWatch-Abgleich autoritativ.
+    Eingegrenzt wird über `source`: fremde Quellen bleiben unberührt, für die ist der
+    JustWatch-Abgleich autoritativ. Eine unbestätigte Crunchyroll-Zeile gibt es nicht
+    (dieser Lauf schreibt ausschließlich Belege), auf `confidence` wird deshalb NICHT
+    eingeschränkt — mit einer Ausnahme, und die ist dieselbe wie in `build_catalog_sql`:
+    das VETO (`confidence = 'rejected'`) bleibt stehen. Der Lader erkennt ein Veto allein
+    an `confidence`, unabhängig von `source` (`load_all_anime`); verwirft ein Redakteur
+    die Crunchyroll-Zeile an Ort und Stelle, trägt die Veto-Zeile weiter
+    `source = 'crunchyroll'`. Der Verfall löschte sie dann nach sieben Tagen, der nächste
+    Lauf sähe kein Veto mehr und legte das Angebot wieder als Beleg an — das Veto hätte
+    sich selbst gelöscht (Entscheidung 21). `IS DISTINCT FROM`, nie `<>`: der Altbestand
+    trägt `confidence IS NULL` und muss erfasst bleiben.
 
     `complete=False` erzeugt NICHTS (siehe `availability_complete`): ein Lauf, der an
     der Token-Beschaffung oder an 403/429 scheitert, darf keine belegten Zeilen
@@ -414,6 +421,7 @@ def expiry_sql(complete: bool) -> list[str]:
         return []
     q = _catalog_module().q
     return [f"DELETE FROM anime_streaming_offers WHERE source = {q(AVAIL_PROVIDER)} "
+            f"AND confidence IS DISTINCT FROM 'rejected' "
             f"AND last_seen_at < now() - interval '{int(AVAIL_STALE_DAYS)} days';"]
 
 
