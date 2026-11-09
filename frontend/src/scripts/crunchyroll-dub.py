@@ -21,6 +21,10 @@ WICHTIG (siehe docs/BETRIEB.md):
 - Grau-Zone: anonymer Web-Client-Token, konservativ rate-limitiert. Idempotent.
 
 Aufruf:  python3 src/scripts/crunchyroll-dub.py
+         python3 src/scripts/crunchyroll-dub.py --availability [--dry-run]
+           Verfügbarkeits-Modus: belegt laufende Titel (RELEASING + laufender und
+           vorheriger Jahrgang) direkt bei Crunchyroll (`confirmed`, `source='crunchyroll'`)
+           und schreibt über `build_catalog_sql` des JustWatch-Katalog-Skripts.
 """
 import base64
 import json
@@ -159,14 +163,21 @@ def api_get(session, token, url, params=None):
     return r
 
 
-def resolve(session, token, a: dict) -> tuple[list[str] | None, str]:
-    """(langs, methode). langs=None bei Fehler, [] wenn kein/zu schwacher Treffer."""
+def resolve_series(session, token, a: dict) -> tuple[dict | None, str]:
+    """(serien_eintrag, methode). Der Eintrag ist die Crunchyroll-Serie mit gesetzter
+    `id`; `None` bei Fehler (Methode `err`) oder wenn es keinen/zu schwachen Treffer gibt.
+
+    Das ist die Auflösung, die früher in `resolve` stand — herausgelöst, damit der
+    Verfügbarkeits-Modus dieselbe Titelzuordnung mit denselben Schwellen benutzt und
+    zusätzlich die Serien-ID (für den Deep-Link) bekommt. `resolve` ruft diese Funktion
+    und liefert unverändert die Dub-Sprachen."""
     # A) Direkter Serien-Treffer
     if a["series_id"]:
         r = api_get(session, token, SERIES_API.format(sid=a["series_id"]))
         if r.status_code == 200:
-            d = (r.json().get("data") or [{}])[0]
-            return locales_to_langs(d.get("audio_locales"), d.get("subtitle_locales")), "id"
+            d = dict((r.json().get("data") or [{}])[0])
+            d.setdefault("id", a["series_id"])
+            return d, "id"
         if r.status_code != 404:
             return None, "err"
         # 404 -> Serie weg, weiter zur Suche
@@ -174,7 +185,7 @@ def resolve(session, token, a: dict) -> tuple[list[str] | None, str]:
     # B) Suche per Titel
     query = next((t for t in a["titles"] if t.strip()), "")
     if not query:
-        return [], "no-title"
+        return None, "no-title"
     r = api_get(session, token, SEARCH_API, params={"q": query, "n": 6, "type": "series", "locale": "de-DE"})
     if r.status_code != 200:
         return None, "err"
@@ -205,13 +216,202 @@ def resolve(session, token, a: dict) -> tuple[list[str] | None, str]:
                 best, best_score = it, score
 
     if not best:
-        return [], "no-match"
+        return None, "no-match"
     # Schwelle: bekannte CR-Titel großzügiger, sonst strenger (gegen Fehltreffer).
     threshold = 0.80 if a.get("has_cr_link") else 0.88
     if best_score < threshold:
-        return [], "weak"
-    md = best.get("series_metadata", {})
+        return None, "weak"
+    return best, "search"
+
+
+def resolve(session, token, a: dict) -> tuple[list[str] | None, str]:
+    """(langs, methode). langs=None bei Fehler, [] wenn kein/zu schwacher Treffer."""
+    entry, method = resolve_series(session, token, a)
+    if entry is None:
+        return (None if method == "err" else []), method
+    if method == "id":
+        return locales_to_langs(entry.get("audio_locales"), entry.get("subtitle_locales")), "id"
+    md = entry.get("series_metadata", {})
     return locales_to_langs(md.get("audio_locales"), md.get("subtitle_locales")), "search"
+
+
+# --- Verfügbarkeits-Modus (Aufgabe 14) ---------------------------------------------
+# Dieselbe Content-API, die die Dub-Sprachen liefert, beantwortet auch "läuft die
+# Serie bei Crunchyroll Deutschland?". Das ist eine BELEGTE Angabe (`confirmed`,
+# `source='crunchyroll'`) und ersetzt die von JustWatch geerbte, unbestätigte Zeile bei
+# laufenden Fortsetzungsstaffeln. Der Dub-Lauf (`main`) bleibt davon unberührt.
+
+AVAIL_PROVIDER = "crunchyroll"
+SERIES_LINK = "https://www.crunchyroll.com/de/series/{sid}"
+# Serien-IDs sind Großbuchstaben + Ziffern (`SERIES_RE`); alles andere gehört weder in
+# eine URL noch in ein SQL-Statement.
+SERIES_ID_RE = re.compile(r"^[A-Z0-9]+$")
+# Crunchyroll-Locale -> Kurzcode der Angebotszeilen (`AUDIO_TO_LANG`/`SUB_TO_LANG` im
+# JustWatch-Skript kennen genau diese Codes). Andere Sprachen werden nicht aufgeführt.
+AUDIO_CODES = {"de-DE": "de", "en-US": "en", "ja-JP": "ja"}
+SUB_CODES = {"de-DE": "de", "en-US": "en"}
+
+
+def _codes(locales, table) -> str:
+    return ",".join(sorted({table[l] for l in (locales or []) if l in table}))
+
+
+def _entry(js) -> dict:
+    data = js.get("data") if isinstance(js, dict) else None
+    return data[0] if data and isinstance(data[0], dict) else {}
+
+
+def availability_from_series(series_json, season_json=None) -> list[dict]:
+    """Angebotszeile(n) aus einer Crunchyroll-Serien-Antwort (`{"data": [...]}`).
+
+    Rein: kein Netz, keine DB. Das Ergebnis hat die Form, die `build_catalog_sql`
+    erwartet (`audio`/`subs` als Komma-Strings der Kurzcodes, `confidence`, `source`).
+
+    Verworfen wird (leere Liste), wenn
+      - die Antwort leer ist,
+      - keine brauchbare Serien-ID da ist: ohne sie gäbe es keinen Deep-Link
+        (`/de/series/<id>`), und "lieber nicht gelistet als ein Link auf eine
+        Startseite",
+      - weder Audio- noch Untertitelsprache gemeldet wird: eine Serie ohne jede Sprache
+        ist im deutschen Katalog nicht abspielbar.
+
+    `season_json` (optional, Antwort der Staffel-Schnittstelle) präzisiert Sprachen und
+    Episodenzahl für eine einzelne Staffel; ohne sie gilt die Serien-Ebene.
+    Preis ist immer `flatrate`: Crunchyroll ist hier Abo-Angebot."""
+    e = _entry(series_json)
+    if not e:
+        return []
+    sid = str(e.get("id") or "").strip()
+    if not SERIES_ID_RE.match(sid):
+        return []
+    md = e.get("series_metadata") or e
+    audio_loc, sub_loc = md.get("audio_locales"), md.get("subtitle_locales")
+    episodes = md.get("episode_count")
+    se = _entry(season_json)
+    if se:
+        audio_loc = se.get("audio_locales") or audio_loc
+        sub_loc = se.get("subtitle_locales") or sub_loc
+        episodes = se.get("number_of_episodes") or episodes
+    if not audio_loc and not sub_loc:
+        return []
+    return [{
+        "provider": AVAIL_PROVIDER,
+        "monetization": "flatrate",
+        "url": SERIES_LINK.format(sid=sid),
+        "audio": _codes(audio_loc, AUDIO_CODES),
+        "subs": _codes(sub_loc, SUB_CODES),
+        "seasons": md.get("season_count"),
+        "episodes": episodes,
+        "available_to": None,
+        "confidence": "confirmed",
+        "source": "crunchyroll",
+    }]
+
+
+def in_availability_scope(status, year, current_year) -> bool:
+    """Umfang des Verfügbarkeits-Modus: `RELEASING` plus laufender und vorheriger
+    Jahrgang — NICHT der Gesamtkatalog. Der Token ist ein anonymer Web-Client-Token in
+    einer Grauzone; 11.000 Suchanfragen je Runde würden auch den Dub-Sync in eine Sperre
+    ziehen. Die Breite liefert der JustWatch-Katalog-Abgleich."""
+    if status == "RELEASING":
+        return True
+    try:
+        return year is not None and int(year) >= current_year - 1
+    except (TypeError, ValueError):
+        return False
+
+
+def _catalog_module():
+    """Das JustWatch-Katalog-Skript (Bindestrich im Dateinamen), relativ zu DIESER Datei.
+    Erst im Verfügbarkeits-Modus geladen — der Dub-Lauf braucht es nicht."""
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parent / "justwatch-catalog.py"
+    spec = importlib.util.spec_from_file_location("justwatch_catalog", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def availability_sql(anime: dict, offers: list[dict], now_iso: str) -> list[str]:
+    """SQL-Anweisungen für EINEN Titel über `build_catalog_sql` — oder `[]`.
+
+    Argumentform von `build_catalog_sql`: `anime` ist ein Eintrag aus
+    `load_all_anime()` (`id`, `offers` {(provider, monetization): first_seen_at},
+    `manual`, `rejected` als Mengen solcher Paare); `offers` sind fertige Zeilen mit
+    `audio`/`subs` als Komma-Strings (Mengen gingen ebenfalls), `confidence` und
+    `source`; `now_iso` ein ISO-Zeitstempel.
+
+    *** `only_provider='crunchyroll'` ist Pflicht. *** Ohne den Parameter ist
+    `build_catalog_sql` autoritativ über ALLE Abo-/Werbe-/Gratis-Zeilen des Titels und
+    löschte bei einer Quelle, die nur Crunchyroll kennt, Netflix, Prime und alle anderen.
+
+    Ohne Angebot kommt `[]` zurück, nicht ein reines `DELETE`: "nicht gefunden" ist auch
+    der Zustand eines fehlgeschlagenen Matches oder eines API-Fehlers und darf nichts
+    löschen. Ein echtes Lizenzende bemerkt der JustWatch-Abgleich."""
+    mine = [o for o in offers if o.get("provider") == AVAIL_PROVIDER]
+    if not mine:
+        return []
+    return _catalog_module().build_catalog_sql(anime, mine, now_iso, discovery=False,
+                                               only_provider=AVAIL_PROVIDER)
+
+
+def availability_main(dry_run: bool):
+    """Verfügbarkeits-Modus: laufende Titel direkt bei Crunchyroll belegen.
+
+    EINE Schleife mit demselben `MAX_WORKERS` wie der Dub-Lauf; sie läuft nur, wenn der
+    Modus aufgerufen wird. Nicht gleichzeitig mit dem Dub-Lauf starten — beide teilen
+    sich denselben Token und dasselbe Rate-Limit."""
+    import datetime
+    cat = _catalog_module()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    now_iso, year = now.strftime("%Y-%m-%dT%H:%M:%SZ"), now.year
+
+    print("→ Lade Titel + Bestandsangebote …")
+    stock = {a["id"]: a for a in cat.load_all_anime()}
+    scope = {i for i, a in stock.items() if in_availability_scope(a.get("status"), a.get("year"), year)}
+    anime = [a for a in load_anime() if a["id"] in scope]
+    print(f"  {len(anime)} von {len(stock)} Titeln im Umfang (RELEASING, Jahrgang {year - 1}/{year}).")
+
+    sess = requests.Session(impersonate=IMPERSONATE)
+    token = get_token(sess)
+    stats: dict[str, int] = {}
+    belegt: dict[int, list[dict]] = {}
+
+    def worker(a):
+        series, method = resolve_series(requests.Session(), token, a)
+        return a["id"], (availability_from_series({"data": [series]}, None) if series else []), method
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+        for f in as_completed([ex.submit(worker, a) for a in anime]):
+            aid, offers, method = f.result()
+            stats[method] = stats.get(method, 0) + 1
+            if offers:
+                belegt[aid] = offers
+
+    print(f"  Aufgelöst: {len(belegt)} belegt "
+          f"(per ID: {stats.get('id', 0)}, per Suche: {stats.get('search', 0)}; "
+          f"schwach: {stats.get('weak', 0)}, kein Match: {stats.get('no-match', 0)}, "
+          f"Fehler: {stats.get('err', 0)}).")
+
+    stmts, neu = ["BEGIN;"], []
+    for aid, offers in belegt.items():
+        sql = availability_sql(stock[aid], offers, now_iso)
+        if sql:
+            stmts += sql
+            if (AVAIL_PROVIDER, "flatrate") not in stock[aid]["offers"]:
+                neu.append(aid)
+            print(f"    {stock[aid]['slug']}: crunchyroll confirmed -> {offers[0]['url']}")
+    if neu and not dry_run:
+        # Neue Angabe = inhaltliche Änderung (Sitemap-lastmod), wie im Katalog-Abgleich.
+        stmts.append(f"UPDATE anime SET content_updated_at = now(), updated_at = now() "
+                     f"WHERE id IN ({','.join(str(int(i)) for i in neu)});")
+    stmts.append("COMMIT;")
+    if dry_run:
+        print(f"  Trockenlauf: nichts geschrieben ({len(belegt)} Titel, {len(neu)} mit neuem Crunchyroll-Paar).")
+        return
+    psql("\n".join(stmts), read=False)
+    print(f"✓ {len(belegt)} Titel mit belegtem Crunchyroll-Angebot geschrieben ({len(neu)} neu).")
 
 
 def main():
@@ -271,4 +471,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--availability" in sys.argv:
+        availability_main("--dry-run" in sys.argv)
+    else:
+        main()

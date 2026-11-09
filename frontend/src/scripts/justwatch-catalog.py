@@ -601,7 +601,7 @@ def offers_for_matches(nodes, status=None, year=None, current_year=None):
     return [rows[k] for k in sorted(rows)]
 
 
-def build_catalog_sql(anime, offers, now_iso, discovery=False):
+def build_catalog_sql(anime, offers, now_iso, discovery=False, only_provider=None):
     """SQL für EINEN Titel: Angebote, Anbieter-Index, Sprachen. Schreibt selbst nichts.
 
     Folgt `build_sql` im Nachbarskript (`DELETE` + `INSERT` pro Titel), mit einer
@@ -649,8 +649,17 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False):
     Warnung für weitere Aufrufer (Aufgabe 14): das `DELETE` macht den Aufrufer
     autoritativ für ALLE Abo-/Werbe-/Gratis-Angebote des Titels. Eine Quelle, die nur
     einen Anbieter kennt, darf diese Funktion nur mit der vollständigen Angebotsliste
-    des Titels aufrufen."""
+    des Titels aufrufen.
+
+    Genau dafür gibt es `only_provider` (Aufgabe 14, Crunchyroll-Direktbeleg): eine Quelle,
+    die nur EINEN Anbieter kennt, darf nicht die Angebote aller anderen löschen. Mit
+    `only_provider='crunchyroll'` beschränkt sich das `DELETE` zusätzlich auf
+    `provider = 'crunchyroll'`, Angebote anderer Anbieter in `offers` werden ignoriert,
+    und der Filter-Index wird nicht neu gebaut, sondern nur um diesen einen Anbieter
+    bereinigt und ergänzt. Sprachen bleiben additiv wie sonst. Ohne den Parameter
+    ändert sich nichts am Verhalten des Sweeps."""
     aid = anime["id"]
+    scope = f" AND provider = {q(only_provider)}" if only_provider else ""
     monets = ",".join(q(m) for m in SWEEP_MONETIZATION)
     # Ausgespart sind beide redaktionellen Entscheidungen: die Handarbeit
     # (`source='manual'`, Entscheidung 8) UND das Veto (`confidence='rejected'`,
@@ -661,13 +670,15 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False):
     # `confidence IS NULL` trägt und `<> 'rejected'` ihn herauswürfe.
     stmts = [f"DELETE FROM anime_streaming_offers WHERE _parent_id = {aid} "
              f"AND source IS DISTINCT FROM 'manual' AND confidence IS DISTINCT FROM 'rejected' "
-             f"AND monetization IN ({monets});"]
+             f"AND monetization IN ({monets}){scope};"]
     known = anime.get("offers") or {}
     rejected = set(anime.get("rejected") or ())
     manual_keys = set(anime.get("manual") or ())
     slugs, langs = set(), set()
     for e in offers:
         key = (e["provider"], e["monetization"])
+        if only_provider and e["provider"] != only_provider:
+            continue  # fremder Anbieter: nicht gelöscht, also nicht eingefügt
         if e["monetization"] not in SWEEP_MONETIZATION:
             continue  # Kauf/Leih: nicht gelöscht, also auch nicht eingefügt
         if key in rejected:
@@ -722,9 +733,21 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False):
     # Handarbeits-Zeilen überleben das DELETE — ihr Anbieter muss also auch den neu
     # gebauten Filter-Index überleben, sonst wäre die Handarbeit aus Suche und
     # Plattform-Listen verschwunden, obwohl die Zeile noch da steht (Entscheidung 8).
-    slugs |= {p for p, m in (anime.get("manual") or ()) if m in SWEEP_MONETIZATION}
-    stmts.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {aid};")
-    if slugs:
+    if only_provider:
+        # Nur der eigene Anbieter wird im Index angefasst. Hängt eine Handarbeits-Zeile
+        # an ihm, bleibt der Eintrag stehen.
+        behalten = any(p == only_provider and m in SWEEP_MONETIZATION for p, m in (anime.get("manual") or ()))
+        stmts.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {aid} "
+                     f"AND value = {q(only_provider)}::enum_anime_streaming_providers;")
+        if slugs or behalten:
+            stmts.append(
+                'INSERT INTO anime_streaming_providers ("order", parent_id, value) '
+                f"SELECT COALESCE((SELECT max(\"order\") FROM anime_streaming_providers WHERE parent_id = {aid}), 0) + 1, "
+                f"{aid}, {q(only_provider)}::enum_anime_streaming_providers;")
+    else:
+        slugs |= {p for p, m in (anime.get("manual") or ()) if m in SWEEP_MONETIZATION}
+        stmts.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {aid};")
+    if slugs and not only_provider:
         vals = ",".join(f"({i + 1}, {aid}, {q(s)}::enum_anime_streaming_providers)"
                         for i, s in enumerate(sorted(slugs)))
         stmts.append(f'INSERT INTO anime_streaming_providers ("order", parent_id, value) VALUES {vals};')
