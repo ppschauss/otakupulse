@@ -145,7 +145,7 @@ export async function platformListCounts(payload: any): Promise<Map<string, numb
      FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
      JOIN anime_rels ar ON ar.parent_id = a.id AND ar.genres_id IS NOT NULL
      JOIN genres g ON g.id = ar.genres_id
-     WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE GROUP BY o.provider, g.slug`,
+     WHERE o.monetization IN ('flatrate','ads','free') AND ${NOT_REJECTED} AND a.is_hentai IS NOT TRUE GROUP BY o.provider, g.slug`,
   )
   for (const r of g.rows) out.set(`${r.provider}/${r.slug}`, r.n)
   return out
