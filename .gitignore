@@ -45,3 +45,7 @@ bin/
 
 # --- Git-Worktrees der Claude-Sitzungen (Arbeitskopien, kein Projektinhalt) ---
 .claude/worktrees/
+
+# --- Python-Bytecode (pytest der Scraper-Tests) ---
+__pycache__/
+*.pyc
