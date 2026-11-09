@@ -1,5 +1,6 @@
+import pytest
 from .conftest import load
-jw = load("justwatch-streaming")
+jw =load("justwatch-streaming")
 
 def test_norm_cjk_behaelt_japanische_schrift():
     assert jw.norm_cjk("幻想水滸伝") == "幻想水滸伝"
@@ -107,3 +108,308 @@ def test_mapping_deckt_die_gemessenen_clearnames_ab():
                "amazon prime video", "amazon prime video with ads", "netflix",
                "netflix standard with ads", "rtl+", "rtl+ max amazon channel"]:
         assert cn in jw.CLEARNAME_TO_SLUG, cn
+
+
+# --- Aufgabe 11: Vererbung und Veto in der Titelsuche ------------------------------
+
+def _angebot(slug_name, url, monet="FLATRATE", audio=(), subs=(), count=None):
+    o = {"monetizationType": monet, "standardWebURL": url, "package": {"clearName": slug_name},
+         "audioLanguages": list(audio), "subtitleLanguages": list(subs)}
+    if count is not None:
+        o["elementCount"] = count
+    return o
+
+
+def _returner(serien_offers, staffel_offers=(), year=2023):
+    """Die gemessene Lage vom 2026-11-09: Angebote an der Serie, Staffel 2 leer."""
+    return {"objectType": "SHOW",
+            "content": {"title": "A Returner's Magic Should Be Special",
+                        "originalTitle": "帰還者の魔法は特別です", "originalReleaseYear": year},
+            "offers": list(serien_offers),
+            "seasons": [{"content": {"title": "Staffel 2", "seasonNumber": 2, "originalReleaseYear": 2026},
+                         "offers": list(staffel_offers)}]}
+
+
+CR = ("Crunchyroll", "https://crunchyroll.com/returner")
+
+
+def test_leere_staffel_erbt_bei_laufendem_titel_die_serien_anbieter():
+    """Regressionsfall Returner S2."""
+    node = {"objectType": "SHOW",
+            "content": {"title": "A Returner's Magic Should Be Special", "originalTitle": "帰還者の魔法は特別です", "originalReleaseYear": 2023},
+            "offers": [{"monetizationType": "FLATRATE", "standardWebURL": "https://crunchyroll.com/returner",
+                        "package": {"clearName": "Crunchyroll"}, "audioLanguages": ["ja"], "subtitleLanguages": ["de"]}],
+            "seasons": [{"content": {"title": "Staffel 2", "seasonNumber": 2, "originalReleaseYear": 2026}, "offers": []}]}
+    offers = jw.aggregate_offers(node, node["seasons"][0], status="RELEASING", year=2026, current_year=2026)
+    assert [o["provider"] for o in offers] == ["crunchyroll"]
+    assert offers[0]["confidence"] == "unconfirmed"
+    assert offers[0]["monetization"] == "flatrate"
+    assert offers[0]["audio"] == "" and offers[0]["subs"] == ""
+
+
+def test_leere_staffel_erbt_bei_altem_titel_nicht():
+    node = {"objectType": "SHOW",
+            "content": {"title": "X", "originalTitle": "X", "originalReleaseYear": 2010},
+            "offers": [{"monetizationType": "FLATRATE", "standardWebURL": "https://crunchyroll.com/x",
+                        "package": {"clearName": "Crunchyroll"}, "audioLanguages": [], "subtitleLanguages": []}],
+            "seasons": [{"content": {"title": "Staffel 2", "seasonNumber": 2, "originalReleaseYear": 2012}, "offers": []}]}
+    assert jw.aggregate_offers(node, node["seasons"][0], status="FINISHED", year=2012, current_year=2026) == []
+
+
+def test_geerbte_zeile_traegt_serien_link_und_keine_zaehlung():
+    node = _returner([_angebot(*CR, audio=["ja"], subs=["de"], count=2)])
+    (o,) = jw.aggregate_offers(node, node["seasons"][0], status="RELEASING", year=2026, current_year=2026)
+    assert o["url"] == "https://crunchyroll.com/returner"
+    assert o["seasons"] is None and o["episodes"] is None
+    assert o["available_to"] is None
+
+
+def test_laufender_jahrgang_erbt_auch_ohne_status_releasing():
+    node = _returner([_angebot(*CR)])
+    offers = jw.aggregate_offers(node, node["seasons"][0], status="FINISHED", year=2026, current_year=2026)
+    assert [o["confidence"] for o in offers] == ["unconfirmed"]
+
+
+def test_ohne_neue_parameter_wird_nichts_vererbt():
+    """Standardwerte: bestehende Aufrufe verhalten sich wie vorher."""
+    node = _returner([_angebot(*CR)])
+    assert jw.aggregate_offers(node, node["seasons"][0]) == []
+
+
+def test_belegtes_staffelangebot_ist_confirmed_und_wird_nicht_ueberschrieben():
+    node = _returner([_angebot(*CR, audio=["ja"]), _angebot("Netflix", "https://netflix.com/x")],
+                     [_angebot("Crunchyroll", "https://crunchyroll.com/s2", audio=["ja"], subs=["de"], count=12)])
+    offers = {o["provider"]: o for o in jw.aggregate_offers(
+        node, node["seasons"][0], status="RELEASING", year=2026, current_year=2026)}
+    assert offers["crunchyroll"]["confidence"] == "confirmed"
+    assert offers["crunchyroll"]["url"] == "https://crunchyroll.com/s2"
+    assert offers["crunchyroll"]["audio"] == "ja"
+    # Netflix hängt nur an der Serie -> geerbt, daneben das belegte Crunchyroll
+    assert offers["netflix"]["confidence"] == "unconfirmed"
+    assert len(offers) == 2
+
+
+def test_kauf_und_leih_angebote_der_serie_werden_nicht_vererbt():
+    node = _returner([_angebot("Amazon Video", "https://amazon.de/x", monet="BUY"),
+                      _angebot("Amazon Video", "https://amazon.de/x", monet="RENT")])
+    assert jw.aggregate_offers(node, node["seasons"][0], status="RELEASING", year=2026, current_year=2026) == []
+
+
+def test_werbe_angebot_der_serie_wird_als_flatrate_vererbt():
+    """Entscheidung 17: nie ads/free behaupten, wo wir es nur erben."""
+    node = _returner([_angebot("Pluto TV", "https://pluto.tv/x", monet="ADS")])
+    (o,) = jw.aggregate_offers(node, node["seasons"][0], status="RELEASING", year=2026, current_year=2026)
+    assert (o["provider"], o["monetization"], o["confidence"]) == ("pluto-tv", "flatrate", "unconfirmed")
+
+
+def test_direktanbieter_link_gewinnt_beim_vererben_gegen_amazon_channel():
+    node = _returner([_angebot("Crunchyroll Amazon Channel", "https://watch.amazon.de/cr"),
+                      _angebot("Crunchyroll", "https://crunchyroll.com/returner")])
+    offers = jw.aggregate_offers(node, node["seasons"][0], status="RELEASING", year=2026, current_year=2026)
+    assert [(o["provider"], o["url"]) for o in offers] == [("crunchyroll", "https://crunchyroll.com/returner")]
+
+
+def test_serien_anbieter_ohne_deep_link_wird_nicht_vererbt():
+    node = _returner([{"monetizationType": "FLATRATE", "standardWebURL": None,
+                       "package": {"clearName": "Crunchyroll"}, "audioLanguages": [], "subtitleLanguages": []}])
+    assert jw.aggregate_offers(node, node["seasons"][0], status="RELEASING", year=2026, current_year=2026) == []
+
+
+def test_ohne_staffel_ist_alles_confirmed_und_nichts_wird_vererbt():
+    node = _returner([_angebot(*CR, count=2)])
+    offers = jw.aggregate_offers(node, status="RELEASING", year=2026, current_year=2026)
+    assert [(o["provider"], o["confidence"]) for o in offers] == [("crunchyroll", "confirmed")]
+
+
+@pytest.mark.parametrize("status", [None, "RELEASING", "FINISHED", "NOT_YET_RELEASED"])
+@pytest.mark.parametrize("year", [None, 2014, 2026, "2026"])
+def test_titelsuche_und_sweep_ergeben_dieselbe_stufe(status, year):
+    """Eine Regel, eine Implementierung: bei derselben Lage (Anbieter nur am Werk, nicht
+    am gematchten Objekt) ergeben Titelsuche und Katalog-Sweep dieselbe Stufe."""
+    cat = load("justwatch-catalog")
+    node = _returner([_angebot(*CR)])
+    offers = jw.aggregate_offers(node, node["seasons"][0], status=status, year=year, current_year=2026)
+    erwartet = cat.confidence_for([], ["crunchyroll"], "crunchyroll", status, year, 2026)
+    assert [o["confidence"] for o in offers] == ([erwartet] if erwartet else [])
+
+
+def test_aggregate_offers_fragt_confidence_for_statt_eigene_regel(monkeypatch):
+    aufrufe = []
+    monkeypatch.setattr(jw, "confidence_for", lambda *a: (aufrufe.append(a), "unconfirmed")[1])
+    node = _returner([_angebot(*CR)])
+    offers = jw.aggregate_offers(node, node["seasons"][0], status="FINISHED", year=2014, current_year=2026)
+    assert len(aufrufe) == 1
+    assert aufrufe[0][2:] == ("crunchyroll", "FINISHED", 2014, 2026)
+    assert [o["confidence"] for o in offers] == ["unconfirmed"]
+
+
+# --- fetch_offers / load_anime: die Parameter kommen wirklich an --------------------
+
+class _Antwort:
+    status_code = 200
+
+    def __init__(self, node):
+        self._node = node
+
+    def json(self):
+        return {"data": {"popularTitles": {"edges": [{"node": self._node}]}}}
+
+
+def test_fetch_offers_vererbt_beim_regressionsfall(monkeypatch):
+    node = _returner([_angebot(*CR, audio=["ja"], subs=["de"])])
+    monkeypatch.setattr(jw, "api_post", lambda s, p: _Antwort(node))
+    a = {"id": 1, "slug": "kikansha-no-mahou-wa-tokubetsu-desu-2nd-season", "want": "SHOW", "year": 2026,
+         "status": "RELEASING",
+         "titles": ["", "A Returner's Magic Should Be Special Season 2", "Kikansha no Mahou wa Tokubetsu desu 2nd Season", ""]}
+    offers = jw.fetch_offers(None, a, current_year=2026)
+    assert offers, "Matcher findet die Serie, Staffel 2 muss Crunchyroll erben"
+    assert [(o["provider"], o["confidence"]) for o in offers] == [("crunchyroll", "unconfirmed")]
+
+
+def test_fetch_offers_erbt_bei_altem_titel_nicht(monkeypatch):
+    node = _returner([_angebot(*CR)])
+    monkeypatch.setattr(jw, "api_post", lambda s, p: _Antwort(node))
+    a = {"id": 1, "slug": "x", "want": "SHOW", "year": 2026, "status": "FINISHED",
+         "titles": ["", "A Returner's Magic Should Be Special Season 2", "", ""]}
+    assert jw.fetch_offers(None, a, current_year=2024) in (False, [])
+
+
+def test_load_anime_selektiert_status_und_liest_veto_und_handarbeit(monkeypatch):
+    sqls = []
+    antworten = iter([
+        '[{"id":7,"slug":"s","fmt":"TV","year":2026,"st":"RELEASING","de":"","en":"E","ro":"R","na":""}]',
+        '[]',
+        '[{"pid":7,"p":"crunchyroll","m":"flatrate","f":null,"s":"justwatch","c":"unconfirmed"},'
+        '{"pid":7,"p":"netflix","m":"flatrate","f":null,"s":"manual","c":null},'
+        '{"pid":7,"p":"adn","m":"flatrate","f":null,"s":"justwatch","c":"rejected"},'
+        '{"pid":7,"p":"hidive","m":"flatrate","f":"2026-01-01","s":null,"c":null}]',
+    ])
+    monkeypatch.setattr(jw, "psql", lambda sql, read=True: (sqls.append(sql), next(antworten))[1])
+    (a,) = jw.load_anime(slugs=["s"])
+    assert "a.status" in sqls[0]
+    assert a["status"] == "RELEASING"
+    assert a["manual"] == {("netflix", "flatrate")}
+    assert a["rejected"] == {("adn", "flatrate")}
+    assert a["offers"][("hidive", "flatrate")] == "2026-01-01"
+    assert a["confidence"][("hidive", "flatrate")] == "confirmed"  # NULL = belegt
+    assert "source" in sqls[2] and "confidence" in sqls[2]
+
+
+# --- build_sql: Schreiben mit Vertrauensstufe, Handarbeit und Veto ------------------
+
+def _offer(provider, monet="flatrate", conf="confirmed", audio="", subs="", url=None):
+    return {"provider": provider, "monetization": monet, "url": url or f"https://{provider}.example/x",
+            "audio": audio, "subs": subs, "seasons": None, "episodes": None, "available_to": None,
+            "confidence": conf}
+
+
+def _anime(**kw):
+    a = {"id": 42, "slug": "s", "have": set(), "offers": {}, "manual": set(), "rejected": set(), "confidence": {}}
+    a.update(kw)
+    return a
+
+
+NOW = "2026-11-09T12:00:00+00:00"
+
+
+def _inserts(stmts, tabelle="anime_streaming_offers"):
+    return [s for s in stmts if s.startswith(f"INSERT INTO {tabelle}")]
+
+
+def test_delete_spart_handarbeit_und_veto_aus_aber_nicht_die_monetarisierung():
+    stmts, _ = jw.build_sql(_anime(), [_offer("crunchyroll")], NOW)
+    d = stmts[0]
+    assert d.startswith("DELETE FROM anime_streaming_offers WHERE _parent_id = 42")
+    assert "source IS DISTINCT FROM 'manual'" in d
+    assert "confidence IS DISTINCT FROM 'rejected'" in d
+    assert "monetization" not in d, "die Titelsuche ist fuer Kauf und Leih autoritativ"
+
+
+def test_insert_traegt_confidence_und_source():
+    stmts, _ = jw.build_sql(_anime(), [_offer("crunchyroll", conf="unconfirmed")], NOW)
+    (ins,) = _inserts(stmts)
+    assert "confidence,source" in ins
+    assert "'unconfirmed', 'justwatch')" in ins
+
+
+def test_insert_ohne_confidence_im_dict_gilt_als_confirmed():
+    o = _offer("crunchyroll")
+    del o["confidence"]
+    stmts, _ = jw.build_sql(_anime(), [o], NOW)
+    assert "'confirmed', 'justwatch')" in _inserts(stmts)[0]
+
+
+def test_veto_paar_wird_nicht_eingefuegt():
+    a = _anime(rejected={("crunchyroll", "flatrate")}, offers={("crunchyroll", "flatrate"): None})
+    stmts, _ = jw.build_sql(a, [_offer("crunchyroll"), _offer("netflix")], NOW)
+    (ins,) = _inserts(stmts)
+    assert "'netflix'" in ins and "'crunchyroll'" not in ins
+    (idx,) = _inserts(stmts, "anime_streaming_providers")
+    assert "'netflix'" in idx and "'crunchyroll'" not in idx
+
+
+def test_veto_gilt_nur_fuer_dasselbe_paar():
+    a = _anime(rejected={("crunchyroll", "flatrate")})
+    stmts, _ = jw.build_sql(a, [_offer("crunchyroll", monet="buy")], NOW)
+    assert any("'crunchyroll', 'buy'" in s for s in _inserts(stmts))
+
+
+def test_unbestaetigtes_angebot_kommt_in_den_filter_index_aber_nicht_in_die_sprachen():
+    o = _offer("crunchyroll", conf="unconfirmed", audio="ja", subs="de")  # selbst mit Sprachen im Dict
+    stmts, _ = jw.build_sql(_anime(), [o], NOW)
+    assert "'crunchyroll'::enum_anime_streaming_providers" in "\n".join(stmts)
+    assert not _inserts(stmts, "anime_available_languages")
+
+
+def test_belegtes_angebot_liefert_weiter_seine_sprachen():
+    stmts, _ = jw.build_sql(_anime(), [_offer("crunchyroll", audio="ja", subs="de")], NOW)
+    assert _inserts(stmts, "anime_available_languages")
+
+
+def test_kaufangebot_bleibt_ausserhalb_des_index():
+    stmts, _ = jw.build_sql(_anime(), [_offer("amazon-video", monet="buy")], NOW)
+    assert not _inserts(stmts, "anime_streaming_providers")
+
+
+def test_handarbeits_anbieter_bleibt_im_filter_index():
+    a = _anime(manual={("netflix", "flatrate")}, offers={("netflix", "flatrate"): None})
+    stmts, _ = jw.build_sql(a, [_offer("crunchyroll")], NOW)
+    (idx,) = _inserts(stmts, "anime_streaming_providers")
+    assert "'netflix'" in idx and "'crunchyroll'" in idx
+
+
+def test_order_beginnt_nicht_bei_eins_da_zeilen_stehen_bleiben():
+    stmts, _ = jw.build_sql(_anime(), [_offer("crunchyroll")], NOW)
+    assert "max(_order)" in _inserts(stmts)[0]
+
+
+def test_handarbeit_und_veto_loesen_keine_dauer_aenderung_aus():
+    """Stehengebliebene Zeilen sind kein Unterschied zum Ergebnis des letzten Laufs."""
+    a = _anime(have={"crunchyroll", "netflix"},
+               offers={("crunchyroll", "flatrate"): None, ("netflix", "flatrate"): None, ("adn", "flatrate"): None},
+               manual={("netflix", "flatrate")}, rejected={("adn", "flatrate")},
+               confidence={("crunchyroll", "flatrate"): "confirmed"})
+    _, changed = jw.build_sql(a, [_offer("crunchyroll"), _offer("adn")], NOW)
+    assert changed is False
+
+
+def test_wechsel_der_vertrauensstufe_zaehlt_als_aenderung():
+    a = _anime(have={"crunchyroll"}, offers={("crunchyroll", "flatrate"): None},
+               confidence={("crunchyroll", "flatrate"): "unconfirmed"})
+    _, changed = jw.build_sql(a, [_offer("crunchyroll", conf="confirmed")], NOW)
+    assert changed is True
+
+
+def test_first_seen_bleibt_erhalten_auch_null():
+    a = _anime(have={"crunchyroll"}, offers={("crunchyroll", "flatrate"): None})
+    stmts, _ = jw.build_sql(a, [_offer("crunchyroll", conf="unconfirmed")], NOW)
+    assert f"NULL, '{NOW}', 'unconfirmed'" in _inserts(stmts)[0]
+
+
+def test_leere_angebotsliste_laesst_handarbeit_und_veto_im_index_und_in_der_tabelle():
+    """Der `--purge-unmatched`-Pfad ruft build_sql mit []: dieselben Ausnahmen."""
+    a = _anime(manual={("netflix", "flatrate")}, offers={("netflix", "flatrate"): None})
+    stmts, _ = jw.build_sql(a, [], NOW)
+    assert "source IS DISTINCT FROM 'manual'" in stmts[0]
+    assert "confidence IS DISTINCT FROM 'rejected'" in stmts[0]
+    assert "'netflix'" in _inserts(stmts, "anime_streaming_providers")[0]
