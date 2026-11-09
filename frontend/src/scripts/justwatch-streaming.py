@@ -728,9 +728,15 @@ def build_sql(a, offers, now_iso, initial=False):
     und fasst Crunchyroll-Zeilen nicht mehr an; `build_catalog_sql` ist der breite,
     autoritative Weg und überschreibt sie weiter. Danach stellt der tägliche
     Crunchyroll-Lauf den Beleg wieder her (Cron-Reihenfolge: Sweep zuerst, siehe
-    `catalog-sweep.sh`). Altert ein Titel aus dem Crunchyroll-Umfang heraus, räumt der
-    Sweep die dann nicht mehr gepflegte Zeile ab — keine Crunchyroll-Zeile friert dauerhaft
-    ein, und ein echtes Lizenzende bleibt über den Sweep entfernbar.
+    `catalog-sweep.sh`).
+
+    WAS DIESE AUSSPARUNG SICHER MACHT, IST NICHT DER SWEEP: er trifft eine
+    Fortsetzungsstaffel nie (`match_node` matcht nur die Erststaffel, bewusst), kann dort
+    also auch keine nicht mehr gepflegte `confirmed`-Zeile abräumen. Der Löschweg ist der
+    Frische-Verfall am Ende des Crunchyroll-Laufs (`expiry_sql` in `crunchyroll-dub.py`):
+    jeder Lauf schreibt seine Zeilen neu, was sieben Tage lang nicht mehr bestätigt wurde,
+    wird gelöscht. Erst damit bleibt ein echtes Lizenzende entfernbar — über diese
+    Aussparung hinweg.
 
     Beide Vergleiche mit `IS DISTINCT FROM`: der Altbestand (3.197 Zeilen) trägt
     `source`/`confidence` NULL, und `<> 'rejected'` wirft NULL-Zeilen aus dem Ergebnis —

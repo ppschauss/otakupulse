@@ -6,6 +6,12 @@
 # MUSS NACH catalog-sweep.sh LAUFEN (Cron: Sweep Mo 05:20, dieser Lauf täglich 05:40):
 # der Sweep überschreibt die Crunchyroll-Zeile mit einer geerbten, unbestätigten, dieser
 # Lauf stellt den Beleg wieder her. Begründung ausführlich in catalog-sweep.sh.
+#
+# Dieser Lauf ist zugleich der einzige LÖSCHWEG für Crunchyroll-Belege: nach einem
+# erfolgreichen Durchlauf räumt der Frische-Verfall Zeilen ab, deren last_seen_at älter
+# als 7 Tage ist (expiry_sql). Fällt der Job länger als eine Woche aus, verschwinden
+# belegte Zeilen und die Titel fallen auf die gekennzeichnete JustWatch-Angabe zurück —
+# ein ausgefallener Lauf ist hier also sichtbar, nicht still.
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 F=/mnt/cache/appdata/otakupulse/frontend
 LOG=/tmp/otaku-crunchyroll-availability.log

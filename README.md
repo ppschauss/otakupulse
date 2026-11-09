@@ -573,7 +573,7 @@ Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron
 | `15 4 * * *` | `otakupulse-sync.sh` | AniList-Sync → JustWatch → News → Telegram → IndexNow |
 | `45 */4 * * *` | `refresh-streaming.sh` | rollierender Streaming-Abgleich (`--stale-weighted 150`), danach Lücken-Alarm |
 | `20 5 * * 1` | `catalog-sweep.sh` | Katalog-Sweep (`justwatch-catalog.py --sweep`), setzt `streamingVerifiedAt`, danach Lücken-Alarm |
-| `40 5 * * *` | `crunchyroll-availability.sh` | Crunchyroll-Direktbeleg (`crunchyroll-dub.py --availability`) |
+| `40 5 * * *` | `crunchyroll-availability.sh` | Crunchyroll-Direktbeleg (`crunchyroll-dub.py --availability`), danach Frische-Verfall (> 7 Tage) |
 | `55 7 * * 1` | `generate-recurring-news --weekly-preview` | Wochenvorschau (Mo) |
 | `0 12 * * 3` | `generate-recurring-news --genre-spotlight` | Genre-Spotlight (Mi) |
 | `0 8 * * 4` | `generate-recurring-news --platform-new` | „Neu auf <Anbieter>" (Do) |
@@ -591,8 +591,18 @@ verworfen: er könnte ein echtes Lizenzende nie mehr entfernen, und die Zeile w�
 außerhalb des Crunchyroll-Umfangs dauerhaft eingefroren. Die Begründung steht auch im Kopf von
 `catalog-sweep.sh`. Die vierstündige Titelsuche (`build_sql`) spart `source = 'crunchyroll'`
 dagegen aus — sie ist der enge, titelweise Weg; sonst machte `--stale-weighted`, das laufende
-Titel zuerst nimmt, den Beleg binnen Stunden wieder zur geerbten Zeile. Der wöchentliche Sweep
-bleibt autoritativ: er räumt nicht mehr gepflegte Crunchyroll-Zeilen ab, daher friert keine ein.
+Titel zuerst nimmt, den Beleg binnen Stunden wieder zur geerbten Zeile.
+
+**Was die Aussparung sicher macht, ist nicht der Sweep, sondern der Frische-Verfall.** Der Sweep
+fasst nur gematchte Titel an, und eine Fortsetzungsstaffel matcht er nie (`match_node` trifft
+bewusst nur die Erststaffel) — eine dort liegende `confirmed`-Zeile könnte er also nie abräumen.
+Das tut der Crunchyroll-Lauf selbst: nach einem **erfolgreichen** Durchlauf löscht er alle Zeilen
+mit `source = 'crunchyroll'`, deren `lastSeenAt` älter als **7 Tage** ist (`AVAIL_STALE_DAYS`,
+`expiry_sql` in `crunchyroll-dub.py`). Jeder Lauf schreibt seine Zeilen neu, eine gepflegte Zeile
+ist also immer frisch; ein Lizenzende verschwindet spätestens nach einer Woche. Ein unvollständiger
+Lauf (403/429, Token-Fehler, keine einzige Auflösung) räumt **nichts** ab. Folge eines längeren
+Ausfalls: belegte Crunchyroll-Zeilen verschwinden nach einer Woche, und die betroffenen Titel
+fallen auf die als „nicht bestätigt" gekennzeichnete JustWatch-Angabe zurück.
 
 **Kennzahl und Alarm:** `npx tsx src/scripts/streaming-coverage.ts` weist Angebote und Titel je
 Vertrauensstufe (`confirmed`/`unconfirmed`/`rejected`), `streamingVerifiedAt` und die Lücke der

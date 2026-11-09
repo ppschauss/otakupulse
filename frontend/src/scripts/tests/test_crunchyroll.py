@@ -259,7 +259,8 @@ def _lauf(monkeypatch, stock, resolved, capsys):
     """availability_main ohne Netz/DB: Katalog-Modul, Lader, Token, Aufloesung und psql
     sind ersetzt. Gibt die Ids zurueck, fuer die aufgeloest wurde, und die Ausgabe."""
     import types
-    cat_fake = types.SimpleNamespace(load_all_anime=lambda: stock, build_catalog_sql=cat.build_catalog_sql)
+    cat_fake = types.SimpleNamespace(load_all_anime=lambda: stock, build_catalog_sql=cat.build_catalog_sql,
+                                     q=cat.q)
     monkeypatch.setattr(cr, "_catalog_module", lambda: cat_fake)
     monkeypatch.setattr(cr, "load_anime", lambda: [
         {"id": s["id"], "titles": ["T", "", ""], "series_id": None, "cr_slugs": set()} for s in stock])
@@ -303,3 +304,90 @@ def test_availability_main_schreibt_keine_aehnlichkeitstreffer(monkeypatch, caps
     _, out = _lauf(monkeypatch, [_titel(i, "RELEASING", jahr) for i in (1, 2, 3)], resolved, capsys)
     assert "t1: crunchyroll" not in out
     assert "t2: crunchyroll confirmed" in out and "t3: crunchyroll confirmed" in out
+
+
+# --- Fix-Welle: Frische-Verfall (Befund 1) ------------------------------------------
+# Fuer eine `confirmed`-Zeile auf einer Fortsetzungsstaffel gibt es sonst KEINEN
+# Loeschweg: `match_node` trifft die Fortsetzung nie, also raeumt der Sweep sie nie ab.
+
+
+def test_verfall_erfasst_acht_tage_alte_zeile_aber_keine_sechs_tage_alte():
+    """Ohne DB ist die Grenze nur ueber die Konstante pruefbar — und genau sie muss im
+    SQL stehen, nicht ein getipptes Literal."""
+    import datetime
+    sql = cr.expiry_sql(True)[0]
+    assert "last_seen_at < now() - interval" in sql
+    assert f"interval '{cr.AVAIL_STALE_DAYS} days'" in sql
+    now = datetime.datetime(2026, 11, 9, tzinfo=datetime.timezone.utc)
+    grenze = now - datetime.timedelta(days=cr.AVAIL_STALE_DAYS)
+    assert now - datetime.timedelta(days=8) < grenze   # acht Tage alt: wird abgeraeumt
+    assert now - datetime.timedelta(days=6) > grenze   # sechs Tage alt: bleibt stehen
+
+
+def test_verfall_nennt_nur_crunchyroll_und_keine_zuversicht():
+    sql = cr.expiry_sql(True)[0]
+    assert "source = 'crunchyroll'" in sql
+    for fremd in ("justwatch", "adn", "manual"):
+        assert fremd not in sql
+    assert "confidence" not in sql
+
+
+def test_verfall_nur_nach_erfolgreichem_durchlauf():
+    """Token-Fehler oder 403/429 duerfen keine belegten Zeilen abraeumen."""
+    assert cr.expiry_sql(False) == []
+    # Erfolgsbegriff wie `run_complete` im Katalog-Skript: kein Abruffehler UND
+    # ueberhaupt etwas erreicht.
+    assert cr.availability_complete({"id": 3}, versucht=3, belegt=3) is True
+    assert cr.availability_complete({"id": 2, "err": 1}, versucht=3, belegt=2) is False
+    assert cr.availability_complete({"no-match": 3}, versucht=3, belegt=0) is False
+    assert cr.availability_complete({}, versucht=0, belegt=0) is False
+
+
+def _lauf_schreibend(monkeypatch, stock, resolved, capsys):
+    """Wie `_lauf`, aber ohne Trockenlauf: gibt das geschriebene SQL zurueck."""
+    import types
+    cat_fake = types.SimpleNamespace(load_all_anime=lambda: stock, build_catalog_sql=cat.build_catalog_sql,
+                                     q=cat.q)
+    monkeypatch.setattr(cr, "_catalog_module", lambda: cat_fake)
+    monkeypatch.setattr(cr, "load_anime", lambda: [
+        {"id": s["id"], "titles": ["T", "", ""], "series_id": None, "cr_slugs": set()} for s in stock])
+    monkeypatch.setattr(cr, "get_token", lambda s: "tok")
+    monkeypatch.setattr(cr, "requests", types.SimpleNamespace(Session=lambda **k: None))
+    monkeypatch.setattr(cr, "resolve_series", lambda session, token, a: resolved[a["id"]])
+    geschrieben = []
+    monkeypatch.setattr(cr, "psql", lambda sql, read=True: geschrieben.append(sql) or "")
+    cr.availability_main(False)
+    return "\n".join(geschrieben), capsys.readouterr().out
+
+
+def _serie(sid="GABC"):
+    return {"id": sid, "series_metadata": {"audio_locales": ["ja-JP"], "subtitle_locales": ["de-DE"]}}
+
+
+def test_verfall_laeuft_am_ende_eines_erfolgreichen_durchlaufs(monkeypatch, capsys):
+    import datetime
+    jahr = datetime.datetime.now(datetime.timezone.utc).year
+    sql, _ = _lauf_schreibend(monkeypatch, [_titel(1, "RELEASING", jahr)], {1: (_serie(), "id")}, capsys)
+    assert "last_seen_at < now() - interval" in sql
+    # Erst schreiben, dann abraeumen — sonst fiele die eben geschriebene Zeile mit.
+    assert sql.index("INSERT INTO anime_streaming_offers") < sql.index("last_seen_at < now() - interval")
+    assert sql.index("last_seen_at < now() - interval") < sql.rindex("COMMIT;")
+
+
+def test_kein_verfall_wenn_der_durchlauf_an_fehlern_scheitert(monkeypatch, capsys):
+    import datetime
+    jahr = datetime.datetime.now(datetime.timezone.utc).year
+    stock = [_titel(1, "RELEASING", jahr), _titel(2, "RELEASING", jahr)]
+    resolved = {1: (_serie(), "id"), 2: (None, "err")}
+    sql, out = _lauf_schreibend(monkeypatch, stock, resolved, capsys)
+    assert "last_seen_at < now() - interval" not in sql
+    assert "INSERT INTO anime_streaming_offers" in sql   # Schreiben bleibt erlaubt
+
+
+def test_kein_verfall_wenn_der_lauf_nichts_belegt(monkeypatch, capsys):
+    """Stille Semantikaenderung bei Crunchyroll (HTTP 200, keine Treffer) darf nicht den
+    ganzen Bestand abraeumen — dieselbe Falle wie `knoten > 0` im Katalog-Skript."""
+    import datetime
+    jahr = datetime.datetime.now(datetime.timezone.utc).year
+    sql, _ = _lauf_schreibend(monkeypatch, [_titel(1, "RELEASING", jahr)], {1: (None, "no-match")}, capsys)
+    assert "last_seen_at < now() - interval" not in sql

@@ -342,6 +342,34 @@ Als Entscheidung des Autors dieses Dokuments, nicht abgestimmt:
     dafuer eine eigene Aufgabe vor; sie wurde in diesem Durchlauf NICHT gebaut (siehe
     Ledger-Ruling R39).
 
+    **NACHTRAG 2026-11-09, Fix-Welle nach dem Branch-Review: die Direktquelle braucht
+    einen eigenen Löschweg (Frische-Verfall).** Die gebaute Asymmetrie lautet: die
+    vierstündige Titelsuche (`build_sql`) spart `source = 'crunchyroll'` aus, damit sie
+    den Beleg nicht binnen Stunden wieder zur geerbten Zeile macht; der wöchentliche
+    Katalog-Sweep spart ihn NICHT aus und überschreibt ihn, der tägliche
+    Crunchyroll-Lauf danach stellt ihn wieder her (Cron-Reihenfolge).
+    Die Begründung „damit friert nichts ein, der Sweep räumt eine nicht mehr gepflegte
+    Zeile ab" war **falsch** und steht so nicht mehr im Code: der Sweep fasst nur
+    gematchte Titel an, und eine Fortsetzungsstaffel matcht er bewusst nie
+    (Entscheidung 24, Fehlerklasse A — genau der Fall, für den diese Quelle gebaut wurde).
+    Für eine `confirmed`-Zeile auf einer Fortsetzungsstaffel gab es damit **keinen**
+    Löschweg: nicht über die Titelsuche (ausgespart), nicht über den Sweep (kein Match),
+    nicht über `--purge-unmatched` (läuft über `build_sql`), und auch nicht über den
+    Crunchyroll-Lauf selbst, der bei leerer Angebotsliste absichtlich nichts löscht.
+    Ein Lizenzende wäre dauerhaft als BELEG stehen geblieben — mit Deep-Link,
+    `WatchAction` und Platz in den Plattform-Listen, also genau Anti-Ziel 1.
+    **Gebaut ist deshalb der Verfall über Frische:** jeder Lauf löscht und schreibt seine
+    Zeilen neu, eine gepflegte Zeile trägt also immer ein frisches `last_seen_at`. Am
+    Ende eines **erfolgreichen** Durchlaufs löscht der Lauf alle Zeilen mit
+    `source = 'crunchyroll'`, deren `last_seen_at` älter als sieben Tage ist
+    (`AVAIL_STALE_DAYS`, `expiry_sql` in `crunchyroll-dub.py`; keine Bedingung auf
+    `confidence`, keine andere Quelle). „Erfolgreich" heißt wie beim Sweep: kein
+    Abruffehler (403/429 nach Backoff) und mindestens ein Beleg im ganzen Durchlauf —
+    sonst räumt der Lauf nichts ab, denn eine IP-Sperre sieht sonst aus wie ein
+    Katalogabgang. Sieben Tage = sechs geduldete Fehlläufe in Folge bei täglichem Cron.
+    Erst dieser Verfall macht die Asymmetrie sicher; jede weitere Direktquelle (ADN)
+    braucht denselben Mechanismus.
+
     **Ursprünglicher, unvollstaendiger Befund.** Gemessen am 2026-11-09:
     `GET https://gw.api.animationdigitalnetwork.com/show/catalog?limit=50`
     antwortet HTTP 200 mit `{shows:[…], total:…}`, `limit=200` bereits HTTP 400.

@@ -25,6 +25,9 @@ Aufruf:  python3 src/scripts/crunchyroll-dub.py
            Verfügbarkeits-Modus: belegt laufende Titel (RELEASING + laufender und
            vorheriger Jahrgang) direkt bei Crunchyroll (`confirmed`, `source='crunchyroll'`)
            und schreibt über `build_catalog_sql` des JustWatch-Katalog-Skripts.
+           Am Ende eines ERFOLGREICHEN Durchlaufs räumt der Frische-Verfall
+           Crunchyroll-Zeilen ab, die seit `AVAIL_STALE_DAYS` Tagen nicht mehr bestätigt
+           wurden — der einzige Löschweg für Fortsetzungsstaffeln.
 """
 import base64
 import json
@@ -351,12 +354,67 @@ def availability_sql(anime: dict, offers: list[dict], now_iso: str) -> list[str]
 
     Ohne Angebot kommt `[]` zurück, nicht ein reines `DELETE`: "nicht gefunden" ist auch
     der Zustand eines fehlgeschlagenen Matches oder eines API-Fehlers und darf nichts
-    löschen. Ein echtes Lizenzende bemerkt der JustWatch-Abgleich."""
+    löschen — pro Titel ist das die richtige Vorsicht, aber es ist KEIN Löschweg. Ein
+    echtes Lizenzende entfernt deshalb nicht dieser Aufruf, sondern der Frische-Verfall
+    am Ende des Durchlaufs (`expiry_sql`): nur er erreicht auch die Fortsetzungsstaffeln,
+    die der JustWatch-Sweep nie anfasst (`match_node` trifft sie bewusst nie)."""
     mine = [o for o in offers if o.get("provider") == AVAIL_PROVIDER]
     if not mine:
         return []
     return _catalog_module().build_catalog_sql(anime, mine, now_iso, discovery=False,
                                                only_provider=AVAIL_PROVIDER)
+
+
+# Frische-Verfall: wie viele Tage eine Crunchyroll-Zeile ohne neue Bestätigung überlebt.
+# Jeder Lauf löscht und schreibt seine Zeilen neu, eine gepflegte Zeile trägt also immer
+# ein frisches `last_seen_at`; eine nicht mehr bestätigte veraltet sichtbar. Sieben Tage
+# bei täglichem Cron heißt: sechs ausgefallene Läufe in Folge sind geduldet, bevor ein
+# Beleg verschwindet — und ein Lizenzende ist spätestens nach einer Woche weg.
+AVAIL_STALE_DAYS = 7
+
+
+def availability_complete(stats: dict, versucht: int, belegt: int) -> bool:
+    """War DER GANZE Durchlauf erfolgreich genug, um Zeilen abräumen zu dürfen?
+
+    Derselbe Begriff wie `run_complete` im Katalog-Skript, übertragen auf diesen Lauf:
+      - `versucht == 0`: es wurde nichts abgefragt, also ist nichts belegt;
+      - ein einziger Abruffehler (Methode `err`: HTTP 403/429 nach Backoff, 5xx) macht
+        den Durchlauf unvollständig. Eine IP-Sperre mitten im Lauf sieht sonst aus wie
+        "Crunchyroll führt den Titel nicht mehr";
+      - `belegt == 0`: kein einziger Beleg im ganzen Durchlauf. Auslöser ist hier kein
+        Netzwerkfehler, sondern eine stille Semantikänderung (Suche/Serien-API
+        antworten mit HTTP 200 und leerer Liste) — genau die Falle, gegen die im
+        Katalog-Skript `knoten > 0` steht.
+    Die Token-Beschaffung scheitert davor laut (`raise_for_status`), der Lauf kommt dann
+    gar nicht bis hierher."""
+    if versucht <= 0 or belegt <= 0:
+        return False
+    return stats.get("err", 0) == 0
+
+
+def expiry_sql(complete: bool) -> list[str]:
+    """Frische-Verfall für `source = 'crunchyroll'` — oder `[]`.
+
+    Der Löschweg, den es sonst nicht gibt: eine `confirmed`-Zeile auf einer
+    Fortsetzungsstaffel erreicht weder der wöchentliche Sweep (`match_node` trifft die
+    Fortsetzung bewusst nie) noch die Titelsuche (`build_sql` spart
+    `source = 'crunchyroll'` aus) noch `--purge-unmatched`. Ohne diese Anweisung zeigte
+    die Seite nach einem Lizenzende dauerhaft eine als BELEGT gekennzeichnete
+    Verfügbarkeit samt Deep-Link, `WatchAction` und Platz in den Plattform-Listen.
+
+    Nur auf `source`, nie auf `confidence`: eine unbestätigte Crunchyroll-Zeile gibt es
+    nicht (dieser Lauf schreibt ausschließlich Belege), und eine Bedingung auf
+    `confidence` würde den Altbestand mit `confidence IS NULL` falsch behandeln.
+    Fremde Quellen bleiben unberührt — für die ist der JustWatch-Abgleich autoritativ.
+
+    `complete=False` erzeugt NICHTS (siehe `availability_complete`): ein Lauf, der an
+    der Token-Beschaffung oder an 403/429 scheitert, darf keine belegten Zeilen
+    abräumen."""
+    if not complete:
+        return []
+    q = _catalog_module().q
+    return [f"DELETE FROM anime_streaming_offers WHERE source = {q(AVAIL_PROVIDER)} "
+            f"AND last_seen_at < now() - interval '{int(AVAIL_STALE_DAYS)} days';"]
 
 
 def is_direct_evidence(series, method) -> bool:
@@ -382,7 +440,14 @@ def availability_main(dry_run: bool):
     Dessen `DELETE` löscht alle Abo-Zeilen des Titels unabhängig von `source` und legt
     für laufende Fortsetzungen wieder die geerbte `unconfirmed`-Zeile an; erst dieser
     Lauf stellt den Beleg wieder her. Der Sweep darf `source='crunchyroll'` bewusst
-    NICHT aussparen, sonst könnte er ein echtes Lizenzende nie mehr entfernen.
+    NICHT aussparen, sonst könnte er für Titel im Crunchyroll-Umfang ein echtes
+    Lizenzende nie mehr entfernen.
+
+    LÖSCHEN kann dieser Lauf nur über den Frische-Verfall (`expiry_sql`), und er ist
+    dafür die einzige Stelle: eine Fortsetzungsstaffel erreicht der Sweep nie
+    (`match_node` trifft sie bewusst nicht), die Titelsuche spart `source='crunchyroll'`
+    aus. Der Verfall hängt am Erfolgspfad (`availability_complete`) — ein Lauf, der an
+    403/429 oder an leeren Antworten scheitert, räumt nichts ab.
 
     EINE Schleife mit demselben `MAX_WORKERS` wie der Dub-Lauf; sie läuft nur, wenn der
     Modus aufgerufen wird. Nicht gleichzeitig mit dem Dub-Lauf starten — beide teilen
@@ -433,12 +498,23 @@ def availability_main(dry_run: bool):
         # Neue Angabe = inhaltliche Änderung (Sitemap-lastmod), wie im Katalog-Abgleich.
         stmts.append(f"UPDATE anime SET content_updated_at = now(), updated_at = now() "
                      f"WHERE id IN ({','.join(str(int(i)) for i in neu)});")
+    # Frische-Verfall ZULETZT, nach allen Schreibvorgängen: die eben geschriebenen Zeilen
+    # tragen `last_seen_at = now_iso` und bleiben damit stehen. Nur auf dem Erfolgspfad —
+    # ein unvollständiger Durchlauf räumt nichts ab.
+    complete = availability_complete(stats, len(anime), len(belegt))
+    verfall = expiry_sql(complete)
+    stmts += verfall
     stmts.append("COMMIT;")
+    if not complete:
+        print(f"  → Durchlauf unvollständig ({len(anime)} im Umfang, {len(belegt)} belegt, "
+              f"{stats.get('err', 0)} Abruffehler): KEIN Frische-Verfall.")
     if dry_run:
-        print(f"  Trockenlauf: nichts geschrieben ({len(belegt)} Titel, {len(neu)} mit neuem Crunchyroll-Paar).")
+        print(f"  Trockenlauf: nichts geschrieben ({len(belegt)} Titel, {len(neu)} mit neuem Crunchyroll-Paar"
+              f"{', Verfall vorgesehen' if verfall else ''}).")
         return
     psql("\n".join(stmts), read=False)
-    print(f"✓ {len(belegt)} Titel mit belegtem Crunchyroll-Angebot geschrieben ({len(neu)} neu).")
+    print(f"✓ {len(belegt)} Titel mit belegtem Crunchyroll-Angebot geschrieben ({len(neu)} neu)"
+          f"{f'; Crunchyroll-Zeilen älter als {AVAIL_STALE_DAYS} Tage abgeräumt' if verfall else ''}.")
 
 
 def main():

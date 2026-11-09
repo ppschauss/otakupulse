@@ -15,8 +15,13 @@
 #   Crunchyroll-Umfangs dauerhaft eingefroren (dagegen hat Aufgabe 12 ihren Regressionstest).
 #   Die vierstündige Titelsuche (refresh-streaming.sh) dagegen spart source='crunchyroll'
 #   aus (build_sql): sie ist der enge, titelweise Weg und fasst den Beleg nicht an. Die
-#   Asymmetrie ist Absicht und sicher: der Sweep räumt eine nicht mehr gepflegte
-#   Crunchyroll-Zeile weiter ab, es friert nichts dauerhaft ein.
+#   Asymmetrie ist Absicht — sicher macht sie aber NICHT dieser Sweep: er fasst nur
+#   gematchte Titel an, und eine Fortsetzungsstaffel matcht er nie (match_node trifft
+#   bewusst nur die Erststaffel). Eine dort liegende, nicht mehr gepflegte
+#   Crunchyroll-Zeile räumt ausschließlich der Frische-Verfall am Ende des
+#   Crunchyroll-Laufs ab (expiry_sql in crunchyroll-dub.py: source='crunchyroll' und
+#   last_seen_at älter als 7 Tage, nur nach einem erfolgreichen Durchlauf). Ohne ihn
+#   fröre ein Lizenzende auf einer Fortsetzungsstaffel dauerhaft als BELEG ein.
 #   Wer die Uhrzeiten ändert: Sweep muss VOR crunchyroll-availability.sh liegen.
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 F=/mnt/cache/appdata/otakupulse/frontend

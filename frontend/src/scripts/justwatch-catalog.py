@@ -633,10 +633,17 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False, only_provider=Non
     `source = 'crunchyroll'` aus, dieses `DELETE` NICHT. Der wöchentliche Sweep ist der
     breite, autoritative Weg und überschreibt den Crunchyroll-Beleg weiter; der tägliche
     Crunchyroll-Lauf (`crunchyroll-availability.sh`, Cron NACH dem Sweep) stellt ihn direkt
-    danach wieder her. Altert ein Titel aus dem Crunchyroll-Umfang heraus, räumt der Sweep
-    die dann nicht mehr gepflegte `confirmed`-Zeile ab — es gibt keinen Pfad, auf dem eine
-    Crunchyroll-Zeile dauerhaft einfriert, und ein echtes Lizenzende bleibt entfernbar.
-    Die vierstündige Titelsuche ist dagegen der enge, titelweise Weg und fasst sie nicht an.
+    danach wieder her. Die vierstündige Titelsuche ist dagegen der enge, titelweise Weg und
+    fasst sie nicht an.
+
+    Dieses `DELETE` ist dabei NICHT der Löschweg für Crunchyroll-Zeilen: der Sweep fasst
+    nur gematchte Titel an, und eine Fortsetzungsstaffel matcht er nie (`match_node`
+    trifft nur die Erststaffel, abgesichert durch
+    `test_fortsetzungsstaffel_wird_nicht_von_der_serie_getroffen`). Eine dort liegende
+    `confirmed`-Zeile entfernt ausschließlich der Frische-Verfall am Ende des
+    Crunchyroll-Laufs (`expiry_sql` in `crunchyroll-dub.py`, `last_seen_at` älter als
+    sieben Tage). Erst er macht die Asymmetrie sicher — ohne ihn fröre ein Lizenzende
+    auf einer Fortsetzungsstaffel dauerhaft als Beleg ein.
 
     Weiter gilt:
       - `source = 'manual'` wird nicht gelöscht (Entscheidung 8) und ein Paar mit
@@ -666,7 +673,12 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False, only_provider=Non
     `provider = 'crunchyroll'`, Angebote anderer Anbieter in `offers` werden ignoriert,
     und der Filter-Index wird nicht neu gebaut, sondern nur um diesen einen Anbieter
     bereinigt und ergänzt. Sprachen bleiben additiv wie sonst. Ohne den Parameter
-    ändert sich nichts am Verhalten des Sweeps."""
+    ändert sich nichts am Verhalten des Sweeps.
+
+    Preis dieser Einschränkung: mit `only_provider` ist der Aufruf nur noch für EINEN
+    Anbieter autoritativ und erreicht einen Titel nur, wenn die Quelle ihn gerade
+    gefunden hat. Für das Entfernen braucht so ein Aufrufer deshalb einen eigenen Weg;
+    der Crunchyroll-Lauf hat ihn im Frische-Verfall (`expiry_sql`), nicht im Sweep."""
     aid = anime["id"]
     scope = f" AND provider = {q(only_provider)}" if only_provider else ""
     monets = ",".join(q(m) for m in SWEEP_MONETIZATION)
