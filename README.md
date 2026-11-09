@@ -299,6 +299,15 @@ der laufenden Season FALL 2026 haben 52 von 110 Titeln keine Angabe. Liste 2 ist
 Beginn riesig und schrumpft mit jedem Katalog-Durchlauf; zum Abarbeiten sind die neuesten
 Titel (`-seasonYear`) sinnvoll, weil dort Besucher tatsächlich suchen.
 
+**Liste 2 ist eine Beobachtungsliste, keine Handarbeitsliste.** `streamingVerifiedAt` setzt
+ausschließlich der vollständige Katalog-Durchlauf (gebunden an das `complete`-Flag); von Hand
+wird der Stempel nicht gesetzt, sonst wäre er keine Beobachtung mehr, sondern eine Behauptung.
+Die Liste leert sich nach dem ersten vollständigen Durchlauf fast von selbst, weil dann jeder
+erfasste Titel den Stempel trägt. Von Hand eingreifen muss man dort nur, wenn man **weiß**,
+dass ein Titel verfügbar ist: dann eine Angebotszeile mit `source = manual` anlegen (siehe
+unten). Ein so entschiedener Titel **bleibt bis zum nächsten Durchlauf auf der Liste** — man
+sieht ihn also wieder, das heißt nicht, dass die Entscheidung verloren ist.
+
 **So wird von Hand entschieden** (im Angebot, Array `Streaming-Angebote`):
 
 - **Stimmt es:** `confidence` auf `confirmed` **und** `source` auf `manual`. Erst `manual`
@@ -307,15 +316,17 @@ Titel (`-seasonYear`) sinnvoll, weil dort Besucher tatsächlich suchen.
   Veto-Zeile bleibt stehen und verhindert, dass der Sync den Falschtreffer wieder einfügt;
   die Seite zeigt sie nicht an.
 - **Eine Zeile einfach zu löschen genügt nicht** — der Sync findet denselben Treffer wieder
-  und legt sie nach spätestens vier Stunden neu an.
+  und legt sie wieder an, sobald ein Durchlauf diesen Titel erfasst. Spätestens geschieht das
+  beim wöchentlichen Katalog-Abgleich; über den rollierenden Lauf allein (150 Titel alle
+  vier Stunden, bei 11.061 Titeln rund 74 Läufe) kann es bis zu zwölf Tage dauern.
 
 Der Sync spart beim autoritativen Löschen `source = 'manual'` und `confidence = 'rejected'`
 aus und fügt ein Paar `(provider, monetization)` mit `manual`-Zeile nicht doppelt ein. Endet
 eine Lizenz wirklich, löscht der Sync trotzdem die übrigen Zeilen des Titels; die manuelle
 Zeile muss dann ebenfalls von Hand entfernt werden.
 
-**Was belegt ist und was nicht** (ich konnte die URLs nicht gegen den laufenden Admin
-ausprobieren — dort ist dieser Code noch nicht ausgerollt, und die Spalten fehlen in der
+**Was belegt ist und was nicht** (die URLs wurden nicht gegen den laufenden Admin
+ausgeführt — dort ist dieser Code noch nicht ausgerollt, und die Spalten fehlen in der
 Produktionsdatenbank bis zum Schema-Push):
 
 - Belegt im installierten Payload 3.85.0: der Admin liest die Query mit `qs-esm`
@@ -324,7 +335,7 @@ Produktionsdatenbank bis zum Schema-Push):
   über den Punktpfad `streamingOffers.confidence` auf (`@payloadcms/drizzle/dist/queries/getTableColumnFromPath.js`,
   Fall `array`); das Sortierfeld heißt tatsächlich `seasonYear` (`Anime.ts`, `index: true`).
 - **Unsicher:** (a) `exists]=false` auf einem Datumsfeld — der Operator ist da, das
-  `false`-Verhalten (IS NULL) habe ich nur im Adapter-Code gelesen, nicht ausgeführt.
+  `false`-Verhalten (IS NULL) wurde nur im Adapter-Code gelesen, nicht ausgeführt.
   (b) Der Admin übernimmt `sort` aus der URL **und speichert es als Nutzereinstellung**
   (`collection-anime` in den Preferences) — die Sortierung bleibt also auch beim nächsten
   Öffnen der Liste. Bei Zweifel die Liste über das Filter-Menü des Admins aufbauen; dann
