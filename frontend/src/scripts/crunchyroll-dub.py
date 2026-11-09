@@ -191,14 +191,15 @@ def resolve_series(session, token, a: dict) -> tuple[dict | None, str]:
         return None, "err"
 
     our_norm = [norm(t) for t in a["titles"] if t.strip()]
-    best, best_score = None, 0.0
+    best, best_score, best_exact = None, 0.0, False
     for grp in r.json().get("data", []):
         if grp.get("type") != "series":
             continue
         for it in grp.get("items", []):
             c_title, c_slug = norm(it.get("title")), norm(it.get("slug_title"))
             # Slug-Exakttreffer (deckt alte /<slug>-Links ab) = höchste Sicherheit.
-            if c_slug and c_slug in a["cr_slugs"]:
+            exact = bool(c_slug and c_slug in a["cr_slugs"])
+            if exact:
                 score = 1.0
             else:
                 score = 0.0
@@ -213,7 +214,7 @@ def resolve_series(session, token, a: dict) -> tuple[dict | None, str]:
                             ratio = max(ratio, 0.95)
                         score = max(score, ratio)
             if score > best_score:
-                best, best_score = it, score
+                best, best_score, best_exact = it, score, exact
 
     if not best:
         return None, "no-match"
@@ -221,7 +222,9 @@ def resolve_series(session, token, a: dict) -> tuple[dict | None, str]:
     threshold = 0.80 if a.get("has_cr_link") else 0.88
     if best_score < threshold:
         return None, "weak"
-    return best, "search"
+    # Die Herkunft des Treffers wandert im Eintrag mit (Kopie, `resolve` liest sie nicht):
+    # nur ein Slug-Exakttreffer ist ein Beleg, ein Ähnlichkeitstreffer eine Schätzung.
+    return {**best, "_slug_exact": best_exact}, "search"
 
 
 def resolve(session, token, a: dict) -> tuple[list[str] | None, str]:
@@ -356,8 +359,30 @@ def availability_sql(anime: dict, offers: list[dict], now_iso: str) -> list[str]
                                                only_provider=AVAIL_PROVIDER)
 
 
+def is_direct_evidence(series, method) -> bool:
+    """Darf aus dieser Zuordnung eine `confirmed`-Zeile werden?
+
+    `confirmed` ist ein Versprechen, eine Schätzung darf nicht so heißen. Belegt ist
+    nur, was
+      (a) über den EIGENEN `/series/<ID>`-Link des Titels aufgelöst wurde (Methode `id`:
+          ein Redakteur hat genau diesen Eintrag dieser CR-Serie zugeordnet), oder
+      (b) per exaktem `slug_title`-Treffer gefunden wurde (Zeichengleichheit).
+    Reine Ähnlichkeitstreffer (Containment, `SequenceMatcher`) schreiben NICHTS — sie
+    könnten die Fortsetzung auf die Serie der ersten Staffel abbilden. Für diese Titel
+    bleibt der JustWatch-Weg mit seiner als `unconfirmed` gekennzeichneten Zeile."""
+    if not series:
+        return False
+    return method == "id" or (method == "search" and bool(series.get("_slug_exact")))
+
+
 def availability_main(dry_run: bool):
     """Verfügbarkeits-Modus: laufende Titel direkt bei Crunchyroll belegen.
+
+    REIHENFOLGE (Cron, Aufgabe 15): dieser Lauf muss NACH dem JustWatch-Sweep kommen.
+    Dessen `DELETE` löscht alle Abo-Zeilen des Titels unabhängig von `source` und legt
+    für laufende Fortsetzungen wieder die geerbte `unconfirmed`-Zeile an; erst dieser
+    Lauf stellt den Beleg wieder her. Der Sweep darf `source='crunchyroll'` bewusst
+    NICHT aussparen, sonst könnte er ein echtes Lizenzende nie mehr entfernen.
 
     EINE Schleife mit demselben `MAX_WORKERS` wie der Dub-Lauf; sie läuft nur, wenn der
     Modus aufgerufen wird. Nicht gleichzeitig mit dem Dub-Lauf starten — beide teilen
@@ -380,7 +405,9 @@ def availability_main(dry_run: bool):
 
     def worker(a):
         series, method = resolve_series(requests.Session(), token, a)
-        return a["id"], (availability_from_series({"data": [series]}, None) if series else []), method
+        offers = (availability_from_series({"data": [series]}, None)
+                  if is_direct_evidence(series, method) else [])
+        return a["id"], offers, method
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         for f in as_completed([ex.submit(worker, a) for a in anime]):

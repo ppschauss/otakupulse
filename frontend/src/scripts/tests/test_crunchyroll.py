@@ -206,3 +206,100 @@ def test_resolve_series_per_id_traegt_die_id_auch_ohne_id_feld(monkeypatch):
 
 def test_max_workers_unveraendert():
     assert cr.MAX_WORKERS == 8
+
+
+# --- Fix-Runde 1: confirmed nur bei Beleg ------------------------------------------
+
+def _such_a(slugs=()):
+    return {"id": 1, "titles": ["Returners Magic Should Be Special 2nd Season", "", ""],
+            "series_id": None, "cr_slugs": set(slugs)}
+
+
+def _such_item(slug):
+    return {"id": "GRET", "title": "Returners Magic Should Be Special", "slug_title": slug,
+            "series_metadata": {"audio_locales": ["ja-JP"], "subtitle_locales": ["de-DE"]}}
+
+
+def test_aehnlichkeitstreffer_ist_kein_beleg(monkeypatch):
+    """Containment-Match: die 2nd Season landet auf der Serie der 1. Staffel."""
+    monkeypatch.setattr(cr, "api_get", lambda *x, **k: _Resp(
+        200, {"data": [{"type": "series", "items": [_such_item("returners-magic-should-be-special")]}]}))
+    series, method = cr.resolve_series(None, "tok", _such_a())
+    assert method == "search" and series is not None
+    assert cr.is_direct_evidence(series, method) is False
+
+
+def test_slug_exakttreffer_ist_beleg(monkeypatch):
+    monkeypatch.setattr(cr, "api_get", lambda *x, **k: _Resp(
+        200, {"data": [{"type": "series", "items": [_such_item("returners-magic-should-be-special")]}]}))
+    series, method = cr.resolve_series(None, "tok", _such_a(["returnersmagicshouldbespecial"]))
+    assert cr.is_direct_evidence(series, method) is True
+
+
+def test_eigener_series_link_ist_beleg():
+    assert cr.is_direct_evidence({"id": "GABC"}, "id") is True
+    assert cr.is_direct_evidence(None, "id") is False
+    assert cr.is_direct_evidence(None, "weak") is False
+
+
+def test_resolve_dub_lauf_unveraendert_durch_exaktheitsmarke(monkeypatch):
+    monkeypatch.setattr(cr, "api_get", lambda *x, **k: _Resp(
+        200, {"data": [{"type": "series", "items": [_such_item("x")]}]}))
+    assert cr.resolve(None, "tok", _such_a()) == (["ja", "de-sub"], "search")
+
+
+# --- Verdrahtung von availability_main -----------------------------------------------
+
+def _titel(i, status, year):
+    return {"id": i, "slug": f"t{i}", "status": status, "year": year,
+            "offers": {}, "manual": set(), "rejected": set()}
+
+
+def _lauf(monkeypatch, stock, resolved, capsys):
+    """availability_main ohne Netz/DB: Katalog-Modul, Lader, Token, Aufloesung und psql
+    sind ersetzt. Gibt die Ids zurueck, fuer die aufgeloest wurde, und die Ausgabe."""
+    import types
+    cat_fake = types.SimpleNamespace(load_all_anime=lambda: stock, build_catalog_sql=cat.build_catalog_sql)
+    monkeypatch.setattr(cr, "_catalog_module", lambda: cat_fake)
+    monkeypatch.setattr(cr, "load_anime", lambda: [
+        {"id": s["id"], "titles": ["T", "", ""], "series_id": None, "cr_slugs": set()} for s in stock])
+    monkeypatch.setattr(cr, "get_token", lambda s: "tok")
+    monkeypatch.setattr(cr, "requests", types.SimpleNamespace(Session=lambda **k: None))
+    gefragt = []
+
+    def fake(session, token, a):
+        gefragt.append(a["id"])
+        return resolved[a["id"]]
+    monkeypatch.setattr(cr, "resolve_series", fake)
+
+    def kein_schreiben(*a, **k):
+        raise AssertionError("Trockenlauf schreibt")
+    monkeypatch.setattr(cr, "psql", kein_schreiben)
+    cr.availability_main(True)
+    return sorted(gefragt), capsys.readouterr().out
+
+
+def test_availability_main_fragt_nur_titel_im_umfang(monkeypatch, capsys):
+    """Die Umfangsgrenze haengt am Rate-Limit-Argument: kein Gesamtkatalog ueber den
+    Grauzonen-Token. Ein Titel ausserhalb darf keine einzige Anfrage ausloesen."""
+    import datetime
+    jahr = datetime.datetime.now(datetime.timezone.utc).year
+    stock = [_titel(1, "RELEASING", 2015), _titel(2, "FINISHED", jahr), _titel(3, "FINISHED", jahr - 1),
+             _titel(4, "FINISHED", jahr - 2), _titel(5, "FINISHED", None)]
+    resolved = {i: ({"id": f"G{i}", "audio_locales": ["ja-JP"], "subtitle_locales": ["de-DE"]}, "id")
+                for i in range(1, 6)}
+    gefragt, out = _lauf(monkeypatch, stock, resolved, capsys)
+    assert gefragt == [1, 2, 3]
+    assert "t4:" not in out and "t5:" not in out
+
+
+def test_availability_main_schreibt_keine_aehnlichkeitstreffer(monkeypatch, capsys):
+    import datetime
+    jahr = datetime.datetime.now(datetime.timezone.utc).year
+    s = {"id": "GRET", "series_metadata": {"audio_locales": ["ja-JP"], "subtitle_locales": ["de-DE"]}}
+    resolved = {1: ({**s, "_slug_exact": False}, "search"),   # Schaetzung
+                2: ({**s, "_slug_exact": True}, "search"),    # exakter Slug
+                3: ({**s}, "id")}                             # eigener Link
+    _, out = _lauf(monkeypatch, [_titel(i, "RELEASING", jahr) for i in (1, 2, 3)], resolved, capsys)
+    assert "t1: crunchyroll" not in out
+    assert "t2: crunchyroll confirmed" in out and "t3: crunchyroll confirmed" in out
