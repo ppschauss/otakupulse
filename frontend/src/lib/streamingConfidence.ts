@@ -23,3 +23,14 @@ export const isConfirmed = (o: WithConfidence): boolean => o.confidence == null 
 
 /** Nur aus dem Serien-Angebot geerbt; `rejected` zählt hier nicht dazu. */
 export const isUnconfirmed = (o: WithConfidence): boolean => o.confidence === 'unconfirmed'
+
+/**
+ * Anbieter-Slugs, die der Redakteur für diesen Titel per Veto verworfen hat
+ * (`confidence: 'rejected'`). Gemeinsame Quelle für Anzeige und Indexregel, damit
+ * der Slug-Index `streamingProviders` ein Veto nicht unterläuft. Tolerant gegenüber
+ * Titeln, deren `streamingOffers` nicht geladen sind (dann: nichts verworfen).
+ */
+export function rejectedProviderSlugs(anime: any): Set<string> {
+  const offers: any[] = Array.isArray(anime?.streamingOffers) ? anime.streamingOffers : []
+  return new Set(offers.filter((o) => o?.confidence === 'rejected').map((o) => o?.provider))
+}

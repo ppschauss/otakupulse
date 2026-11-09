@@ -128,3 +128,16 @@ describe('animeIndexable: Popularitätsschwelle', () => {
     expect(animeIndexable({ isHentai: true, streamingProviders: ['netflix'] })).toBe(false)
   })
 })
+
+describe('animeIndexable: Veto im Slug-Index', () => {
+  const rejected = { provider: 'crunchyroll', url: 'https://c', confidence: 'rejected' }
+  it('ein vetoter Slug trägt die Indexierung nicht (dünner Text, kaum Nachfrage)', () => {
+    expect(animeIndexable({ descriptionDe: 'kurz', popularity: 100, streamingProviders: ['crunchyroll'], streamingOffers: [rejected] })).toBe(false)
+  })
+  it('ein anderer, nicht vetoter Slug trägt sie weiterhin', () => {
+    expect(animeIndexable({ popularity: 100, streamingProviders: ['crunchyroll', 'netflix'], streamingOffers: [rejected] })).toBe(true)
+  })
+  it('Gegenprobe: mit belegtem Angebot bleibt der Titel indexierbar', () => {
+    expect(animeIndexable({ descriptionDe: 'kurz', popularity: 100, streamingProviders: ['crunchyroll'], streamingOffers: [{ ...rejected, confidence: 'confirmed' }] })).toBe(true)
+  })
+})

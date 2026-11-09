@@ -11,7 +11,7 @@
  * die Anbieter-Startseite.
  */
 
-import { isConfirmed, isUnconfirmed, type Confidence, type OfferSource } from './streamingConfidence'
+import { isConfirmed, isUnconfirmed, rejectedProviderSlugs, type Confidence, type OfferSource } from './streamingConfidence'
 
 export type StreamingProvider = {
   slug: string
@@ -263,11 +263,7 @@ export function streamingProvidersOf(anime: any): { provider: StreamingProvider;
     return hit?.url || p.homepage || '#'
   }
   // Von Hand verworfene Anbieter (Veto) auch hier ausnehmen, sonst zeigt sie der Legacy-Rückfall weiter.
-  const rejected = new Set<string>(
-    (Array.isArray(anime?.streamingOffers) ? anime.streamingOffers : [])
-      .filter((o: any) => o?.confidence === 'rejected')
-      .map((o: any) => o?.provider),
-  )
+  const rejected = rejectedProviderSlugs(anime)
   return slugs
     .filter((s) => !rejected.has(s))
     .map((s) => providerBySlug(s))
@@ -456,4 +452,24 @@ export function isAmazonChannelUrl(url: string | null | undefined): boolean {
   } catch {
     return false
   }
+}
+
+export type LanguageItem = { key: string; label: string; dub: boolean }
+
+/**
+ * Sprach-Chips einer Anbieter-Karte, über deren Angebote vereinigt; Dub hervorgehoben.
+ * Nur belegte Angebote liefern Sprachen — ein geerbtes (unbestätigtes) Angebot
+ * behauptet nichts über die Fassung, auch nicht neben einem belegten.
+ */
+export function languageItems(offers: StreamingOffer[]): LanguageItem[] {
+  const confirmed = offers.filter(isConfirmed)
+  const audio = new Set(confirmed.flatMap((o) => o.audio))
+  const subs = new Set(confirmed.flatMap((o) => o.subs))
+  const items: LanguageItem[] = []
+  if (audio.has('de')) items.push({ key: 'de-dub', label: 'Deutscher Dub', dub: true })
+  if (subs.has('de')) items.push({ key: 'de-sub', label: 'Deutscher Sub', dub: false })
+  if (audio.has('en')) items.push({ key: 'en-dub', label: 'Englischer Dub', dub: true })
+  if (subs.has('en') && !subs.has('de')) items.push({ key: 'en-sub', label: 'Englischer Sub', dub: false })
+  if (!items.length && audio.has('ja')) items.push({ key: 'ja', label: 'Japanisch (OmU)', dub: false })
+  return items
 }

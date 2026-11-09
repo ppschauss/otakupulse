@@ -4,12 +4,13 @@ import {
   MONETIZATION_LABELS,
   groupOffersByProvider,
   isAmazonChannelUrl,
+  languageItems,
   purchaseOffersOf,
   streamingOffersOf,
   streamingSummary,
   type StreamingOffer,
 } from '@/lib/streaming'
-import { UNCONFIRMED_LABEL, isUnconfirmed } from '@/lib/streamingConfidence'
+import { UNCONFIRMED_LABEL, isConfirmed, isUnconfirmed } from '@/lib/streamingConfidence'
 
 /**
  * „Wo streamen?"-Block der Anime-Seite — ersetzt die frühere /streamen/-Seite.
@@ -40,10 +41,14 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
           <div className="grid gap-3 sm:grid-cols-2">
             {groups.map(({ provider, offers }) => {
               const unconfirmed = offers.every(isUnconfirmed)
+              // Details (Sprache, Staffel, Ablauf) und Link nur von belegten Angeboten; fehlen sie, trägt die Karte nur das Badge.
+              const confirmed = offers.filter(isConfirmed)
+              const primary = confirmed[0] ?? offers[0]
+              const shown = confirmed.length ? confirmed : offers
               return (
                 <a
                   key={provider.slug}
-                  href={offers[0].url}
+                  href={primary.url}
                   target="_blank"
                   rel="nofollow noopener noreferrer"
                   className="group rounded-xl border border-white/10 bg-zinc-900/50 p-4 transition hover:border-accent/50 hover:bg-zinc-900"
@@ -70,15 +75,15 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
                     </span>
                     <span className="shrink-0 text-sm font-semibold text-accent">Zum Stream →</span>
                   </div>
-                  {isAmazonChannelUrl(offers[0].url) ? (
+                  {isAmazonChannelUrl(primary.url) ? (
                     <p className="mt-1 text-[11px] text-zinc-500">über Amazon Prime buchbar</p>
                   ) : null}
-                  {offers[0].legacy ? (
+                  {primary.legacy ? (
                     <p className="mt-2 text-xs text-zinc-500">Details zur Sprachfassung folgen — bitte beim Anbieter prüfen.</p>
                   ) : (
                     <ul className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-                      {unconfirmed ? null : langBadges(offers)}
-                      {offers.map((o) =>
+                      {langBadges(offers)}
+                      {shown.map((o) =>
                         o.monetization ? (
                           <li
                             key={o.monetization}
@@ -92,9 +97,9 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
                           </li>
                         ) : null,
                       )}
-                      {!unconfirmed && scope(offers[0]) ? <li className="text-zinc-500">{scope(offers[0])}</li> : null}
-                      {!unconfirmed && offers[0].availableTo ? (
-                        <li className="text-amber-400/80">bis {formatDateDe(offers[0].availableTo)}</li>
+                      {!unconfirmed && scope(primary) ? <li className="text-zinc-500">{scope(primary)}</li> : null}
+                      {!unconfirmed && primary.availableTo ? (
+                        <li className="text-amber-400/80">bis {formatDateDe(primary.availableTo)}</li>
                       ) : null}
                     </ul>
                   )}
@@ -144,17 +149,9 @@ function scope(o: StreamingOffer): string {
   return parts.join(' · ')
 }
 
-// Sprach-Badges über alle Angebote des Anbieters vereinigt; Dub hervorgehoben.
+// Sprach-Badges (Auswahl in languageItems: nur belegte Angebote).
 function langBadges(offers: StreamingOffer[]) {
-  const audio = new Set(offers.flatMap((o) => o.audio))
-  const subs = new Set(offers.flatMap((o) => o.subs))
-  const items: { key: string; label: string; dub: boolean }[] = []
-  if (audio.has('de')) items.push({ key: 'de-dub', label: 'Deutscher Dub', dub: true })
-  if (subs.has('de')) items.push({ key: 'de-sub', label: 'Deutscher Sub', dub: false })
-  if (audio.has('en')) items.push({ key: 'en-dub', label: 'Englischer Dub', dub: true })
-  if (subs.has('en') && !subs.has('de')) items.push({ key: 'en-sub', label: 'Englischer Sub', dub: false })
-  if (!items.length && audio.has('ja')) items.push({ key: 'ja', label: 'Japanisch (OmU)', dub: false })
-  return items.map((it) => (
+  return languageItems(offers).map((it) => (
     <li
       key={it.key}
       className={`rounded-md px-2 py-0.5 font-medium ${

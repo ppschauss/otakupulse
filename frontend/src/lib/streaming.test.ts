@@ -9,6 +9,7 @@ import {
   groupOffersByProvider,
   streamingSummary,
   isAmazonChannelUrl,
+  languageItems,
 } from './streaming'
 
 describe('providerBySlug', () => {
@@ -235,5 +236,21 @@ describe('verworfene Angebote und der Slug-Index streamingProviders', () => {
   it('ohne geladene streamingOffers bleibt das Verhalten unverändert', () => {
     expect(streamingProvidersOf({ streamingProviders: ['netflix'] }).map((x) => x.provider.slug)).toEqual(['netflix'])
     expect(streamingProvidersOf({ streamingProviders: ['netflix'], streamingOffers: null }).map((x) => x.provider.slug)).toEqual(['netflix'])
+  })
+})
+
+describe('languageItems', () => {
+  const offer = (confidence: string, audio: string, subs = '') => streamingOffersOf({
+    streamingOffers: [{ provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence, audio, subs }],
+  })[0].offer
+  it('nimmt im Mischfall nur die Sprachen des belegten Angebots', () => {
+    const items = languageItems([offer('unconfirmed', 'de,en', 'de'), offer('confirmed', 'ja', 'en')])
+    expect(items.map((i) => i.key)).toEqual(['en-sub'])
+  })
+  it('liefert nichts, wenn alle Angebote unbestätigt sind', () => {
+    expect(languageItems([offer('unconfirmed', 'de', 'de')])).toEqual([])
+  })
+  it('behandelt Altbestand ohne confidence als belegt', () => {
+    expect(languageItems([offer('', 'de')]).map((i) => i.key)).toEqual(['de-dub'])
   })
 })
