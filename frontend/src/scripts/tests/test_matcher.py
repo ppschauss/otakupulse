@@ -537,3 +537,52 @@ def test_gap_alarm_modus_gibt_bei_luecke_text_aus(monkeypatch, capsys):
     monkeypatch.setattr(jw.sys, "argv", ["x", "--gap-alarm"])
     jw.main()
     assert "4" in capsys.readouterr().out
+
+
+def test_rotation_klemmt_kommende_jahrgaenge_und_sortiert_absteigend():
+    """Nagelt LEAST und die Richtung fest (nicht nur Substrings)."""
+    assert "ORDER BY (a.status = 'RELEASING') DESC" in jw.stale_order_sql(2026)
+    assert "LEAST(COALESCE(a.season_year, 0), 2026) DESC," in jw.stale_order_sql(2026)
+    assert "LEAST(COALESCE(a.season_year, 0), 2031) DESC," in jw.stale_order_sql(2031)
+    assert jw.stale_order_sql(2026).rstrip().endswith("a.streaming_checked_at ASC NULLS FIRST")
+    assert "season_year, 0), 2026) ASC" not in jw.stale_order_sql(2026)
+
+
+# --- Aufgabe 15 Fix-Runde 2: Crunchyroll-Direktbeleg überlebt die Titelsuche --------
+
+def test_titelsuche_delete_spart_crunchyroll_aus_und_loescht_den_rest():
+    """Echtes Lizenzende bleibt möglich: alles außer manual/rejected/crunchyroll wird gelöscht."""
+    stmts, _ = jw.build_sql(_anime(), [_offer("netflix")], NOW)
+    d = stmts[0]
+    assert "source IS DISTINCT FROM 'crunchyroll'" in d
+    assert "source IS DISTINCT FROM 'manual'" in d and "confidence IS DISTINCT FROM 'rejected'" in d
+    assert "source = " not in d and "source <>" not in d and " IN (" not in d
+
+
+def test_crunchyroll_zeile_wird_von_der_titelsuche_nicht_doppelt_eingefuegt():
+    k = ("crunchyroll", "flatrate")
+    a = _anime(direkt={k}, offers={k: None}, have={"crunchyroll"})
+    stmts, changed = jw.build_sql(a, [_offer("crunchyroll", conf="unconfirmed"), _offer("netflix")], NOW)
+    (ins,) = _inserts(stmts)
+    assert "'netflix'" in ins and "'crunchyroll'" not in ins
+    (idx,) = _inserts(stmts, "anime_streaming_providers")
+    assert "'crunchyroll'" in idx, "der Anbieter der stehenbleibenden Zeile bleibt im Filter-Index"
+    assert changed  # netflix ist neu
+
+
+def test_crunchyroll_zeile_allein_ist_keine_aenderung():
+    k = ("crunchyroll", "flatrate")
+    a = _anime(direkt={k}, offers={k: None}, have={"crunchyroll"})
+    _, changed = jw.build_sql(a, [_offer("crunchyroll", conf="unconfirmed")], NOW)
+    assert not changed
+
+
+def test_load_anime_liest_crunchyroll_quelle_als_direkt(monkeypatch):
+    antworten = iter([
+        '[{"id":7,"slug":"s","fmt":"TV","year":2026,"st":"RELEASING","de":"","en":"E","ro":"R","na":""}]',
+        '[]',
+        '[{"pid":7,"p":"crunchyroll","m":"flatrate","f":null,"s":"crunchyroll","c":null}]',
+    ])
+    monkeypatch.setattr(jw, "psql", lambda sql, read=True: next(antworten))
+    (a,) = jw.load_anime(slugs=["s"])
+    assert a["direkt"] == {("crunchyroll", "flatrate")}

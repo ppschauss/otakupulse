@@ -13,6 +13,10 @@
 #   Abgelehnte Alternative: der Sweep spart source='crunchyroll' aus. Dann könnte er ein
 #   echtes Lizenzende nie mehr entfernen, und die Zeile wäre für Titel außerhalb des
 #   Crunchyroll-Umfangs dauerhaft eingefroren (dagegen hat Aufgabe 12 ihren Regressionstest).
+#   Die vierstündige Titelsuche (refresh-streaming.sh) dagegen spart source='crunchyroll'
+#   aus (build_sql): sie ist der enge, titelweise Weg und fasst den Beleg nicht an. Die
+#   Asymmetrie ist Absicht und sicher: der Sweep räumt eine nicht mehr gepflegte
+#   Crunchyroll-Zeile weiter ab, es friert nichts dauerhaft ein.
 #   Wer die Uhrzeiten ändert: Sweep muss VOR crunchyroll-availability.sh liegen.
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 F=/mnt/cache/appdata/otakupulse/frontend
@@ -27,5 +31,5 @@ python3 -u src/scripts/justwatch-catalog.py --sweep >> "$LOG" 2>&1
 RC=$?
 echo "===== $(date) Exit $RC =====" >> "$LOG"
 
-/mnt/cache/appdata/otakupulse/streaming-alarm.sh >> "$LOG" 2>&1
+bash /mnt/cache/appdata/otakupulse/streaming-alarm.sh >> "$LOG" 2>&1
 exit $RC

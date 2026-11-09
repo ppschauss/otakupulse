@@ -629,6 +629,15 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False, only_provider=Non
     Sweep also auch Anbieter ohne eigenes Paket (Paramount+, Apple TV+, HIDIVE) und
     schreibt sie korrekt neu.
 
+    ASYMMETRIE MIT DER TITELSUCHE (Absicht): `build_sql` in `justwatch-streaming.py` spart
+    `source = 'crunchyroll'` aus, dieses `DELETE` NICHT. Der wöchentliche Sweep ist der
+    breite, autoritative Weg und überschreibt den Crunchyroll-Beleg weiter; der tägliche
+    Crunchyroll-Lauf (`crunchyroll-availability.sh`, Cron NACH dem Sweep) stellt ihn direkt
+    danach wieder her. Altert ein Titel aus dem Crunchyroll-Umfang heraus, räumt der Sweep
+    die dann nicht mehr gepflegte `confirmed`-Zeile ab — es gibt keinen Pfad, auf dem eine
+    Crunchyroll-Zeile dauerhaft einfriert, und ein echtes Lizenzende bleibt entfernbar.
+    Die vierstündige Titelsuche ist dagegen der enge, titelweise Weg und fasst sie nicht an.
+
     Weiter gilt:
       - `source = 'manual'` wird nicht gelöscht (Entscheidung 8) und ein Paar mit
         `rejected`-Zeile nicht wieder eingefügt (Entscheidung 21). Beides sind

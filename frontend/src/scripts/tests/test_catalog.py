@@ -1135,3 +1135,12 @@ def test_katalog_lizenzende_loescht_die_abo_zeile_aber_schuetzt_ausnahmen():
     assert "source IS DISTINCT FROM 'manual'" in stmts[0]
     assert "confidence IS DISTINCT FROM 'rejected'" in stmts[0]
     assert "INSERT INTO anime_streaming_offers" not in sql
+
+
+def test_sweep_ueberschreibt_crunchyroll_zeilen_weiter():
+    """Absichtliche Asymmetrie zur Titelsuche (build_sql spart crunchyroll aus): der
+    wöchentliche Sweep bleibt autoritativ, sonst fröre eine Crunchyroll-Zeile dauerhaft
+    ein; der tägliche Crunchyroll-Lauf stellt den Beleg danach wieder her."""
+    d = cat.build_catalog_sql({"id": 7, "offers": {}}, [_offer("netflix")], NOW, discovery=False)[0]
+    assert d.startswith("DELETE FROM anime_streaming_offers")
+    assert "crunchyroll" not in d

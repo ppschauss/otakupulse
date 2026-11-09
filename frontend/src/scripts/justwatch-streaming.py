@@ -318,7 +318,7 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
                        # Handarbeit (`source='manual'`) und Veto (`confidence='rejected'`)
                        # überleben das DELETE in `build_sql`; `confidence` je Paar
                        # (NULL = belegt) dient dem Änderungsvergleich.
-                       "manual": set(), "rejected": set(), "confidence": {}}
+                       "manual": set(), "rejected": set(), "direkt": set(), "confidence": {}}
              for r in rows}
     if not anime:
         return []
@@ -340,6 +340,9 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
             a["rejected"].add(key)
         elif o.get("s") == "manual":
             a["manual"].add(key)
+        elif o.get("s") == "crunchyroll":
+            # Direktbeleg von crunchyroll-dub.py --availability: die Titelsuche fasst ihn nicht an.
+            a["direkt"].add(key)
     return list(anime.values())
 
 
@@ -716,6 +719,19 @@ def build_sql(a, offers, now_iso, initial=False):
         `confidence`. Eine `rejected`-Zeile mit anderer `source` würde sonst gelöscht und
         das Angebot im Folgelauf wieder angelegt — das Veto löschte sich selbst.
 
+      - `source = 'crunchyroll'` (Aufgabe 14): der Direktbeleg beim Anbieter. Ohne diese
+        Ausnahme machte die vierstündige Titelsuche — und `--stale-weighted` nimmt die
+        laufenden Titel zuerst, also genau den Crunchyroll-Umfang — aus dem Beleg binnen
+        Stunden wieder eine geerbte `unconfirmed`-Zeile.
+
+    ASYMMETRIE MIT DEM KATALOG-SWEEP (Absicht): die Titelsuche ist der enge, titelweise Weg
+    und fasst Crunchyroll-Zeilen nicht mehr an; `build_catalog_sql` ist der breite,
+    autoritative Weg und überschreibt sie weiter. Danach stellt der tägliche
+    Crunchyroll-Lauf den Beleg wieder her (Cron-Reihenfolge: Sweep zuerst, siehe
+    `catalog-sweep.sh`). Altert ein Titel aus dem Crunchyroll-Umfang heraus, räumt der
+    Sweep die dann nicht mehr gepflegte Zeile ab — keine Crunchyroll-Zeile friert dauerhaft
+    ein, und ein echtes Lizenzende bleibt über den Sweep entfernbar.
+
     Beide Vergleiche mit `IS DISTINCT FROM`: der Altbestand (3.197 Zeilen) trägt
     `source`/`confidence` NULL, und `<> 'rejected'` wirft NULL-Zeilen aus dem Ergebnis —
     das DELETE löschte dann nichts mehr. Ein Paar mit `rejected`-Zeile wird nicht
@@ -730,15 +746,17 @@ def build_sql(a, offers, now_iso, initial=False):
     aid = a["id"]
     manual = set(a.get("manual") or ())
     rejected = set(a.get("rejected") or ())
+    direkt = set(a.get("direkt") or ())
     stmts = [f"DELETE FROM anime_streaming_offers WHERE _parent_id = {aid} "
-             f"AND source IS DISTINCT FROM 'manual' AND confidence IS DISTINCT FROM 'rejected';"]
-    slugs = {p for p, m in manual if m in STREAMING}
+             f"AND source IS DISTINCT FROM 'manual' AND source IS DISTINCT FROM 'crunchyroll' "
+             f"AND confidence IS DISTINCT FROM 'rejected';"]
+    slugs = {p for p, m in manual | direkt if m in STREAMING}
     langs = set()
     written = []
     for e in offers:
         if (e["provider"], e["monetization"]) in rejected:
             continue  # Veto des Redakteurs
-        if (e["provider"], e["monetization"]) in manual:
+        if (e["provider"], e["monetization"]) in manual or (e["provider"], e["monetization"]) in direkt:
             # Die Version des Redakteurs gewinnt (Entscheidung 8): das DELETE lässt die
             # Handarbeits-Zeile stehen, eine zweite Zeile desselben Paares daneben wäre
             # ein Widerspruch im Bestand (Anbieter-Karte doppelt).
@@ -794,7 +812,7 @@ def build_sql(a, offers, now_iso, initial=False):
     # Handarbeit und Veto stehen nach dem DELETE unverändert da — sie sind kein
     # Unterschied zum Ergebnis des letzten Laufs. Ein Wechsel der Vertrauensstufe
     # (unconfirmed -> confirmed) ist dagegen einer.
-    have = {k for k in a["offers"] if k not in manual and k not in rejected}
+    have = {k for k in a["offers"] if k not in manual and k not in rejected and k not in direkt}
     want = {(e["provider"], e["monetization"]) for e in written}
     stufen = a.get("confidence") or {}
     changed = (slugs != a["have"] or want != have

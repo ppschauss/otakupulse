@@ -24,9 +24,21 @@ MSG=$(python3 -u src/scripts/justwatch-streaming.py --gap-alarm 2>>"$LOG") || {
 
 TOKEN=$(grep -E '^TELEGRAM_BOT_TOKEN=' "$SECRETS" 2>/dev/null | head -1 | cut -d= -f2-)
 CHAT=$(grep -E '^ALERT_CHAT_ID=' "$SECRETS" 2>/dev/null | head -1 | cut -d= -f2-)
-if [ -n "${TOKEN:-}" ] && [ -n "${CHAT:-}" ]; then
-  curl -s -o /dev/null --max-time 15 "https://api.telegram.org/bot${TOKEN}/sendMessage" \
-    --data-urlencode "chat_id=${CHAT}" \
-    --data-urlencode "text=${MSG}" \
-    && { date +%F > "$STAMP"; echo "===== $(date) Lücken-Alarm gesendet =====" >> "$LOG"; }
-fi
+log() { echo "===== $(date) $* =====" >> "$LOG"; }
+
+# Kaputte Konfiguration darf den Alarm nicht lautlos töten: ohne diese Zeilen würde eine
+# Lücke nie gemeldet und niemand erführe, dass der Alarm tot ist.
+if [ ! -r "$SECRETS" ]; then log "Lücken-Alarm NICHT gesendet: $SECRETS fehlt oder ist nicht lesbar"; exit 1; fi
+if [ -z "${TOKEN:-}" ]; then log "Lücken-Alarm NICHT gesendet: TELEGRAM_BOT_TOKEN fehlt in secrets.env"; exit 1; fi
+if [ -z "${CHAT:-}" ]; then log "Lücken-Alarm NICHT gesendet: ALERT_CHAT_ID fehlt in secrets.env"; exit 1; fi
+
+# Telegram antwortet auch bei 401/400 mit Exit 0 von curl; ausgewertet wird deshalb die
+# Antwort ("ok":true). Den Tagesstempel gibt es nur bei echtem Erfolg, sonst würde ein
+# fehlgeschlagener Versand die Meldung für den ganzen Tag unterdrücken.
+RESP=$(curl -s --max-time 15 "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+  --data-urlencode "chat_id=${CHAT}" \
+  --data-urlencode "text=${MSG}") || RESP=""
+case "$RESP" in
+  *'"ok":true'*) date +%F > "$STAMP"; log "Lücken-Alarm gesendet" ;;
+  *) log "Lücken-Alarm: Versand FEHLGESCHLAGEN (Telegram-Antwort: ${RESP:-keine})"; exit 1 ;;
+esac

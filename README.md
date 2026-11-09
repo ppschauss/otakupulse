@@ -589,7 +589,10 @@ von Crunchyroll belegte Zeile mit einer geerbten, unbestätigten; der Crunchyrol
 stellt den Beleg wieder her. Die Alternative (Sweep spart `source='crunchyroll'` aus) wurde
 verworfen: er könnte ein echtes Lizenzende nie mehr entfernen, und die Zeile wäre für Titel
 außerhalb des Crunchyroll-Umfangs dauerhaft eingefroren. Die Begründung steht auch im Kopf von
-`catalog-sweep.sh`.
+`catalog-sweep.sh`. Die vierstündige Titelsuche (`build_sql`) spart `source = 'crunchyroll'`
+dagegen aus — sie ist der enge, titelweise Weg; sonst machte `--stale-weighted`, das laufende
+Titel zuerst nimmt, den Beleg binnen Stunden wieder zur geerbten Zeile. Der wöchentliche Sweep
+bleibt autoritativ: er räumt nicht mehr gepflegte Crunchyroll-Zeilen ab, daher friert keine ein.
 
 **Kennzahl und Alarm:** `npx tsx src/scripts/streaming-coverage.ts` weist Angebote und Titel je
 Vertrauensstufe (`confirmed`/`unconfirmed`/`rejected`), `streamingVerifiedAt` und die Lücke der

@@ -17,6 +17,10 @@ BATCH=150
 cd "$F" || exit 1
 echo "===== $(date) --stale-weighted $BATCH =====" >> "$LOG"
 python3 -u src/scripts/justwatch-streaming.py --stale-weighted "$BATCH" >> "$LOG" 2>&1
+RC=$?
 
-# Lücken-Alarm (schweigt bei 0, höchstens eine Meldung pro Tag).
-/mnt/cache/appdata/otakupulse/streaming-alarm.sh >> "$LOG" 2>&1
+# Lücken-Alarm (schweigt bei 0, höchstens eine Meldung pro Tag). Per bash aufgerufen wie
+# die Geschwister im Repo (Mode 100644, kein Ausführungsbit nötig).
+bash /mnt/cache/appdata/otakupulse/streaming-alarm.sh >> "$LOG" 2>&1
+
+exit $RC   # der Exit-Code des Python-Laufs, nicht der des Alarms
