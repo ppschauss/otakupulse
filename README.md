@@ -275,7 +275,9 @@ JustWatch schon mit HTTP 403 geblockt). Voll-Backfill (~11k Titel, ~30 min) übe
 ### Prüflisten im Payload-Admin
 
 Unsichere Angaben zeigt die Seite als „nicht bestätigt" statt zu schweigen — damit sind sie
-eine **Arbeitsliste**: von Hand prüfen muss man nur diese Zeilen, nicht den ganzen Katalog.
+eine **Arbeitsliste**: von Hand prüfen muss man nur die unbestätigten Zeilen (Liste 1), nicht
+den ganzen Katalog. Die zweite Liste (Titel ohne Nachweis) ist dagegen eine
+**Beobachtungsliste**.
 Der Admin liegt unter `/legal/admin` (`routes.admin` in `payload.config.ts`); die Collection
 heißt `anime`. Beide Listen sind normale Admin-Listenansichten mit Filter in der URL — es gibt
 bewusst keine eigene Oberfläche. Die Felder bleiben unverändert, ein späteres Werkzeug kann
@@ -296,15 +298,16 @@ sie über die Payload-API lesen. Die Listenansicht hat dafür die Spalte `stream
 
 Größenordnung (gemessen am 09.11.2026): 11.061 Titel, davon 7.864 ohne jedes Angebot; in
 der laufenden Season FALL 2026 haben 52 von 110 Titeln keine Angabe. Liste 2 ist also zu
-Beginn riesig und schrumpft mit jedem Katalog-Durchlauf; zum Abarbeiten sind die neuesten
-Titel (`-seasonYear`) sinnvoll, weil dort Besucher tatsächlich suchen.
+Beginn riesig und schrumpft mit jedem Katalog-Durchlauf; die neuesten
+Titel (`-seasonYear`) stehen oben, weil dort die Lücken zählen: dort suchen Besucher
+tatsächlich.
 
 **Liste 2 ist eine Beobachtungsliste, keine Handarbeitsliste.** `streamingVerifiedAt` setzt
 ausschließlich der vollständige Katalog-Durchlauf (gebunden an das `complete`-Flag); von Hand
 wird der Stempel nicht gesetzt, sonst wäre er keine Beobachtung mehr, sondern eine Behauptung.
 Die Liste leert sich nach dem ersten vollständigen Durchlauf fast von selbst, weil dann jeder
 erfasste Titel den Stempel trägt. Von Hand eingreifen muss man dort nur, wenn man **weiß**,
-dass ein Titel verfügbar ist: dann eine Angebotszeile mit `source = manual` anlegen (siehe
+dass ein Titel verfügbar ist: dann eine Angebotszeile mit `confidence = confirmed` und `source = manual` anlegen (siehe
 unten). Ein so entschiedener Titel **bleibt bis zum nächsten Durchlauf auf der Liste** — man
 sieht ihn also wieder, das heißt nicht, dass die Entscheidung verloren ist.
 
@@ -316,9 +319,9 @@ sieht ihn also wieder, das heißt nicht, dass die Entscheidung verloren ist.
   Veto-Zeile bleibt stehen und verhindert, dass der Sync den Falschtreffer wieder einfügt;
   die Seite zeigt sie nicht an.
 - **Eine Zeile einfach zu löschen genügt nicht** — der Sync findet denselben Treffer wieder
-  und legt sie wieder an, sobald ein Durchlauf diesen Titel erfasst. Spätestens geschieht das
-  beim wöchentlichen Katalog-Abgleich; über den rollierenden Lauf allein (150 Titel alle
-  vier Stunden, bei 11.061 Titeln rund 74 Läufe) kann es bis zu zwölf Tage dauern.
+  und legt sie wieder an, sobald ein Durchlauf diesen Titel erfasst. Der rollierende
+  Abgleich (150 Titel alle vier Stunden, bei 11.061 Titeln rund 74 Läufe) braucht dafür
+  rund zwölf Tage.
 
 Der Sync spart beim autoritativen Löschen `source = 'manual'` und `confidence = 'rejected'`
 aus und fügt ein Paar `(provider, monetization)` mit `manual`-Zeile nicht doppelt ein. Endet
