@@ -10,7 +10,7 @@ import {
   streamingSummary,
   type StreamingOffer,
 } from '@/lib/streaming'
-import { UNCONFIRMED_LABEL, isConfirmed, isUnconfirmed } from '@/lib/streamingConfidence'
+import { NO_PROVIDER_PHRASE, UNCONFIRMED_LABEL, isConfirmed, isUnconfirmed } from '@/lib/streamingConfidence'
 
 /**
  * „Wo streamen?"-Block der Anime-Seite — ersetzt die frühere /streamen/-Seite.
@@ -111,10 +111,11 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
         </>
       ) : (
         <p className="text-sm text-zinc-400">
-          {/* „Bei keinem Anbieter" nur mit Nachweis (vollständiger Katalog-Durchlauf); sonst keine Aussage zur Nichtverfügbarkeit. */}
+          {/* Nichtverfügbarkeit nur mit Nachweis (vollständiger Katalog-Durchlauf). Die Reichweite
+              der Aussage steckt in NO_PROVIDER_PHRASE — dort steht auch, warum sie eingegrenzt ist. */}
           {anime?.streamingVerifiedAt ? (
             <>
-              Aktuell ist {title} bei keinem Anbieter in Deutschland im Abo- oder Gratis-Stream gelistet
+              Aktuell ist {title} {NO_PROVIDER_PHRASE} gelistet
               {verified ? ` (geprüft am ${verified})` : ''}. Sobald ein Dienst den Titel aufnimmt, erscheint er hier.
             </>
           ) : (

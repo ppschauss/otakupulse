@@ -327,7 +327,7 @@ export const splitCsv = (s?: string | null): string[] =>
 const MONETIZATIONS: readonly string[] = ['flatrate', 'ads', 'free', 'buy', 'rent']
 const CONFIDENCES: readonly string[] = ['confirmed', 'unconfirmed', 'rejected']
 const SOURCES: readonly string[] = ['justwatch', 'crunchyroll', 'adn', 'manual']
-const providerRank =(slug: string) => PROVIDER_SLUGS.indexOf(slug)
+const providerRank = (slug: string) => PROVIDER_SLUGS.indexOf(slug)
 
 /**
  * Alle Angebote eines Anime, sortiert wie das Register (wichtigste Anbieter zuerst).

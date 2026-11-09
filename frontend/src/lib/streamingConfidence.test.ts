@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { isConfirmed, isUnconfirmed, offerNote, UNCONFIRMED_LABEL, rejectedProviderSlugs, unconfirmedOnlyProviderSlugs, offerLanguageLabel, NO_LANGUAGE } from './streamingConfidence'
+import { readFileSync } from 'node:fs'
+import { isConfirmed, isUnconfirmed, offerNote, UNCONFIRMED_LABEL, rejectedProviderSlugs, unconfirmedOnlyProviderSlugs, offerLanguageLabel, NO_LANGUAGE, NO_PROVIDER_PHRASE } from './streamingConfidence'
 
 describe('isConfirmed', () => {
   it('behandelt fehlende confidence als belegt (Altbestand ohne Feld)', () => {
@@ -90,5 +91,27 @@ describe('offerLanguageLabel', () => {
     expect(offerLanguageLabel('', 'de', 'unconfirmed')).toBe('Deutscher Sub')
     // Daten sind da, nur die Staffelzuordnung ist unbestätigt.
     expect(offerLanguageLabel('ja', '', 'unconfirmed')).toBe('Japanisch (OmU)')
+  })
+})
+
+describe('NO_PROVIDER_PHRASE', () => {
+  it('grenzt die Aussage auf die geprüften Anbieter ein', () => {
+    // Der Katalog-Durchlauf blättert nur Anbieter MIT Paket; HIDIVE, Paramount+,
+    // Anime on Demand und Apple TV+ haben keines. „bei keinem Anbieter" wäre für
+    // einen Titel, der nur dort läuft, eine Behauptung ohne Beleg.
+    expect(NO_PROVIDER_PHRASE).toContain('von uns geprüften')
+    expect(NO_PROVIDER_PHRASE).not.toMatch(/bei keinem Anbieter/)
+  })
+
+  it('ist die gemeinsame Quelle für Seite und Meta-Description', () => {
+    const box = readFileSync(new URL('../components/StreamingBox.tsx', import.meta.url), 'utf8')
+    const text = readFileSync(new URL('./streamingText.ts', import.meta.url), 'utf8')
+    for (const src of [box, text]) {
+      // Die Konstante wird eingesetzt, nicht der Satz wiederholt. Ein Vorkommen
+      // außerhalb von Kommentaren wäre eine zweite Quelle, die auseinanderläuft.
+      expect(src).toContain('NO_PROVIDER_PHRASE')
+      const ohneKommentare = src.replace(/^\s*(\/\/|\*|\/\*|\{\/\*).*$/gm, '')
+      expect(ohneKommentare).not.toContain('geprüften Streaming-Anbieter')
+    }
   })
 })

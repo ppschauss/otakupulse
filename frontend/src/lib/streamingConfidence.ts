@@ -17,6 +17,22 @@ export type OfferSource = 'justwatch' | 'crunchyroll' | 'adn' | 'manual'
 export const UNCONFIRMED_LABEL = 'Staffel nicht bestätigt'
 
 /**
+ * Die Aussage zur Nichtverfügbarkeit — EINE Quelle für Seite und Meta-Description.
+ *
+ * Sie reicht nur so weit wie der Katalog-Durchlauf, der sie belegt: geblättert werden
+ * die Anbieter MIT Paket (`PACKAGES` in `justwatch-catalog.py`), nicht alle gemappten.
+ * Im Abo-/Gratis-Bereich haben HIDIVE, Paramount+, Anime on Demand und Apple TV+ keines.
+ * „bei keinem Anbieter" wäre für einen Titel, der nur dort läuft, falsch.
+ *
+ * Als Konstante, weil die Formulierung an zwei Orten erscheint (`StreamingBox.tsx` und
+ * `streamingText.ts`). Als Kommentar-Bitte, beide gleichzeitig zu ändern, würde sie
+ * irgendwann auseinanderlaufen — und dann behauptet eine der beiden Stellen mehr, als
+ * der Stempel trägt. Nur mit `streamingVerifiedAt` verwenden.
+ */
+export const NO_PROVIDER_PHRASE =
+  'bei keinem der von uns geprüften Streaming-Anbieter in Deutschland im Abo- oder Gratis-Stream'
+
+/**
  * Zusatz hinter einem Titel im Artikeltext: leer für belegte Angebote (auch NULL),
  * sonst der Hinweis, dass die Staffel nicht bestätigt ist. Verworfene Angebote
  * gelangen nie in einen Artikel; sollte doch eines durchrutschen, kennzeichnet
