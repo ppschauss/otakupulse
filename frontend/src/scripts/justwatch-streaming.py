@@ -586,9 +586,14 @@ def session():
 
 def other_instance_running():
     """Instanz-Sperre: Cron (--stale) und Backfill dürfen nie parallel laufen — zwei
-    Läufe verdoppeln das Volumen und JustWatch sperrt die IP."""
+    Läufe verdoppeln das Volumen und JustWatch sperrt die IP.
+
+    Gilt für BEIDE JustWatch-Skripte (Titelsuche und Katalog-Abgleich): sie teilen sich
+    dieselbe IP und dasselbe Limit, also zählt ein Lauf des einen als Gegenstelle des
+    anderen. Das Muster hängt bewusst nicht am Verzeichnis `src/scripts/` — der
+    Katalog-Abgleich wird auch aus /tmp heraus gestartet."""
     me, parent = str(os.getpid()), str(os.getppid())
-    out = subprocess.run(["pgrep", "-f", "src/scripts/justwatch-streaming.py"], capture_output=True, text=True).stdout.split()
+    out = subprocess.run(["pgrep", "-f", r"justwatch-(streaming|catalog)\.py"], capture_output=True, text=True).stdout.split()
     return any(pid not in (me, parent) for pid in out)
 
 
