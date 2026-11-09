@@ -282,6 +282,37 @@ def test_gleicher_titel_anderes_werk_liang_shan_po():
     assert _slug(_node("Die Rebellen vom Liang Shan Po", "Suikoden", 1973)) is None
 
 
+def test_exakt_gleicher_titel_aber_53_jahre_abstand_trifft_die_hartgrenze():
+    """Hier ist der Titel wirklich gleich ('Suikoden'); nur die Jahres-Hartgrenze rettet."""
+    exakt = [{"id": 40, "slug": "suikoden-2026", "titles": ["", "", "Suikoden", ""], "year": 2026, "want": "SHOW"}]
+    assert _slug(_node("Die Rebellen vom Liang Shan Po", "Suikoden", 1973), exakt) is None
+    assert _slug(_node("Suikoden", "Suikoden", 2026), exakt) == "suikoden-2026"
+
+
+def test_fortsetzung_mit_untertitel_trifft_nicht_unseren_basistitel():
+    """Unser 'Foobar Story' (ohne Untertitel) darf nicht auf den Knoten
+    'Foobar Story: Part 2' passen, auch nicht im selben Jahr."""
+    unser = [{"id": 41, "slug": "foobar", "titles": ["", "", "Foobar Story", ""], "year": 2020, "want": "SHOW"}]
+    assert _slug(_node("Foobar Story: Part 2", "Foobar Story: Part 2", 2020), unser) is None
+
+
+def test_jahresabzug_laesst_exakten_treffer_bei_3_jahren_gegen_basistitel_im_selben_jahr_verlieren():
+    """A: exakter Titel, 3 Jahre Abstand (1.0 - 0.15 = 0.85). B: Basistitel-Treffer im
+    selben Jahr (0.92 + 0.03 = 0.95). B muss gewinnen; ohne Abzug gewänne A mit 1.0."""
+    zwei = [
+        {"id": 42, "slug": "foobar-a", "titles": ["", "", "Foobar Story", ""], "year": 2020, "want": "SHOW"},
+        {"id": 43, "slug": "foobar-b", "titles": ["", "", "Foobar Story: Beginning", ""], "year": 2023, "want": "SHOW"},
+    ]
+    assert _slug(_node("Foobar Story: Der Anfang", "Foobar Story", 2023), zwei) == "foobar-b"
+
+
+def test_mindestlaenge_der_basis_grenze_fuenf_nein_sechs_ja():
+    fuenf = [{"id": 44, "slug": "b5", "titles": ["", "", "Abcde: Eins", ""], "year": 2020, "want": "SHOW"}]
+    sechs = [{"id": 45, "slug": "b6", "titles": ["", "", "Abcdef: Eins", ""], "year": 2020, "want": "SHOW"}]
+    assert _slug(_node("Abcde: Zwei", "Abcde: Zwei", 2020), fuenf) is None
+    assert _slug(_node("Abcdef: Zwei", "Abcdef: Zwei", 2020), sechs) == "b6"
+
+
 def test_film_matcht_keine_serie():
     assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 2013, "MOVIE")) is None
 

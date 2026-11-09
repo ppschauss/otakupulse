@@ -314,6 +314,11 @@ def match_node(parsed, anime):
         if parsed.get("object_type") != a.get("want"):
             continue
         our_year = _year(a.get("year"))
+        # "Jahr 0 = unbekannt" hängt an ZWEI Stellen: `_year` macht 0 zu None, und der
+        # Truthiness-Guard hier fängt eine durchgerutschte 0 ab. Gemessen: jede Stelle
+        # allein ist redundant (Mutation nur an einer bleibt grün), erst beide zusammen
+        # gelockert machen 0 zum Jahr mit 2000+ Jahren Abstand — das fängt
+        # test_jahr_null_von_justwatch_gilt_als_unbekannt_nicht_als_jahr_null.
         diff = abs(node_year - our_year) if node_year and our_year else None
         if diff is not None and diff >= _YEAR_HARD_LIMIT:
             continue
@@ -339,9 +344,10 @@ def dedupe_offers(offers):
     Direktlink gibt. Link, `is_channel` und Enddatum (`available_to`) kommen
     gemeinsam vom primären Angebot — ein Channel ergänzt Sprachen, überträgt aber
     nicht sein Enddatum auf den Direktanbieter. `audio` und `subs` werden vereinigt
-    (als Mengen). Angebote ohne Deep-Link werden verworfen, ihre Sprachen zählen aber
-    mit, solange eine Zeile desselben Schlüssels einen Link hat. Dieselbe Regel wie
-    `aggregate_offers` in justwatch-streaming.py. Die Eingabe wird nicht verändert."""
+    (als Mengen). Ein Schlüssel ganz ohne Deep-Link entfällt. (`_parse_offers` verwirft
+    link-lose Angebote bereits vorher; hier ist das nur der Selbstschutz für Aufrufer,
+    die Rohlisten übergeben.) Dieselbe Regel wie `aggregate_offers` in
+    justwatch-streaming.py. Die Eingabe wird nicht verändert."""
     rows = {}
     for o in offers:
         key = (o["provider"], o["monetization"])
