@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isConfirmed, isUnconfirmed, UNCONFIRMED_LABEL } from './streamingConfidence'
+import { isConfirmed, isUnconfirmed, offerNote, UNCONFIRMED_LABEL } from './streamingConfidence'
 
 describe('isConfirmed', () => {
   it('behandelt fehlende confidence als belegt (Altbestand ohne Feld)', () => {
@@ -24,5 +24,15 @@ describe('isUnconfirmed', () => {
 describe('UNCONFIRMED_LABEL', () => {
   it('ist der Text, den Box und News verwenden', () => {
     expect(UNCONFIRMED_LABEL).toBe('Staffel nicht bestätigt')
+  })
+})
+
+describe('offerNote', () => {
+  it('ist leer für belegte Angebote', () => {
+    expect(offerNote(null)).toBe('')
+    expect(offerNote('confirmed')).toBe('')
+  })
+  it('kennzeichnet unbestätigte Angebote für den Artikeltext', () => {
+    expect(offerNote('unconfirmed')).toBe(' (Staffel nicht bestätigt)')
   })
 })

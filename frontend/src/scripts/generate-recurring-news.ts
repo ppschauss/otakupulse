@@ -31,6 +31,7 @@ import config from '../payload.config'
 import Anthropic from '@anthropic-ai/sdk'
 import { displayTitle, animeBanner } from '../lib/anime'
 import { DE_PROVIDER_SLUGS, providerBySlug } from '../lib/streaming'
+import { offerNote, UNCONFIRMED_LABEL, type Confidence } from '../lib/streamingConfidence'
 import { toLexical, stripMarkers, type Valid } from '../lib/articleBody'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -490,19 +491,23 @@ const LANG = (audio: string, subs: string) => {
 }
 const COST: Record<string, string> = { flatrate: 'Abo', ads: 'kostenlos (Werbung)', free: 'kostenlos' }
 
-type OfferRow = { id: number; slug: string; t: string; score: number | null; banner: string | null; cover: string | null; audio: string; subs: string; monet: string; at: string | null }
+type OfferRow = { id: number; slug: string; t: string; score: number | null; banner: string | null; cover: string | null; audio: string; subs: string; monet: string; at: string | null; confidence: Confidence | null }
 
 async function offerRows(payload: Payload, providerSlug: string, cond: string): Promise<OfferRow[]> {
   const res = await (payload.db as any).pool.query(
     `SELECT a.id, a.slug, COALESCE(NULLIF(a.title_german,''), NULLIF(a.title_english,''), a.title_romaji) AS t,
             a.average_score AS score, a.banner_image_local AS banner, a.cover_image_local AS cover,
-            o.audio, o.subs, o.monetization AS monet, ${cond.includes('available_to') ? 'o.available_to' : 'o.first_seen_at'} AS at
+            o.audio, o.subs, o.monetization AS monet, o.confidence AS confidence, ${cond.includes('available_to') ? 'o.available_to' : 'o.first_seen_at'} AS at
      FROM anime_streaming_offers o JOIN anime a ON a.id = o._parent_id
-     WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE AND ${cond}
-     ORDER BY a.popularity DESC NULLS LAST LIMIT 40`,
+     WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE
+       AND o.confidence IS DISTINCT FROM 'rejected' AND ${cond}
+     ORDER BY a.popularity DESC NULLS LAST, (o.confidence IS NOT DISTINCT FROM 'unconfirmed') LIMIT 40`,
     [providerSlug],
   )
-  // je Anime nur ein Angebot (bestes = erstes)
+  // Verworfene Angebote (Falschtreffer) kommen nie in einen Artikel. NULL ist Altbestand
+  // und gilt als belegt, daher IS DISTINCT FROM (ein `<>` würde alle NULL-Zeilen verwerfen).
+  // Je Anime nur ein Angebot (bestes = erstes): bei gleicher Beliebtheit zuerst das belegte,
+  // damit ein unbestätigtes Angebot kein belegtes desselben Titels verdrängt.
   const seen = new Set<number>()
   return (res.rows as OfferRow[]).filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)))
 }
@@ -558,7 +563,7 @@ async function runPlatformNew(payload: Payload, authorId: any, ymd: string): Pro
     const rows = await offerRows(payload, ps, `o.first_seen_at >= greatest(now() - interval '30 days', '${NEU_AB}'::timestamptz) AND ${ECHT_NEU}`)
     if (rows.length < 5) continue
     const slug = `neu-auf-${ps}-${y}-${String(m).padStart(2, '0')}`
-    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]] | ${LANG(r.audio, r.subs)} | ${COST[r.monet] || r.monet} | ${r.score ? `${r.score}/100` : '—'} |`)
+    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]]${offerNote(r.confidence)} | ${LANG(r.audio, r.subs)} | ${COST[r.monet] || r.monet} | ${r.score ? `${r.score}/100` : '—'} |`)
     await createArticle(payload, authorId, {
       slug,
       category: 'guide',
@@ -571,8 +576,9 @@ async function runPlatformNew(payload: Payload, authorId: any, ymd: string): Pro
         `${rows.length} Anime sind in den letzten 30 Tagen neu in den ${p.name}-Katalog (Deutschland) gekommen.`,
         `Anbieter-Baustein (wörtlich einbauen): [[page:plattform-${ps}|${p.name}]]`,
         `Die drei beliebtesten Neuzugänge (Bausteine wörtlich einbauen):`,
-        ...rows.slice(0, 3).map((r) => `- [[anime:${r.slug}|${r.t}]] (${LANG(r.audio, r.subs)}, ${COST[r.monet] || r.monet})`),
+        ...rows.slice(0, 3).map((r) => `- [[anime:${r.slug}|${r.t}]]${offerNote(r.confidence)} (${LANG(r.audio, r.subs)}, ${COST[r.monet] || r.monet})`),
         `Verweise darauf, dass die komplette Liste unten steht und wir die Verfügbarkeit laufend prüfen.`,
+        `Titel mit dem Zusatz „(${UNCONFIRMED_LABEL})“ nennst du nur mit diesem Zusatz; behaupte für sie keine Verfügbarkeit der genauen Staffel.`,
         `headline: Muss "${p.name}" und "neu" enthalten, z. B. "Neu auf ${p.name}: …".`,
       ].join('\n'),
       appendix: [`## Alle Neuzugänge auf ${p.name} (letzte 30 Tage)`, '', '| Anime | Sprachfassung | Kosten | Score |', '|---|---|---|---|', ...lines].join('\n'),
@@ -588,7 +594,7 @@ async function runPlatformLeaving(payload: Payload, authorId: any, ymd: string):
     if (rows.length < 3) continue
     const slug = `verlaesst-${ps}-${y}-${String(m).padStart(2, '0')}`
     const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Berlin' }) : '—')
-    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]] | ${fmt(r.at)} | ${LANG(r.audio, r.subs)} | ${r.score ? `${r.score}/100` : '—'} |`)
+    const lines = rows.map((r) => `| [[anime:${r.slug}|${cell(r.t)}]]${offerNote(r.confidence)} | ${fmt(r.at)} | ${LANG(r.audio, r.subs)} | ${r.score ? `${r.score}/100` : '—'} |`)
     await createArticle(payload, authorId, {
       slug,
       category: 'guide',
@@ -601,8 +607,9 @@ async function runPlatformLeaving(payload: Payload, authorId: any, ymd: string):
         `Bei ${rows.length} Anime läuft die Lizenz bei ${p.name} (Deutschland) in den nächsten ${VERLAESST_TAGE} Tagen aus — wer sie noch sehen will, sollte sich beeilen.`,
         `Anbieter-Baustein (wörtlich einbauen): [[page:plattform-${ps}|${p.name}]]`,
         `Die drei beliebtesten Titel mit Datum (Bausteine wörtlich einbauen):`,
-        ...rows.slice(0, 3).map((r) => `- [[anime:${r.slug}|${r.t}]] (bis ${fmt(r.at)})`),
+        ...rows.slice(0, 3).map((r) => `- [[anime:${r.slug}|${r.t}]]${offerNote(r.confidence)} (bis ${fmt(r.at)})`),
         `Verweise auf die vollständige Liste unten. Erfinde keine Gründe für den Lizenzablauf.`,
+        `Titel mit dem Zusatz „(${UNCONFIRMED_LABEL})“ nennst du nur mit diesem Zusatz; behaupte für sie kein Enddatum der genauen Staffel.`,
         `headline: Muss "${p.name}" und "verlassen" oder "verschwinden" enthalten.`,
       ].join('\n'),
       appendix: [`## Alle Titel, die ${p.name} in den nächsten ${VERLAESST_TAGE} Tagen verlassen`, '', '| Anime | verfügbar bis | Sprachfassung | Score |', '|---|---|---|---|', ...lines].join('\n'),

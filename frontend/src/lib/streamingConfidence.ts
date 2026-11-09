@@ -16,6 +16,15 @@ export type OfferSource = 'justwatch' | 'crunchyroll' | 'adn' | 'manual'
 /** Text, den „Wo streamen?"-Box und News für unbestätigte Angebote verwenden. */
 export const UNCONFIRMED_LABEL = 'Staffel nicht bestätigt'
 
+/**
+ * Zusatz hinter einem Titel im Artikeltext: leer für belegte Angebote (auch NULL),
+ * sonst der Hinweis, dass die Staffel nicht bestätigt ist. Verworfene Angebote
+ * gelangen nie in einen Artikel; sollte doch eines durchrutschen, kennzeichnet
+ * die Funktion es nicht als belegt-unbestätigt, sondern bleibt leer.
+ */
+export const offerNote = (confidence: Confidence | null): string =>
+  confidence === 'unconfirmed' ? ` (${UNCONFIRMED_LABEL})` : ''
+
 type WithConfidence = { confidence?: Confidence | null }
 
 /** Belegt — oder Altbestand ohne `confidence` (NULL/fehlend gilt als belegt). */
