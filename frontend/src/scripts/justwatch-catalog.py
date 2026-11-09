@@ -802,18 +802,29 @@ def diff_offers(anime, offers):
 def verified_sql(ids, now_iso, complete=False):
     """Der Nachweis-Stempel `anime.streaming_verified_at` — oder eine leere Liste.
 
-    Bedeutung des Stempels: „dieser Titel war Teil eines vollständigen
-    Katalog-Durchlaufs über alle gemappten Anbieter". Er wird für JEDEN erfassten Titel
+    Bedeutung des Stempels, genau und nicht weiter: „dieser Titel war Teil eines
+    vollständigen Katalog-Durchlaufs über alle Anbieter MIT PAKET (`PACKAGES`), gefiltert
+    auf das Genre `ani`, über Abo/Werbung/Gratis". Er wird für JEDEN erfassten Titel
     gesetzt, nicht nur für die ohne Treffer: in der engen Lesart („nirgends gefunden")
     trüge ein Titel MIT Angeboten nie einen Stempel, und die Aussage „bei Netflix nicht
     gelistet" wäre für ihn dauerhaft unbelegbar, obwohl der Durchlauf Netflix' Katalog
     gerade geprüft hat. Die Textschicht (`lib/streamingText.ts`) liest das Feld genau so.
 
-    Der Stempel deckt Abo, Werbung und Gratis ab — NICHT Kauf und Leih, denn die
-    blättert der Abruf nicht (siehe `build_catalog_sql`). Die öffentliche Formulierung
-    ist genau so eingegrenzt („bei keinem Anbieter in Deutschland im Abo- oder
-    Gratis-Stream"), das passt zusammen; niemand darf den Stempel später weiter lesen,
-    als er trägt.
+    DREI GRENZEN, die der Stempel NICHT abdeckt:
+      - Kauf und Leih: die blättert der Abruf nicht (siehe `build_catalog_sql`).
+      - Die gemappten Anbieter OHNE Paket. `PACKAGES` ist eine echte Teilmenge von
+        `CLEARNAME_TO_SLUG`; im Abo-/Werbe-/Gratis-Bereich fehlt das Paket für hidive,
+        paramount-plus, anime-on-demand und apple-tv (Clearname „Apple TV+"), bei
+        Kauf/Leih zusätzlich für amazon-video, google-play, microsoft-store, rakuten-tv,
+        sky-store und akibapass. Ein Titel, der nur dort läuft, bekommt trotzdem einen
+        Stempel — gefunden wird er nur, wenn er im Katalog eines Pakets mit auftaucht
+        (die Angebotsliste eines Knotens ist über alle Anbieter vollständig).
+      - Den Recall des Genre-Filters `ani`: jeder Abruf filtert darauf, und wie viele
+        Anime JustWatch ohne dieses Genre führt, ist nicht gemessen.
+    Deshalb lautet die öffentliche Formulierung „bei keinem der von uns geprüften
+    Streaming-Anbieter in Deutschland im Abo- oder Gratis-Stream"
+    (`lib/streamingText.ts`) — nicht „bei keinem Anbieter". Niemand darf den Stempel
+    weiter lesen, als er trägt.
 
     Bei `complete=False` wird NICHTS gestempelt (Review Focus 1): ein Abbruch mitten im
     Durchlauf — 403/429, kaputte Paginierung, eine Kante ohne Knoten — darf nicht den
@@ -833,12 +844,19 @@ def run_complete(flags, shorts, knoten):
     Abrufe (je Paket und Objekttyp), `shorts` die geblätterten Pakete, `knoten` die
     Gesamtzahl der gelesenen Katalogknoten.
 
+    „Vollständig" heißt hier: alle Pakete aus `PACKAGES` geblättert, jedes davon bis zum
+    Ende. Es heißt NICHT „über alle gemappten Anbieter nachgesehen" — für die Anbieter
+    ohne Paket (im Abo-Bereich hidive, paramount-plus, anime-on-demand, apple-tv) gibt es
+    keinen Katalog-Abruf, und der Genre-Filter `ani` begrenzt
+    auch die geblätterten Pakete auf das, was JustWatch unter diesem Genre führt
+    (Recall nicht gemessen). Genau soweit trägt der Stempel, siehe `verified_sql`.
+
     Ein einziges unvollständiges Paket macht den ganzen Durchlauf unvollständig — nur
-    dann ist „bei keinem Anbieter gefunden" ein Nachweis und nicht bloß die Folge eines
-    Netzwerkfehlers. Drei Sonderfälle gehören dazu:
+    dann ist „in den geprüften Katalogen nicht gefunden" ein Nachweis und nicht bloß die
+    Folge eines Netzwerkfehlers. Drei Sonderfälle gehören dazu:
       - leere Flag-Liste: es wurde nichts geblättert, also ist nichts belegt;
       - `--packages` mit einer Teilmenge: der Abruf kann vollständig gewesen sein, aber
-        der Stempel behauptet „über ALLE gemappten Anbieter nachgesehen". Das wäre
+        der Stempel behauptet einen Durchlauf über ALLE Pakete aus `PACKAGES`. Das wäre
         falsch, also wird nicht gestempelt;
       - kein einziger Knoten im ganzen Durchlauf. Auslöser ist hier KEIN Netzwerkfehler
         (der setzt `complete=False`), sondern eine stille Semantikänderung bei

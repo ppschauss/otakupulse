@@ -470,6 +470,53 @@ Aus dem Builder-Gegencheck nachgetragen, ebenfalls Entscheidungen des Autors:
     `verified_at` da. Beide Regressionsfälle müssen grün sein. Wird das ohne die
     Crunchyroll-Direktquelle (10) erreicht, darf sie in eine zweite Stufe.
 
+## Bekannte Grenze: der Nachweis-Stempel deckt nicht alle gemappten Anbieter
+
+Nachgetragen 2026-11-09 in der Fix-Welle nach dem Branch-Review.
+
+`streaming_verified_at` setzt der Katalog-Sweep nur bei einem **vollständigen**
+Durchlauf (`run_complete`: alle Pakete geblättert, jedes bis zum Ende, mindestens
+ein Knoten gelesen). „Vollständig" heißt aber nur: alle Anbieter, für die es ein
+JustWatch-Paket (`PACKAGES`) gibt. Das ist eine echte Teilmenge der in
+`CLEARNAME_TO_SLUG` gemappten Anbieter. Gegen den Code ausgezählt (2026-11-09,
+`set(CLEARNAME_TO_SLUG.values()) - set(PACKAGES.values())`) fehlt das Paket für:
+
+- **Abo/Werbung/Gratis — das ist die Lücke des Stempels:** `hidive`,
+  `paramount-plus`, `anime-on-demand`, `apple-tv` (Clearname „Apple TV+").
+- **Kauf/Leih — ohnehin außerhalb des Stempels** (der Abruf blättert nur
+  FLATRATE/ADS/FREE): `amazon-video`, `google-play`, `microsoft-store`,
+  `rakuten-tv`, `sky-store`, `akibapass`.
+
+`bilibili`, `iqiyi`, `wetv`, `adult-swim` und `tencent` stehen nur im Register
+(`lib/streaming.ts`), haben aber gar keine JustWatch-Clearname-Abbildung — über
+JustWatch kann für sie also nie ein Angebot entstehen, mit oder ohne Paket.
+
+Ein Titel, der ausschließlich bei einem dieser Anbieter läuft, bekommt den Stempel
+trotzdem — gefunden wird er nur, wenn er im Katalog eines Pakets mitauftaucht (die
+Angebotsliste eines Knotens ist über alle Anbieter vollständig, der `packages`-Filter
+wirkt nur auf die Trefferliste). Dazu kommt der Genre-Filter `ani`: jeder Abruf
+filtert darauf, und wie viele Anime JustWatch ohne dieses Genre führt, ist **nicht
+gemessen**.
+
+Folgen, die daraus gezogen sind:
+
+- Die Meta-Description sagt nicht mehr „bei keinem Anbieter in Deutschland im Abo-
+  oder Gratis-Stream", sondern „bei keinem der **von uns geprüften**
+  Streaming-Anbieter …" (`lib/streamingText.ts`). Das ist genau die Aussage, die der
+  Stempel trägt.
+- Der FAQ-Satz „Bei … ist … derzeit nicht gelistet" bleibt unverändert: er nennt
+  ausschließlich Netflix, Crunchyroll und Amazon Prime Video, und alle drei haben
+  Pakete (`nfx`/`nfa`, `cru`/`cra`, `amp`/`pva`) und werden geblättert.
+- Die Docstrings von `verified_sql` und `run_complete` benennen die Grenze; die
+  Prüfung selbst (`set(shorts) == set(PACKAGES)`) ist für das, was sie prüfen kann,
+  richtig und bleibt.
+
+**Folgearbeit (nicht in dieser Welle):** die JustWatch-`shortName`-Werte für die
+Anbieter ohne Paket gegen die API messen und `PACKAGES` um die erweitern, die eines
+haben. Das braucht Netzzugang gegen JustWatch (Rate-Limit beachten: 1 Worker,
+1,2 s) und war deshalb hier nicht machbar. Ein geratener `shortName` liefert HTTP 200
+mit `edges: []` — also einen Durchlauf, der vollständig aussieht und nichts findet.
+
 ## Was dem Builder überlassen bleibt
 
 - Schnitt der neuen Felder: zusätzliche Spalten an `anime_streaming_offers`

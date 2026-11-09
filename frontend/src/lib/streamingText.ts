@@ -84,9 +84,16 @@ export function streamingMetaDescription(anime: any): string {
   const facts = [formatLabel(anime?.format), yearOf(anime), anime?.episodes ? `${anime.episodes} Folgen` : ''].filter(Boolean).join(', ')
   const kind = `${g ? `${g}-Anime` : 'Anime'}${facts ? ` (${facts})` : ''}`
   if (!s.hasStream) {
-    // Die Aussage „bei keinem Anbieter" ist nur wahr, wenn ein vollständiger Katalog-Durchlauf den Titel nirgends fand.
+    // Die Aussage ist nur wahr, wenn ein vollständiger Katalog-Durchlauf den Titel nirgends fand —
+    // und sie reicht nur so weit wie dieser Durchlauf: geblättert werden die Anbieter MIT Paket
+    // (`PACKAGES` in justwatch-catalog.py), nicht alle gemappten. Im Abo-/Gratis-Bereich haben
+    // HIDIVE, Paramount+, Anime on Demand und Apple TV+ keines. „bei keinem
+    // Anbieter" wäre für einen Titel, der nur dort läuft, falsch; „bei keinem der von uns
+    // geprüften" ist genau die Aussage, die der Stempel trägt. Dafür sind „Episoden und
+    // Streaming-Status" aus der Aufzählung gefallen: die Folgenzahl steht ohnehin in `kind`, und
+    // so bleibt die Länge im Rahmen des Umgebenden (174 statt 170 Zeichen im Testfall).
     if (anime?.streamingVerifiedAt) {
-      return `${title}: ${kind}. Handlung, Charaktere, Episoden und Streaming-Status – aktuell bei keinem Anbieter in Deutschland im Abo- oder Gratis-Stream.`
+      return `${title}: ${kind}. Handlung und Charaktere – aktuell bei keinem der von uns geprüften Streaming-Anbieter in Deutschland im Abo- oder Gratis-Stream.`
     }
     // Ohne Nachweis keine Aussage zur Verfügbarkeit (nie nachgesehen ≠ nicht verfügbar).
     return `${title}: ${kind}. Handlung, Charaktere und Episoden im Überblick.`

@@ -40,13 +40,18 @@ describe('streamingMetaDescription / Title', () => {
 
 describe('Nichtverfügbarkeit nur mit Nachweis', () => {
   const base = { titleEnglish: 'Testanime', format: 'TV', seasonYear: 2014, episodes: 22, streamingOffers: [] }
-  it('behauptet Nichtverfügbarkeit, wenn verifiziert', () => {
+  it('behauptet Nichtverfügbarkeit nur für die geprüften Anbieter, wenn verifiziert', () => {
     const d = streamingMetaDescription({ ...base, streamingVerifiedAt: '2026-11-09T00:00:00Z' })
-    expect(d).toContain('bei keinem Anbieter in Deutschland')
+    // Der Stempel deckt die Anbieter MIT Katalog-Paket (`PACKAGES`), nicht alle gemappten:
+    // HIDIVE, Paramount+, Apple TV+, Anime on Demand u. a. blättert der Abruf nicht.
+    expect(d).toContain('bei keinem der von uns geprüften Streaming-Anbieter in Deutschland')
+    expect(d).not.toContain('bei keinem Anbieter')
+    // Länge im Rahmen des Umgebenden (~160 Zeichen Zielmarke der Meta-Description).
+    expect(d.length).toBeLessThanOrEqual(175)   // alte Fassung: 170
   })
   it('behauptet sie NICHT, wenn nie verifiziert', () => {
     const d = streamingMetaDescription({ ...base, streamingVerifiedAt: null })
-    expect(d).not.toContain('bei keinem Anbieter')
+    expect(d).not.toContain('bei keinem')
     expect(d).not.toContain('Gratis-Stream')
   })
   it('nennt auch ohne Nachweis Genre und Fakten', () => {
