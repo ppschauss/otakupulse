@@ -42,7 +42,7 @@ IMMER autoritativ (Angebote sind der neue Wahrheitsbestand); first_seen_at
 bleibt über Läufe hinweg erhalten.
 
 Rate-Limit: 1 Worker + 1.2 s Pause pro Request (~0.7 req/s), Keep-Alive-Session,
-max. 3 Suchanfragen pro Titel (die dritte, mit dem nativen Titel, nur ohne de/en). Bei 403/429 langer Backoff (30/60/120 s). JustWatch
+max. 2 Suchanfragen pro Titel (ohne de/en: Romaji, dann der native Titel). Bei 403/429 langer Backoff (30/60/120 s). JustWatch
 sperrt die IP für ~1 h, sobald zu viel Volumen kommt — am 2026-09-10 reichten dafür
 nacheinander 4 Worker (TLS pro Titel), 3 Worker bei ~5 Titel/s über 15 min und
 2 Worker bei ~3 req/s nach ~4 min (mit parallelem Cron). Große Läufe deshalb nur in
@@ -197,7 +197,9 @@ def norm_variants(s):
     ohne Klammerzusatz („JoJo's Bizarre Adventure (TV)"), römische Staffelziffer
     als Zahl („Sword Art Online II" → „swordartonline2"). Dazu die CJK-Form
     (`norm_cjk`), wenn sie sich von `norm` unterscheidet — bei japanischen Titeln
-    ist sie die einzige nicht-leere Form."""
+    ist sie die einzige nicht-leere Form; bei lateinischen Titeln mit Diakritika
+    kommt sie als zusätzliche Form dazu („sôsônofurîren"), was beim Vergleichen
+    harmlos ist."""
     if not s:
         return []
     base = _PAREN.sub("", s)
@@ -329,13 +331,21 @@ def best_match(data, our_titles, want="SHOW", year=None):
                 short, long_ = sorted((t, cn), key=len)
                 # Substring nur bei ähnlicher Länge: „journeysend" steckt zwar in
                 # „frierenbeyondjourneysend", ist aber ein anderer Film.
-                # Schwelle 0.55 (vorher 0.6), belegt an zwei echten Fällen:
+                # Schwelle 0.6, im Band 0.55 <= Verhältnis < 0.6 nur mit bekanntem Jahr
+                # auf BEIDEN Seiten. Belegt an zwei echten Fällen:
                 #   „suikoden" ⊂ „gensousuikoden"            = 0.571 → soll matchen
                 #   „journeysend" ⊂ „frierenbeyondjourneysend" = 0.458 → soll nicht
-                # Zwischen den Belegen liegt Luft, aber keine große — jede weitere
-                # Lockerung braucht eine neue Gegenprobe (siehe tests/test_matcher.py);
-                # die lockere Alt-Heuristik hatte „Hyouge Mono" auf „Mono" gematcht.
-                if len(short) >= 8 and short in long_ and len(short) / len(long_) >= 0.55:
+                # Warum die Jahresbedingung: Die Absicherung gegen „gleicher Titel, anderes
+                # Werk" (Rebellen vom Liang Shan Po, 1973, originalTitle „Suikoden") hängt
+                # am Jahres-Abzug, nicht an der Schwelle — ohne Jahr würde das gelockerte
+                # Band falsche Anbieter schreiben. Auf dem VPS gemessen (2026-11-09): nur 59
+                # von 11.061 Titeln (0,53 %) haben kein season_year (ohne die 170 MUSIC),
+                # meist ONA/OVA-Kuriosa; ihr Nutzen ist klein, das Falschtreffer-Risiko
+                # voll. Die lockere Alt-Heuristik hatte „Hyouge Mono" auf „Mono" gematcht.
+                # Jede weitere Lockerung braucht eine neue Gegenprobe (tests/test_matcher.py).
+                sub_ratio = len(short) / len(long_)
+                year_known = bool(year and cy)
+                if len(short) >= 8 and short in long_ and (sub_ratio >= 0.6 or (sub_ratio >= 0.55 and year_known)):
                     ratio = max(ratio, 0.95)
                 if ratio > score:
                     score, rem = ratio, ""
@@ -460,12 +470,13 @@ def aggregate_offers(node, season=None):
 
 
 def search_queries(a):
-    """Suchbegriffe für einen Titel, in Reihenfolge, dedupliziert (max. 3).
+    """Suchbegriffe für einen Titel, in Reihenfolge, dedupliziert (max. 2).
 
     Deutscher (sonst englischer) Titel, dann Romaji. Fehlen deutscher UND englischer
-    Titel, kommt der native Titel als dritte Anfrage dazu: JustWatch führt solche
+    Titel, entfällt der erste Begriff und der native Titel folgt dem Romaji (also
+    [romaji, native], weiterhin zwei Anfragen): JustWatch führt solche
     Titel oft anders als das Romaji („Suikoden" statt „Gensou Suikoden"), findet sie
-    aber über die Originalschrift. Mit de oder en bleibt es bei zwei Anfragen.
+    aber über die Originalschrift. Mit de oder en bleibt es bei [de/en, romaji].
     Das Rate-Limit bleibt unberührt — `api_post` hält die Pause je Request."""
     titles = [(t or "").strip() for t in a["titles"]]
     de, en, ro, na = titles[0], titles[1], titles[2], titles[3]

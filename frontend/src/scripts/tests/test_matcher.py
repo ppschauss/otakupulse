@@ -54,12 +54,36 @@ def test_journeys_end_matcht_nicht_auf_frieren():
     }}]}
     assert jw.best_match(data, ["", "", "Journey's End", ""], "SHOW", 2023) is None
 
-def test_fremder_japanischer_titel_gleichen_jahres_matcht_nicht():
-    """Zwei verschiedene japanische Titel desselben Jahres dürfen sich über die
-    neue CJK-Form nicht annähern."""
-    data = {"edges": [{"node": {
-        "objectType": "SHOW",
-        "content": {"title": "Frieren", "originalTitle": "葬送のフリーレン", "originalReleaseYear": 2026},
-        "offers": [], "seasons": [],
-    }}]}
+def _node(title, orig, year):
+    return {"edges": [{"node": {"objectType": "SHOW", "offers": [], "seasons": [],
+            "content": {"title": title, "originalTitle": orig, "originalReleaseYear": year}}}]}
+
+def test_substring_im_gelockerten_band_matcht_mit_jahr():
+    """Positivfall OHNE nativen Titel: nur die Substring-Regel (0.571) trägt ihn.
+    Setzt man die Schwelle auf 0.6 zurück, wird dieser Test rot."""
+    data = _node("Suikoden", "Suikoden", 2026)
+    assert jw.best_match(data, ["", "", "Gensou Suikoden", ""], "SHOW", 2026) is not None
+
+def test_substring_im_gelockerten_band_matcht_nicht_ohne_jahr():
+    """Das Band 0.55-0.6 gilt nur bei bekanntem Jahr auf beiden Seiten."""
+    data = _node("Suikoden", "Suikoden", 2026)
+    assert jw.best_match(data, ["", "", "Gensou Suikoden", ""], "SHOW", None) is None
+    assert jw.best_match(_node("Suikoden", "Suikoden", None), ["", "", "Gensou Suikoden", ""], "SHOW", 2026) is None
+
+def test_teilueberlappender_japanischer_titel_matcht_nicht():
+    """ドラゴンボール超 (2015) vs ドラゴンボールZ (1989): gemeinsames Präfix, ratio 0.875
+    — anderes Werk, fällt unter 0.90 (und am Jahresabstand)."""
+    data = _node("Dragon Ball Z", "ドラゴンボールZ", 1989)
+    assert jw.best_match(data, ["", "", "Dragon Ball Super", "ドラゴンボール超"], "SHOW", 2015) is None
+
+def test_gleiche_cjk_form_mit_grossem_jahresabstand_matcht_nicht():
+    data = _node("Suikoden", "幻想水滸伝", 1973)
     assert jw.best_match(data, ["", "", "Gensou Suikoden", "幻想水滸伝"], "SHOW", 2026) is None
+
+def test_norm_cjk_raender():
+    assert jw.norm_cjk("") == ""
+    assert jw.norm_cjk(None) == ""
+    assert jw.norm_cjk("!?・、。 ...") == ""
+    assert jw.norm_cjk("Re:ゼロから始める異世界生活") == "reゼロから始める異世界生活"
+    assert jw.norm_cjk("ヴァイオレット・エヴァーガーデン") == "ヴァイオレットエヴァーガーデン"
+    assert jw.norm_cjk("ＳＰＹ×ＦＡＭＩＬＹ") == "spyfamily"
