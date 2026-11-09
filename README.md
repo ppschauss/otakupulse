@@ -117,6 +117,7 @@ otakupulse/
 ├── docs/
 │   ├── PROJEKT.md                  # vollständige Pfad-Referenz (+ PDF)
 │   ├── BETRIEB.md                  # Betrieb, Deployment, Cron, Sicherheit (Detail)
+│   ├── streaming-rollout.md        # Rollout-Reihenfolge Streaming (Schema-Push, --discovery, Wrapper)
 │   └── ARCHITEKTUR-BLUEPRINT.md
 ├── n8n-workflows/                  # Autoposter-Workflow (+ README) für n8n
 ├── backup-db.sh                    # nächtliches DB-Backup (lokal + B2-Offsite)
@@ -603,6 +604,12 @@ ist also immer frisch; ein Lizenzende verschwindet spätestens nach einer Woche.
 Lauf (403/429, Token-Fehler, keine einzige Auflösung) räumt **nichts** ab. Folge eines längeren
 Ausfalls: belegte Crunchyroll-Zeilen verschwinden nach einer Woche, und die betroffenen Titel
 fallen auf die als „nicht bestätigt" gekennzeichnete JustWatch-Angabe zurück.
+
+**Erstmaliger Rollout:** die Reihenfolge ist eine Anforderung — Schema-Push zuerst,
+`justwatch-catalog.py --discovery` genau einmal vor dem ersten `--sweep`, dann die Wrapper
+nach `/opt/otakupulse-cron/` samt Pfadanpassung. Vollständig in
+[`docs/streaming-rollout.md`](docs/streaming-rollout.md); die Cron-Wrapper laufen **nicht**
+aus dem Repo.
 
 **Kennzahl und Alarm:** `npx tsx src/scripts/streaming-coverage.ts` weist Angebote und Titel je
 Vertrauensstufe (`confirmed`/`unconfirmed`/`rejected`), `streamingVerifiedAt` und die Lücke der
