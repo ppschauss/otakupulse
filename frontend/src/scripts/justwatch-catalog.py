@@ -78,7 +78,6 @@ jw = _load_neighbor("justwatch-streaming")
 api_post = jw.api_post
 CLEARNAME_TO_SLUG = jw.CLEARNAME_TO_SLUG
 MONETIZATION = jw.MONETIZATION
-STREAMING = jw.STREAMING
 AUDIO_TO_LANG = jw.AUDIO_TO_LANG
 SUB_TO_LANG = jw.SUB_TO_LANG
 psql = jw.psql
@@ -573,6 +572,35 @@ def offers_for_title(parsed, status=None, year=None, current_year=None):
     return out
 
 
+def offers_for_matches(nodes, status=None, year=None, current_year=None):
+    """Angebotszeilen für einen Titel, der in MEHREREN Katalogknoten auftauchte —
+    Vereinigung über `(provider, monetization)`.
+
+    JustWatch führt für dasselbe Werk mitunter zwei getrennte Knoten (verschiedene
+    Titelschreibweisen, Eintrag mit und ohne Jahr). Beide matchen denselben unserer
+    Titel. Nur den erstgefundenen zu schreiben wäre falsch, weil das `DELETE`
+    autoritativ über ALLE Abo-/Werbe-/Gratis-Zeilen des Titels ist: Anbieter, die nur am
+    zweiten Knoten hängen, verschwänden. Verschärfend: die Titelsuche wählt ihren Knoten
+    nach eigenen Regeln und löscht ebenfalls autoritativ — picken die beiden
+    Schreibwege verschiedene Knoten, kippen dieselben Zeilen bei jeder Rotation hin und
+    her.
+
+    Nicht summiert wird dagegen: Staffel- und Episodenzahl kommen vom ersten Knoten, der
+    das Paar nennt. Zwei Knoten beschreiben dasselbe Werk, ihre Zählungen aufzuaddieren
+    würde die Episodenzahl verdoppeln. Ein belegtes Angebot ersetzt ein geerbtes
+    desselben Paares, unabhängig von der Reihenfolge der Knoten — `confirmed` ist der
+    bessere Beleg."""
+    rows = {}
+    for parsed in nodes:
+        for r in offers_for_title(parsed, status, year, current_year):
+            key = (r["provider"], r["monetization"])
+            vorhanden = rows.get(key)
+            if vorhanden is None or (vorhanden["confidence"] != "confirmed"
+                                     and r["confidence"] == "confirmed"):
+                rows[key] = r
+    return [rows[k] for k in sorted(rows)]
+
+
 def build_catalog_sql(anime, offers, now_iso, discovery=False):
     """SQL für EINEN Titel: Angebote, Anbieter-Index, Sprachen. Schreibt selbst nichts.
 
@@ -608,10 +636,10 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False):
         Granularität ist die Zeile, nicht der Titel — ein eingefrorener Titel würde
         echte Neuzugänge verpassen.
       - `first_seen_at` bleibt pro `(provider, monetization)` erhalten, auch als NULL.
-        Bei `discovery=True` bekommen Titel OHNE bisherige Angebote NULL („seit Beginn
-        bekannt"), nie `now()` — sonst wäre der halbe Katalog 30 Tage lang „Neu auf
-        <Anbieter>" (Anti-Ziel; die Kaltstart-Sperre `ECHT_NEU` in
-        `generate-recurring-news.ts` prüft genau auf `first_seen_at IS NULL`).
+        Bei `discovery=True` bekommt JEDES neue Paar NULL („seit Beginn bekannt"), nie
+        `now()` — sonst wäre der halbe Katalog 30 Tage lang „Neu auf <Anbieter>"
+        (Anti-Ziel; die Kaltstart-Sperre `ECHT_NEU` in `generate-recurring-news.ts`
+        prüft genau auf `first_seen_at IS NULL`). Begründung an der Stelle selbst.
       - `anime_streaming_providers` (Filter-Index) wird neu gebaut und zählt
         unbestätigte Angebote mit (Entscheidung 4), `anime_available_languages` nur aus
         belegten (Entscheidung 7) und bleibt rein additiv.
@@ -624,8 +652,16 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False):
     des Titels aufrufen."""
     aid = anime["id"]
     monets = ",".join(q(m) for m in SWEEP_MONETIZATION)
+    # Ausgespart sind beide redaktionellen Entscheidungen: die Handarbeit
+    # (`source='manual'`, Entscheidung 8) UND das Veto (`confidence='rejected'`,
+    # Entscheidung 21). Das Veto braucht seine eigene Bedingung, weil der Lader eine
+    # Zeile allein an `confidence` als Veto erkennt: eine `rejected`-Zeile mit anderer
+    # `source` würde sonst gelöscht und das Angebot im Folgelauf wieder angelegt — das
+    # Veto hätte sich selbst gelöscht. `IS DISTINCT FROM`, weil der ganze Altbestand
+    # `confidence IS NULL` trägt und `<> 'rejected'` ihn herauswürfe.
     stmts = [f"DELETE FROM anime_streaming_offers WHERE _parent_id = {aid} "
-             f"AND source IS DISTINCT FROM 'manual' AND monetization IN ({monets});"]
+             f"AND source IS DISTINCT FROM 'manual' AND confidence IS DISTINCT FROM 'rejected' "
+             f"AND monetization IN ({monets});"]
     known = anime.get("offers") or {}
     rejected = set(anime.get("rejected") or ())
     slugs, langs = set(), set()
@@ -637,11 +673,19 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False):
             continue  # Veto des Redakteurs
         audio, subs = _csv(e.get("audio")), _csv(e.get("subs"))
         conf = e.get("confidence") or "confirmed"
-        # `first_seen_at` nur dann NULL, wenn der Titel noch gar keine Angebote hatte —
-        # dieselbe Regel wie `--initial` im Nachbarskript. Ein Titel mit Bestand
-        # bekommt bei einem neuen Paar den Zeitstempel des Laufs, damit „Neu auf
-        # <Anbieter>" für echte Neuzugänge weiter funktioniert.
-        first = known[key] if key in known else (None if (discovery and not known) else now_iso)
+        # `first_seen_at`: ein bekanntes Paar behält seinen gespeicherten Wert (auch
+        # NULL). Im REGELBETRIEB ist ein neues Paar ein echter Neuzugang und bekommt den
+        # Zeitstempel des Laufs — darauf beruht „Neu auf <Anbieter>".
+        # Im ENTDECKUNGSLAUF bekommt JEDES neue Paar NULL („seit Beginn bekannt"), denn
+        # dort ist „echter Neuzugang" von „wir haben nie nachgesehen" prinzipiell nicht
+        # unterscheidbar. Die naheliegende Bedingung „nur Titel ohne Bestand" wäre
+        # falsch: 113 Titel haben NUR Kauf/Leih-Angebote (die 1.400 Zeilen, die der
+        # Abruf nie sieht) und gelten damit als Titel „mit Bestand" — ihre erstmals
+        # gefundenen Abo-Angebote wären 30 Tage lang „Neu auf <Anbieter>", das
+        # Anti-Ziel, und `ECHT_NEU` in generate-recurring-news.ts greift nicht, weil es
+        # auf `first_seen_at IS NULL` prüft. `--discovery` läuft genau einmal;
+        # hinterher ist das nicht mehr zu korrigieren.
+        first = known[key] if key in known else (None if discovery else now_iso)
         slugs.add(e["provider"])  # auch unbestätigte zählen im Filter-Index mit
         if conf == "confirmed":
             for code in audio.split(","):
@@ -650,7 +694,12 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False):
             for code in subs.split(","):
                 if code in SUB_TO_LANG:
                     langs.add(SUB_TO_LANG[code])
-        seasons, episodes = e.get("seasons"), e.get("episodes")
+        # Beide Zahlen gehen ungequotet ins SQL. Für den Sweep sind sie durch
+        # `offers_for_title` schon int, aber diese Funktion ist ausdrücklich die
+        # Schnittstelle für weitere Quellen (Aufgabe 14) — `int()` ist hier der billige
+        # Schutz davor, dass von dort ein String ins Statement wandert.
+        seasons = None if e.get("seasons") is None else int(e["seasons"])
+        episodes = None if e.get("episodes") is None else int(e["episodes"])
         stmts.append(
             "INSERT INTO anime_streaming_offers "
             "(_order,_parent_id,id,provider,monetization,url,audio,subs,seasons,episodes,"
@@ -732,19 +781,30 @@ def verified_sql(ids, now_iso, complete=False):
             f"WHERE id IN ({','.join(str(int(i)) for i in ids)});"]
 
 
-def run_complete(flags, shorts):
+def run_complete(flags, shorts, knoten):
     """War DER GANZE Durchlauf vollständig? `flags` sind die `complete`-Flags aller
-    Abrufe (je Paket und Objekttyp), `shorts` die geblätterten Pakete.
+    Abrufe (je Paket und Objekttyp), `shorts` die geblätterten Pakete, `knoten` die
+    Gesamtzahl der gelesenen Katalogknoten.
 
     Ein einziges unvollständiges Paket macht den ganzen Durchlauf unvollständig — nur
     dann ist „bei keinem Anbieter gefunden" ein Nachweis und nicht bloß die Folge eines
-    Netzwerkfehlers. Zwei Sonderfälle gehören dazu:
+    Netzwerkfehlers. Drei Sonderfälle gehören dazu:
       - leere Flag-Liste: es wurde nichts geblättert, also ist nichts belegt;
       - `--packages` mit einer Teilmenge: der Abruf kann vollständig gewesen sein, aber
         der Stempel behauptet „über ALLE gemappten Anbieter nachgesehen". Das wäre
-        falsch, also wird nicht gestempelt."""
+        falsch, also wird nicht gestempelt;
+      - kein einziger Knoten im ganzen Durchlauf. Auslöser ist hier KEIN Netzwerkfehler
+        (der setzt `complete=False`), sondern eine stille Semantikänderung bei
+        JustWatch: fällt das Genre `ani` weg oder wird ein `shortName` umbenannt,
+        antwortet die API mit HTTP 200 und `edges: []`. `fetch_catalog` meldet dann
+        völlig korrekt „vollständig geblättert", und der Stempel würde alle 11.061 Titel
+        als „nirgends in Deutschland im Abo- oder Gratis-Stream" ausweisen. Ab Aufgabe
+        15 läuft der Sweep unbeaufsichtigt per Cron, also muss das hier hängen.
+        Geprüft wird die SUMME über den Durchlauf, nicht pro Paket: `etv` (MagentaTV)
+        liefert laut Messung legitim 0 Treffer, eine Prüfung pro Paket würde jeden
+        Durchlauf blockieren."""
     flags = list(flags)
-    return bool(flags) and all(flags) and set(shorts) == set(PACKAGES)
+    return bool(flags) and all(flags) and set(shorts) == set(PACKAGES) and knoten > 0
 
 
 def count_only(shorts):
@@ -776,10 +836,14 @@ def sweep(shorts, mode):
     Zustand eines fehlgeschlagenen Matches, und der darf keine Angebote löschen. Der
     Nachweis-Stempel geht dagegen an jeden erfassten Titel (siehe `verified_sql`).
 
-    Derselbe Titel steht in mehreren Katalogen (Crunchyroll UND Prime). Der erste
-    Treffer gewinnt: die Angebotsliste eines Knotens ist über alle Anbieter
-    vollständig, ein zweiter Knoten brächte nichts Neues — und zwei Knoten
-    aufzuaddieren würde die Episodenzahlen doppelt zählen.
+    Derselbe Titel steht in mehreren Katalogen (Crunchyroll UND Prime, oder
+    Direktanbieter UND Amazon-Channel). Zwei Fälle, die auseinanderzuhalten sind:
+      - DERSELBE Knoten kommt ein zweites Mal (gleiche Titel, gleiches Jahr): seine
+        Angebotsliste ist über alle Anbieter vollständig, er bringt nichts Neues und
+        wird übersprungen (Zähler `doppelt`).
+      - EIN ANDERER Knoten für dasselbe Werk: er wird aufbewahrt, und `offers_for_matches`
+        vereinigt die Angebote (Zähler `mehrfach`). Sonst löschte das autoritative
+        `DELETE` die Anbieter des nicht gewählten Knotens.
 
     `anime.streaming_checked_at` wird bewusst NICHT gesetzt. Dieser Stempel steuert die
     Rotation der Titelsuche (`--stale`); würde der Sweep ihn wöchentlich für alle 11.061
@@ -797,23 +861,33 @@ def sweep(shorts, mode):
     sess = jw.session()
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
     current_year = time.gmtime().tm_year
-    flags, treffer, mehrfach = [], {}, 0
+    flags, treffer, gesehen = [], {}, {}
+    knoten_gesamt, mehrfach, doppelt = 0, 0, 0
 
     for short in shorts:
         for typ in ("SHOW", "MOVIE"):
             nodes, complete = fetch_catalog(sess, short, typ)
             flags.append(complete)
+            knoten_gesamt += len(nodes)
             neu = 0
             for node in nodes:
                 parsed = parse_node(node)
                 a = match_node(parsed, candidates_for(parsed, idx))
                 if a is None:
                     continue
-                if a["id"] in treffer:
-                    mehrfach += 1
+                # Fingerabdruck des Knotens: zwei Pakete liefern denselben Knoten
+                # (Crunchyroll und Crunchyroll Amazon Channel), ein anderes Werk-Objekt
+                # unterscheidet sich in Titel oder Jahr.
+                fp = (parsed.get("original_title"), parsed.get("title"), parsed.get("year"))
+                if fp in gesehen.setdefault(a["id"], set()):
+                    doppelt += 1
                     continue
-                treffer[a["id"]] = parsed
-                neu += 1
+                gesehen[a["id"]].add(fp)
+                treffer.setdefault(a["id"], []).append(parsed)
+                if len(treffer[a["id"]]) > 1:
+                    mehrfach += 1
+                else:
+                    neu += 1
             print(f"  {short} ({PACKAGES[short]}) {typ}: {len(nodes)} Knoten, {neu} Zuordnungen"
                   + ("" if complete else "  — UNVOLLSTÄNDIG"), flush=True)
 
@@ -826,9 +900,9 @@ def sweep(shorts, mode):
             psql("BEGIN;\n" + "\n".join(sql) + "\nCOMMIT;", read=False)
         sql = []
 
-    for done, (aid, parsed) in enumerate(treffer.items(), 1):
+    for done, (aid, parsed_nodes) in enumerate(treffer.items(), 1):
         a = by_id[aid]
-        offers = offers_for_title(parsed, a.get("status"), a.get("year"), current_year)
+        offers = offers_for_matches(parsed_nodes, a.get("status"), a.get("year"), current_year)
         add, rem = diff_offers(a, offers)
         for p, _m in add:
             dazu[p] = dazu.get(p, 0) + 1
@@ -853,12 +927,13 @@ def sweep(shorts, mode):
         psql(f"UPDATE anime SET content_updated_at = now(), updated_at = now() WHERE id IN ({ids});",
              read=False)
 
-    complete = run_complete(flags, shorts)
+    complete = run_complete(flags, shorts, knoten_gesamt)
     stamp = verified_sql([a["id"] for a in anime], now_iso, complete)
     if stamp and not dry:
         psql(stamp[0], read=False)
 
-    print(f"  Fertig: {len(treffer)} Titel zugeordnet ({mehrfach} Mehrfachtreffer übersprungen), "
+    print(f"  Fertig: {knoten_gesamt} Knoten gelesen, {len(treffer)} Titel zugeordnet "
+          f"({mehrfach} zusätzliche Knoten vereinigt, {doppelt} identische übersprungen), "
           f"{len(changed)} geändert.")
     for p in sorted(set(dazu) | set(weg)):
         print(f"    {p}: +{dazu.get(p, 0)} neu, -{weg.get(p, 0)} weggefallen")
@@ -879,7 +954,7 @@ def main():
                  "  --count-only  nur Katalogzahlen, schreibt nichts\n"
                  "  --dry-run     zuordnen und berichten, schreibt nichts\n"
                  "  --sweep       Regelbetrieb: schreibt Angebote und Nachweis\n"
-                 "  --discovery   wie --sweep, aber ohne first_seen_at für Titel ohne Bestand")
+                 "  --discovery   wie --sweep, aber ohne first_seen_at für neue Angebote")
     shorts = list(PACKAGES)
     if "--packages" in sys.argv:
         shorts = sys.argv[sys.argv.index("--packages") + 1].split(",")

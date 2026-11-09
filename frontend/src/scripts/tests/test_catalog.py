@@ -516,19 +516,29 @@ def test_verified_sql_ist_im_zweifel_still():
 
 def test_durchlauf_ist_nur_vollstaendig_wenn_jedes_paket_vollstaendig_war():
     alle = list(cat.PACKAGES)
-    assert cat.run_complete([True, True], alle) is True
-    assert cat.run_complete([True, False, True], alle) is False
+    assert cat.run_complete([True, True], alle, 1234) is True
+    assert cat.run_complete([True, False, True], alle, 1234) is False
 
 
 def test_durchlauf_ohne_abruf_ist_nicht_vollstaendig():
     """Leere Flag-Liste: es wurde nichts geblaettert, also ist nichts belegt."""
-    assert cat.run_complete([], list(cat.PACKAGES)) is False
+    assert cat.run_complete([], list(cat.PACKAGES), 1234) is False
+
+
+def test_leerer_katalog_belegt_nichts_obwohl_der_abruf_vollstaendig_war():
+    """Kein Netzwerkfehler (der setzt complete=False), sondern eine stille
+    Semantikaenderung: faellt das Genre `ani` weg oder wird ein shortName umbenannt,
+    antwortet JustWatch mit HTTP 200 und `edges: []`. Der Abruf ist dann voellig
+    korrekt 'vollstaendig geblaettert' — und wuerde alle 11.061 Titel als 'nirgends im
+    Abo- oder Gratis-Stream' stempeln. Ab Aufgabe 15 laeuft der Sweep per Cron,
+    unbeaufsichtigt."""
+    assert cat.run_complete([True, True], list(cat.PACKAGES), 0) is False
 
 
 def test_teilmenge_der_pakete_belegt_nichts():
     """Der Stempel heisst 'ueber ALLE gemappten Anbieter nachgesehen' — mit
     --packages cru ist das falsch, auch wenn der Abruf selbst vollstaendig war."""
-    assert cat.run_complete([True, True], ["cru"]) is False
+    assert cat.run_complete([True, True], ["cru"], 1234) is False
 
 
 # --- Aufgabe 10: Schreiben (build_catalog_sql) ------------------------------------
@@ -574,13 +584,30 @@ def test_first_seen_at_bleibt_fuer_bekannte_paare_erhalten():
     assert f"NULL, '2025-01-01T00:00:00Z', '{NOW}', 'confirmed', 'justwatch');" in sql
 
 
-def test_entdeckungslauf_stempelt_neue_paare_bei_titeln_mit_bestand():
-    """NULL bedeutet 'seit Beginn bekannt' — das gilt nur fuer Titel, die noch gar
-    keine Angebote hatten. Ein Titel mit Bestand bekommt bei einem neuen Paar
-    denselben Zeitstempel wie im Regelbetrieb (wie --initial im Nachbarskript)."""
+def test_entdeckungslauf_laesst_jedes_neue_paar_leer():
+    """Im Entdeckungslauf ist 'echter Neuzugang' von 'wir haben nie nachgesehen' nicht
+    unterscheidbar — also NULL fuer JEDES neue Paar, auch bei Titeln mit Bestand."""
     a = {"id": 7, "offers": {("netflix", "flatrate"): "2025-01-01T00:00:00Z"}}
     sql = " ".join(cat.build_catalog_sql(a, [_offer()], NOW, discovery=True))
-    assert f"NULL, '{NOW}', '{NOW}', 'confirmed', 'justwatch');" in sql
+    assert f"NULL, NULL, '{NOW}', 'confirmed', 'justwatch');" in sql
+
+
+def test_entdeckungslauf_schreibt_auch_bei_kauf_leih_bestand_kein_first_seen_at():
+    """Der Fall, der die Bedingung `not known` falsch machte: 113 Titel im Bestand
+    haben NUR Kauf/Leih-Angebote. Sie gelten damit als 'Titel mit Bestand', obwohl der
+    Sweep ihre Abo-Angebote erstmals sieht — mit `now()` waeren sie 30 Tage lang
+    'Neu auf <Anbieter>' (Anti-Ziel), und `ECHT_NEU` greift nicht, weil es auf
+    `first_seen_at IS NULL` prueft. --discovery laeuft genau einmal."""
+    a = {"id": 7, "offers": {("amazon-video", "buy"): "2025-01-01T00:00:00Z"}}
+    sql = " ".join(cat.build_catalog_sql(a, [_offer()], NOW, discovery=True))
+    assert f"NULL, NULL, '{NOW}', 'confirmed', 'justwatch');" in sql
+
+
+def test_entdeckungslauf_behaelt_gespeicherte_stempel():
+    """Bestehende Paare behalten ihren Stempel — NULL gilt nur fuer neue Paare."""
+    a = {"id": 7, "offers": {("crunchyroll", "flatrate"): "2025-01-01T00:00:00Z"}}
+    sql = " ".join(cat.build_catalog_sql(a, [_offer()], NOW, discovery=True))
+    assert f"NULL, '2025-01-01T00:00:00Z', '{NOW}', 'confirmed', 'justwatch');" in sql
 
 
 def test_delete_ist_auf_die_geblaetterten_monetarisierungen_eingeschraenkt():
@@ -930,7 +957,7 @@ def test_zwei_modi_gleichzeitig_laufen_nicht(monkeypatch):
 # damit die Verdrahtung nicht unbemerkt auseinanderfaellt (Lader -> Zuordnung ->
 # Schreiben -> Stempel) und damit der Abbruch-Fall auch am fertigen Lauf haengt.
 
-def _run(monkeypatch, mode, complete=True):
+def _run(monkeypatch, mode, complete=True, leer=False):
     geschrieben = []
     anime = [{"id": 1, "slug": "testtitel", "titles": ["", "", "Testtitel", ""], "year": 2026,
               "want": "SHOW", "status": "RELEASING", "offers": {}, "manual": set(), "rejected": set()}]
@@ -943,7 +970,7 @@ def _run(monkeypatch, mode, complete=True):
     monkeypatch.setattr(cat, "load_all_anime", lambda: anime)
     monkeypatch.setattr(cat.jw, "session", lambda: None)
     monkeypatch.setattr(cat, "fetch_catalog",
-                        lambda sess, short, typ: ([node] if typ == "SHOW" else [], complete))
+                        lambda sess, short, typ: ([] if leer else ([node] if typ == "SHOW" else []), complete))
     monkeypatch.setattr(cat, "psql", lambda sql, read=True: (geschrieben.append(sql), "")[1])
     monkeypatch.setattr(cat.sys, "argv", ["justwatch-catalog.py", mode])
     monkeypatch.setattr(cat, "other_instance_running", lambda: False)
@@ -969,6 +996,14 @@ def test_abbruch_mitten_im_durchlauf_schreibt_angebote_aber_keinen_stempel(monke
     assert "streaming_verified_at" not in sql
 
 
+def test_leerer_katalog_stempelt_nichts_am_fertigen_lauf(monkeypatch):
+    """Jede Seite leer, jeder Abruf formal vollstaendig: der Lauf darf nicht 11.061
+    Titel als geprueft stempeln, sondern muss mit 1 abbrechen."""
+    code, sql = _run(monkeypatch, "--sweep", leer=True)
+    assert code == 1
+    assert "streaming_verified_at" not in sql
+
+
 def test_trockenlauf_schreibt_nichts(monkeypatch):
     code, sql = _run(monkeypatch, "--dry-run")
     assert code == 0
@@ -981,3 +1016,82 @@ def test_entdeckungslauf_laesst_first_seen_at_leer_und_schweigt_in_der_sitemap(m
     assert ", NULL, NULL, '" in sql  # available_to und first_seen_at
     assert "content_updated_at" not in sql
     assert "UPDATE anime SET streaming_verified_at" in sql
+
+
+# --- Fix-Runde 1 ------------------------------------------------------------------
+
+def test_delete_spart_auch_das_veto_aus():
+    """Der Lader erkennt eine Veto-Zeile an `confidence='rejected'`, unabhaengig von
+    `source`. Spart das DELETE nur `source='manual'` aus, loescht der Sweep eine
+    Veto-Zeile mit anderer Herkunft und legt das Angebot im Folgelauf wieder an — das
+    Veto haette sich selbst geloescht. Ein Veto ist eine redaktionelle Entscheidung und
+    darf nicht davon abhaengen, ob beim Eintragen auch das zweite Feld gesetzt wurde.
+    NULL-Semantik beachten: der ganze Altbestand hat `confidence IS NULL`."""
+    sql = cat.build_catalog_sql({"id": 7, "offers": {}}, [], NOW, discovery=False)[0]
+    assert "source IS DISTINCT FROM 'manual'" in sql
+    assert "confidence IS DISTINCT FROM 'rejected'" in sql
+
+
+def test_staffel_und_episodenzahl_gehen_als_zahl_ins_sql():
+    """Beide Werte werden ungequotet interpoliert, und `build_catalog_sql` ist
+    ausdruecklich die Schnittstelle fuer Aufgabe 14 — also hier in int() zwingen."""
+    sql = " ".join(cat.build_catalog_sql({"id": 7, "offers": {}},
+                                         [_offer(seasons="2", episodes="12")], NOW))
+    assert ", 2, 12, " in sql
+    with pytest.raises(ValueError):
+        cat.build_catalog_sql({"id": 7, "offers": {}},
+                              [_offer(seasons="1); DROP TABLE anime; --")], NOW)
+
+
+# Zwei getrennte Knoten fuer dasselbe Werk: das DELETE ist autoritativ ueber alle
+# Abo-/Werbe-/Gratis-Zeilen des Titels, also wuerde „erster Treffer gewinnt" die
+# Anbieter des zweiten Knotens loeschen. Und weil die Titelsuche ihren Knoten nach
+# eigenen Regeln waehlt, kippten dieselben Zeilen bei jeder Rotation hin und her.
+
+def _parsed(clear, year=2013, count=None, season_count=None, title="A"):
+    node = {"objectType": "SHOW",
+            "content": {"title": title, "originalTitle": title, "originalReleaseYear": year},
+            "offers": [_jw_offer(clear=clear, url=f"https://{clear.lower()}/x", count=count)],
+            "seasons": ([{"content": {"title": "S1", "seasonNumber": 1, "originalReleaseYear": year},
+                          "offers": [_jw_offer(clear=clear, url=f"https://{clear.lower()}/s1",
+                                               count=season_count)]}]
+                        if season_count else [])}
+    return cat.parse_node(node)
+
+
+def test_zwei_knoten_fuer_dasselbe_werk_werden_vereinigt():
+    rows = cat.offers_for_matches([_parsed("Crunchyroll", count=2, season_count=12),
+                                   _parsed("Netflix", title="A alternativ")],
+                                  status="FINISHED", year=2013, current_year=2026)
+    assert {r["provider"] for r in rows} == {"crunchyroll", "netflix"}
+    cru = [r for r in rows if r["provider"] == "crunchyroll"][0]
+    assert (cru["seasons"], cru["episodes"]) == (2, 12)
+
+
+def test_vereinigung_zaehlt_episoden_nicht_doppelt():
+    """Deshalb wird nicht summiert: die Zahlen des ersten Knotens gelten."""
+    p = _parsed("Crunchyroll", count=2, season_count=12)
+    rows = cat.offers_for_matches([p, p], status="FINISHED", year=2013, current_year=2026)
+    assert len(rows) == 1
+    assert (rows[0]["seasons"], rows[0]["episodes"]) == (2, 12)
+
+
+def test_vereinigung_bevorzugt_den_belegten_knoten():
+    """Belegt schlaegt geerbt, egal in welcher Reihenfolge die Knoten kamen."""
+    geerbt = cat.parse_node({
+        "objectType": "SHOW",
+        "content": {"title": "A", "originalTitle": "A", "originalReleaseYear": 2026},
+        "offers": [],
+        "seasons": [{"content": {"title": "S1", "seasonNumber": 1, "originalReleaseYear": 2026},
+                     "offers": [_jw_offer(count=12)]}]})
+    belegt = _parsed("Crunchyroll", year=2026, count=1)
+    for reihenfolge in ([geerbt, belegt], [belegt, geerbt]):
+        rows = cat.offers_for_matches(reihenfolge, status="RELEASING", year=2026, current_year=2026)
+        assert len(rows) == 1
+        assert rows[0]["confidence"] == "confirmed"
+
+
+def test_vereinigung_eines_einzelnen_knotens_ist_offers_for_title():
+    p = _parsed("Crunchyroll", count=2, season_count=12)
+    assert cat.offers_for_matches([p], status="FINISHED", year=2013, current_year=2026) == \
+        cat.offers_for_title(p, status="FINISHED", year=2013, current_year=2026)
