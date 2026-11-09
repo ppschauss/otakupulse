@@ -262,7 +262,14 @@ export function streamingProvidersOf(anime: any): { provider: StreamingProvider;
     const hit = links.find((l: any) => providerByName(l?.platform)?.slug === p.slug && l?.url)
     return hit?.url || p.homepage || '#'
   }
+  // Von Hand verworfene Anbieter (Veto) auch hier ausnehmen, sonst zeigt sie der Legacy-Rückfall weiter.
+  const rejected = new Set<string>(
+    (Array.isArray(anime?.streamingOffers) ? anime.streamingOffers : [])
+      .filter((o: any) => o?.confidence === 'rejected')
+      .map((o: any) => o?.provider),
+  )
   return slugs
+    .filter((s) => !rejected.has(s))
     .map((s) => providerBySlug(s))
     .filter((p): p is StreamingProvider => !!p)
     .sort((a, b) => PROVIDER_SLUGS.indexOf(a.slug) - PROVIDER_SLUGS.indexOf(b.slug))

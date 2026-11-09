@@ -219,3 +219,21 @@ describe('verworfene Angebote (confidence rejected)', () => {
     expect(views.map((v) => v.provider.slug)).toEqual(['netflix'])
   })
 })
+
+describe('verworfene Angebote und der Slug-Index streamingProviders', () => {
+  const rejectedCr = { provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence: 'rejected', source: 'manual' }
+  it('streamingProvidersOf zeigt einen per Veto verworfenen Anbieter nicht', () => {
+    expect(streamingProvidersOf({ streamingProviders: ['crunchyroll'], streamingOffers: [rejectedCr] })).toEqual([])
+  })
+  it('der Legacy-Rückfall greift dann nicht mehr (hasStream false)', () => {
+    expect(streamingSummary({ streamingProviders: ['crunchyroll'], streamingOffers: [rejectedCr] }).hasStream).toBe(false)
+  })
+  it('ein verworfener Crunchyroll-Eintrag lässt Netflix unberührt', () => {
+    const r = streamingProvidersOf({ streamingProviders: ['netflix'], streamingOffers: [rejectedCr] })
+    expect(r.map((x) => x.provider.slug)).toEqual(['netflix'])
+  })
+  it('ohne geladene streamingOffers bleibt das Verhalten unverändert', () => {
+    expect(streamingProvidersOf({ streamingProviders: ['netflix'] }).map((x) => x.provider.slug)).toEqual(['netflix'])
+    expect(streamingProvidersOf({ streamingProviders: ['netflix'], streamingOffers: null }).map((x) => x.provider.slug)).toEqual(['netflix'])
+  })
+})
