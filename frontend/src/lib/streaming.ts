@@ -231,6 +231,14 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
   { slug: 'microsoft-store', name: 'Microsoft Store', aliases: ['Microsoft Store'], region: 'DE', store: true, color: '#0078d4', homepage: 'https://www.microsoft.com/de-de/store/movies-and-tv', blurb: 'Kaufen oder leihen im Microsoft Store.' },
   { slug: 'sky-store', name: 'Sky Store', aliases: ['Sky Store'], region: 'DE', store: true, color: '#0072c9', homepage: 'https://store.sky.de', blurb: 'Kaufen oder leihen im Sky Store.' },
   { slug: 'tencent', name: 'Tencent Video', aliases: ['Tencent Video'], region: 'INTL', color: '#0052d9', homepage: 'https://v.qq.com', blurb: 'Chinesische Plattform mit großem Donghua- und Anime-Angebot.' },
+  // Aus dem JustWatch-Katalogbefund vom 2026-11-09. Bewusst ohne `region`: keine öffentliche
+  // /plattform/<slug>-Seite (Entscheidung 22), daher auch kein blurb/about/logo.
+  // Plaion Pictures und ProSieben MAXX fehlen absichtlich — null Anime-Angebote im DE-Katalog.
+  { slug: 'hbo-max', name: 'HBO Max', aliases: ['HBO Max', 'HBO Max Amazon Channel'], homepage: 'https://www.hbomax.com' },
+  // Gemessen nur RENT/BUY, kein FLATRATE: Einzelkauf/Leihe, kein Abo. Ohne `store: true` würde
+  // Akibapass im Streaming-Index landen und „läuft bei Akibapass" behaupten — nicht aufwerten.
+  { slug: 'akibapass', name: 'Akibapass', aliases: ['Akibapass'], store: true, homepage: 'https://www.akibapass.de' },
+  { slug: 'pluto-tv', name: 'Pluto TV', aliases: ['Pluto TV'], homepage: 'https://pluto.tv/de' },
 ]
 
 const BY_SLUG = new Map(STREAMING_PROVIDERS.map((p) => [p.slug, p]))

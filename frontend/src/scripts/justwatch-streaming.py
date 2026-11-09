@@ -102,6 +102,9 @@ CLEARNAME_TO_SLUG = {
     "magenta tv": "magenta-tv",
     "magentatv": "magenta-tv",
     "hidive": "hidive",
+    "hbo max": "hbo-max",
+    "hbo max amazon channel": "hbo-max",
+    "pluto tv": "pluto-tv",
     # Kauf/Leih-Stores (BUY/RENT) — nur informativ, kein Streaming-Index
     "amazon video": "amazon-video",
     "apple tv": "apple-tv",
@@ -109,6 +112,8 @@ CLEARNAME_TO_SLUG = {
     "rakuten tv": "rakuten-tv",
     "microsoft store": "microsoft-store",
     "sky store": "sky-store",
+    # Akibapass: gemessen nur RENT/BUY, kein FLATRATE -> Store, kein Abo-Dienst
+    "akibapass": "akibapass",
 }
 
 # Sprachcodes aus Offers -> availableLanguages-Enum (additiv).

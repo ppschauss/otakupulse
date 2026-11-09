@@ -87,3 +87,23 @@ def test_norm_cjk_raender():
     assert jw.norm_cjk("Re:ゼロから始める異世界生活") == "reゼロから始める異世界生活"
     assert jw.norm_cjk("ヴァイオレット・エヴァーガーデン") == "ヴァイオレットエヴァーガーデン"
     assert jw.norm_cjk("ＳＰＹ×ＦＡＭＩＬＹ") == "spyfamily"
+
+
+def test_mapping_kennt_die_neuen_anbieter():
+    m = jw.CLEARNAME_TO_SLUG
+    assert m["hbo max"] == "hbo-max"
+    assert m["hbo max amazon channel"] == "hbo-max"
+    assert m["akibapass"] == "akibapass"
+    assert m["pluto tv"] == "pluto-tv"
+    # Null Anime-Angebote im DE-Katalog (Messung 2026-11-09): bewusst nicht gemappt
+    assert "plaion pictures" not in m
+    assert "prosieben maxx" not in m
+
+
+def test_mapping_deckt_die_gemessenen_clearnames_ab():
+    """Am 2026-11-09 in echten Angeboten gesehen."""
+    for cn in ["crunchyroll", "crunchyroll amazon channel", "aniverse amazon channel",
+               "animation digital network", "anime digital network amazon channel",
+               "amazon prime video", "amazon prime video with ads", "netflix",
+               "netflix standard with ads", "rtl+", "rtl+ max amazon channel"]:
+        assert cn in jw.CLEARNAME_TO_SLUG, cn

@@ -254,3 +254,30 @@ describe('languageItems', () => {
     expect(languageItems([offer('', 'de')]).map((i) => i.key)).toEqual(['de-dub'])
   })
 })
+
+describe('neue Anbieter aus dem Katalog-Befund', () => {
+  for (const slug of ['hbo-max', 'akibapass', 'pluto-tv']) {
+    it(`kennt ${slug}`, () => {
+      expect(providerBySlug(slug)).toBeDefined()
+    })
+  }
+  it('bildet Anbieter ohne Anime-Angebote nicht ab', () => {
+    expect(providerBySlug('plaion-pictures')).toBeUndefined()
+    expect(providerBySlug('prosieben-maxx')).toBeUndefined()
+  })
+  it('fuehrt sie nicht als DE-Plattformseite', () => {
+    for (const slug of ['hbo-max', 'akibapass', 'pluto-tv']) {
+      expect(DE_PROVIDER_SLUGS).not.toContain(slug)
+    }
+  })
+  it('matcht die JustWatch-Namen', () => {
+    expect(providerByName('HBO Max')?.slug).toBe('hbo-max')
+    expect(providerByName('HBO Max Amazon Channel')?.slug).toBe('hbo-max')
+    expect(providerByName('Akibapass')?.slug).toBe('akibapass')
+  })
+  it('fuehrt Akibapass als Kauf-/Leih-Store, Pluto TV und HBO Max nicht', () => {
+    expect(providerBySlug('akibapass')?.store).toBe(true)
+    expect(providerBySlug('pluto-tv')?.store).not.toBe(true)
+    expect(providerBySlug('hbo-max')?.store).not.toBe(true)
+  })
+})
