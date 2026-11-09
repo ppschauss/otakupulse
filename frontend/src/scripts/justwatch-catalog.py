@@ -224,6 +224,141 @@ def fetch_catalog(session, short, object_type):
     return nodes, False
 
 
+norm_variants = jw.norm_variants
+title_base = jw.title_base
+
+# --- Zuordnung auf unsere Titel ---------------------------------------------------
+#
+# Zuschnitt: ein Katalogknoten ist eine ganze SERIE mit allen Staffeln; unsere
+# Datenbank führt Staffeln als eigene Titel (AniList schneidet so). `match_node`
+# ordnet die Serie genau einem unserer Titel zu — dem Basistitel, dessen Romaji dem
+# `originalTitle` entspricht — oder keinem. Fortsetzungsstaffeln ("… 2nd Season")
+# werden bewusst NICHT getroffen: JustWatchs Staffelnummern sind nicht auf AniList
+# abbildbar (One Piece: dort 23 Staffeln, S3 bis S17 mit originalReleaseYear 0;
+# AniList schneidet nach Arcs). Sie bleiben der Titelsuche (`pick_season`) überlassen.
+
+# Punkte je Treffertyp. Der Abstand zwischen den Stufen ist die Reihenfolge, nicht
+# eine Wahrscheinlichkeit; nur die Rangfolge zählt (und Gleichstand = kein Match).
+_SCORE_EXACT = 1.0         # eine Normalform von uns == eine Normalform des Knotens
+_SCORE_BASE = 0.92         # gleicher Basistitel vor dem Untertitel-Trenner, nur Jahr +-1
+_YEAR_BONUS = 0.03         # beide Jahre bekannt und Abstand <= 1: Beleg für dasselbe Werk
+_YEAR_PENALTY = 0.15       # Abstand 2..4 (nur exakte Titel): bleibt möglich, verliert aber gegen jeden besseren
+_YEAR_HARD_LIMIT = 5       # ab so vielen Jahren Abstand gilt es als anderes Werk
+_BASE_MIN_LEN = 6          # kürzere Basistitel sind zu generisch ("Mono")
+
+
+def _year(v):
+    """Jahr als int oder None. JustWatch liefert 0 für "unbekannt" (One Piece S3-S17),
+    unsere Datenbank NULL; beides ist "kein Jahr", nicht das Jahr 0."""
+    try:
+        y = int(v)
+    except (TypeError, ValueError):
+        return None
+    return y if y > 0 else None
+
+
+def _has_subtitle(s):
+    """True, wenn der Titel einen Untertitel nach ":"/"-" trägt ("Wotakoi: Love is Hard…")."""
+    return bool(title_base(s)) and title_base(s) not in norm_variants(s)
+
+
+def _score_title(ours, node, year_diff):
+    """Titelähnlichkeit eines unserer Anime (`ours`: Liste der vier Titel) zum Knoten.
+    0.0 = kein Treffer. `year_diff` ist None, wenn eines der Jahre fehlt.
+
+    Zwei Stufen, beide ausdrücklich eng:
+      - exakt: gleiche Normalform (`norm_variants`, also auch Romaji-Doppelvokale,
+        römische Staffelziffern und die CJK-Form aus Aufgabe 6).
+      - Basistitel: beide Seiten tragen einen Untertitel, die Basis davor ist gleich
+        und mindestens 6 Zeichen lang, die Jahre bekannt mit Abstand <= 1 (Wotakoi:
+        der Untertitel ist je Sprache übersetzt). Ein Titel OHNE Untertitel passt nie
+        auf einen mit — sonst träfe "Foo" auf "Foo: Part 2", eine Fortsetzung.
+    Teilstring- und Ähnlichkeitsregeln gibt es hier absichtlich nicht: die Alt-Heuristik
+    hatte "Hyouge Mono" auf "Mono" gematcht, und die Zuordnung schreibt später Anbieter
+    an Titel. Bei Zweifel kein Match."""
+    cand = [c for c in (node.get("original_title"), node.get("title")) if c]
+    our = [t for t in ours if t]
+    ours_forms = {v for t in our for v in norm_variants(t)}
+    if any(v in ours_forms for c in cand for v in norm_variants(c)):
+        return _SCORE_EXACT
+    if year_diff is not None and year_diff <= 1:
+        our_bases = {title_base(t) for t in our if _has_subtitle(t)}
+        cand_bases = {title_base(c) for c in cand if _has_subtitle(c)}
+        if any(len(b) >= _BASE_MIN_LEN for b in our_bases & cand_bases):
+            return _SCORE_BASE
+    return 0.0
+
+
+def match_node(parsed, anime):
+    """Ordnet einen geparsten Katalogknoten (`parse_node`) genau einem unserer Titel
+    zu oder keinem. `anime`: Liste von Dicts mit `titles` (de, en, romaji, native),
+    `year` und `want` (`SHOW`/`MOVIE`). Gibt das Anime-Dict oder None zurück.
+
+    - `object_type` muss zu `want` passen: Film und Serie werden nie verwechselt.
+    - Jahres-Abstufung (nur wenn beide Jahre bekannt; gleicher Titel kann ein anderes
+      Werk sein — Netflix-Realserie "One Piece" 2023 gegen den Anime von 1999,
+      "Suikoden" von 1973 gegen "Gensou Suikoden" 2026):
+        Abstand 0-1 : Bonus, Titel-Treffer (exakt oder Basistitel) genügt
+        Abstand 2-4 : nur ein exakter Titel, mit Abzug (der Treffer verliert gegen
+                      jeden Kandidaten, der besser zum Jahr passt)
+        Abstand >= 5: kein Match, auch bei exaktem Titel
+      Fehlt ein Jahr, genügt ein exakter Titel ohne Bonus; er verliert damit gegen
+      einen Kandidaten mit belegtem Jahr. Gemessen: nur 0,53 % unserer Titel haben
+      kein Jahr, JustWatch führt 0 vor allem bei Langläufer-Staffeln, nicht bei Serien.
+    - Mehrere Kandidaten mit gleichem Höchstscore -> None. Lieber nichts als der
+      falsche Titel; ein Falschtreffer behauptet dem Besucher eine Verfügbarkeit,
+      die es nicht gibt."""
+    node_year = _year(parsed.get("year"))
+    scored = []
+    for a in anime:
+        if parsed.get("object_type") != a.get("want"):
+            continue
+        our_year = _year(a.get("year"))
+        diff = abs(node_year - our_year) if node_year and our_year else None
+        if diff is not None and diff >= _YEAR_HARD_LIMIT:
+            continue
+        score = _score_title(a.get("titles") or [], parsed, diff)
+        if not score:
+            continue
+        if diff is not None:
+            score += _YEAR_BONUS if diff <= 1 else -_YEAR_PENALTY
+        scored.append((score, a))
+    if not scored:
+        return None
+    best = max(s for s, _ in scored)
+    top = [a for s, a in scored if abs(s - best) < 1e-9]
+    return top[0] if len(top) == 1 else None
+
+
+def dedupe_offers(offers):
+    """Eine Zeile pro `(provider, monetization)`.
+
+    Derselbe Anbieter kommt bei JustWatch doppelt vor: als Direktanbieter und als
+    Amazon-Channel ("Crunchyroll" / "Crunchyroll Amazon Channel"). Der Link des
+    Direktanbieters gewinnt; ein Channel-Link ist nur Rückfall, wenn es keinen
+    Direktlink gibt. Link, `is_channel` und Enddatum (`available_to`) kommen
+    gemeinsam vom primären Angebot — ein Channel ergänzt Sprachen, überträgt aber
+    nicht sein Enddatum auf den Direktanbieter. `audio` und `subs` werden vereinigt
+    (als Mengen). Angebote ohne Deep-Link werden verworfen, ihre Sprachen zählen aber
+    mit, solange eine Zeile desselben Schlüssels einen Link hat. Dieselbe Regel wie
+    `aggregate_offers` in justwatch-streaming.py. Die Eingabe wird nicht verändert."""
+    rows = {}
+    for o in offers:
+        key = (o["provider"], o["monetization"])
+        row = rows.setdefault(key, {"primary": None, "audio": set(), "subs": set()})
+        if o.get("url") and (row["primary"] is None
+                             or (row["primary"].get("is_channel") and not o.get("is_channel"))):
+            row["primary"] = o
+        row["audio"] |= set(o.get("audio") or [])
+        row["subs"] |= set(o.get("subs") or [])
+    out = []
+    for row in rows.values():
+        if row["primary"] is None:
+            continue  # ohne Deep-Link zeigen wir keinen Anbieter
+        out.append({**row["primary"], "audio": row["audio"], "subs": row["subs"]})
+    return out
+
+
 def count_only(shorts):
     """Zählt pro Paket SHOW und MOVIE; schreibt nichts. Unvollständige Abrufe werden
     markiert, damit man sie nicht für eine echte Katalogzahl hält."""

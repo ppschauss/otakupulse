@@ -239,3 +239,179 @@ def test_instanz_sperre_sieht_beide_skripte(monkeypatch):
                     "python3 src/scripts/justwatch-catalog.py"):
         assert re.search(pattern, cmdline), cmdline
     assert not re.search(pattern, "python3 -m pytest src/scripts/tests/test_catalog.py")
+
+
+# --- Aufgabe 9: Zuordnung auf unsere Titel ------------------------------------
+
+ANIME = [
+    {"id": 1, "slug": "gensou-suikoden", "titles": ["", "", "Gensou Suikoden", "幻想水滸伝"], "year": 2026, "want": "SHOW"},
+    {"id": 2, "slug": "one-piece", "titles": ["", "One Piece", "ONE PIECE", "ワンピース"], "year": 1999, "want": "SHOW"},
+    {"id": 3, "slug": "shingeki-no-kyojin", "titles": ["", "Attack on Titan", "Shingeki no Kyojin", "進撃の巨人"], "year": 2013, "want": "SHOW"},
+    # Fortsetzungsstaffel: darf von der Serie "Shingeki no Kyojin" nie getroffen werden.
+    {"id": 4, "slug": "shingeki-no-kyojin-2nd-season", "titles": ["", "", "Shingeki no Kyojin 2nd Season", ""], "year": 2017, "want": "SHOW"},
+    {"id": 5, "slug": "wotakoi", "titles": ["Wotakoi: Keine Chance für Otaku", "Wotakoi: Love is Hard for Otaku", "Wotaku ni Koi wa Muzukashii", ""], "year": 2018, "want": "SHOW"},
+    {"id": 6, "slug": "kaiju-film", "titles": ["", "", "Kaijuu Movie", ""], "year": 2020, "want": "MOVIE"},
+]
+
+
+def _node(title, orig, year, otype="SHOW"):
+    return {"title": title, "original_title": orig, "year": year, "object_type": otype, "offers": [], "seasons": []}
+
+
+def _slug(parsed, anime=ANIME):
+    m = cat.match_node(parsed, anime)
+    return m["slug"] if m else None
+
+
+def test_matcht_ueber_den_romaji_originaltitel():
+    assert _slug(_node("Suikoden", "幻想水滸伝", 2026)) == "gensou-suikoden"
+
+
+def test_matcht_attack_on_titan_ueber_den_romaji_originaltitel():
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 2013)) == "shingeki-no-kyojin"
+
+
+def test_realserie_matcht_nicht_auf_den_anime():
+    """Review Focus 4: Netflix-Realserie 'One Piece' 2023 gegen den Anime 1999."""
+    assert _slug(_node("One Piece", "One Piece", 2023)) is None
+
+
+def test_gleicher_titel_anderes_werk_liang_shan_po():
+    """Review Focus 4: 'Suikoden' 1973 (Rebellen vom Liang Shan Po) gegen Gensou Suikoden 2026.
+    Kein exakter Treffer (suikoden != gensousuikoden) und 53 Jahre Abstand."""
+    assert _slug(_node("Die Rebellen vom Liang Shan Po", "Suikoden", 1973)) is None
+
+
+def test_film_matcht_keine_serie():
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 2013, "MOVIE")) is None
+
+
+def test_serie_matcht_keinen_film():
+    assert _slug(_node("Kaijuu Movie", "Kaijuu Movie", 2020, "SHOW")) is None
+    assert _slug(_node("Kaijuu Movie", "Kaijuu Movie", 2020, "MOVIE")) == "kaiju-film"
+
+
+def test_fortsetzungsstaffel_wird_nicht_von_der_serie_getroffen():
+    """Keine Staffel-Zuordnung: die Serie geht auf den Basistitel, nie auf '2nd Season'."""
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 2013)) == "shingeki-no-kyojin"
+    nur_staffel = [a for a in ANIME if a["slug"] == "shingeki-no-kyojin-2nd-season"]
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 2013), nur_staffel) is None
+
+
+def test_jahresabstand_zwei_bis_vier_fordert_exakten_titel():
+    # exakt, 3 Jahre Abstand: noch erlaubt
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 2016)) == "shingeki-no-kyojin"
+    # Basistitel-Treffer (nur Untertitel verschieden) trägt bei Abstand 3 nicht mehr
+    assert _slug(_node("Wotakoi: Anders", "Wotakoi: Other Subtitle", 2021)) is None
+
+
+def test_ab_fuenf_jahren_abstand_kein_match_auch_bei_exaktem_titel():
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 2018)) is None
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 2008)) is None
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 2017)) == "shingeki-no-kyojin"  # 4 Jahre
+
+
+def test_basistitel_mit_uebersetztem_untertitel_bei_gleichem_jahr():
+    assert _slug(_node("Wotakoi: Love is Hard", "Wotakoi: Irgendwas", 2018)) == "wotakoi"
+
+
+def test_basistitel_ohne_untertitel_auf_beiden_seiten_reicht_nicht():
+    """'Wotakoi' (ohne Untertitel) darf nicht auf 'Wotakoi: …' passen — das wäre die
+    Hyouge-Mono-Klasse. Kein exakter Treffer, kein Untertitel-Paar -> kein Match."""
+    assert _slug(_node("Wotakoi", "Wotakoi", 2018)) is None
+
+
+def test_kurzer_basistitel_mit_untertitel_ist_zu_generisch():
+    """Basis 'mono' (4 Zeichen) trägt kein Untertitel-Paar, auch bei gleichem Jahr."""
+    mono = [{"id": 20, "slug": "mono-a", "titles": ["", "", "Mono: Der Anfang", ""], "year": 2020, "want": "SHOW"}]
+    assert _slug(_node("Mono: Ganz Anders", "Mono: Something Else", 2020), mono) is None
+
+
+def test_jahr_null_von_justwatch_gilt_als_unbekannt_nicht_als_jahr_null():
+    """One Piece S3-S17 und manche Serien tragen originalReleaseYear 0."""
+    assert _slug(_node("One Piece", "One Piece", 0)) == "one-piece"
+
+
+def test_gleicher_score_bei_mehreren_kandidaten_ist_kein_match():
+    doppelt = [
+        {"id": 10, "slug": "foo-a", "titles": ["", "", "Foobar Story", ""], "year": 2020, "want": "SHOW"},
+        {"id": 11, "slug": "foo-b", "titles": ["", "", "Foobar Story", ""], "year": 2020, "want": "SHOW"},
+    ]
+    assert _slug(_node("Foobar Story", "Foobar Story", 2020), doppelt) is None
+
+
+def test_jahr_entscheidet_zwischen_zwei_gleichnamigen_titeln():
+    zwei = [
+        {"id": 10, "slug": "foo-alt", "titles": ["", "", "Foobar Story", ""], "year": 2001, "want": "SHOW"},
+        {"id": 11, "slug": "foo-neu", "titles": ["", "", "Foobar Story", ""], "year": 2020, "want": "SHOW"},
+    ]
+    assert _slug(_node("Foobar Story", "Foobar Story", 2020), zwei) == "foo-neu"
+
+
+def test_unbekanntes_jahr_haelt_den_exakten_treffer_nicht_auf_aber_verliert_gegen_belegten():
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", 0)) == "shingeki-no-kyojin"
+    assert _slug(_node("Attack on Titan", "Shingeki no Kyojin", None)) == "shingeki-no-kyojin"
+    zwei = [
+        {"id": 10, "slug": "foo-ohne-jahr", "titles": ["", "", "Foobar Story", ""], "year": None, "want": "SHOW"},
+        {"id": 11, "slug": "foo-2020", "titles": ["", "", "Foobar Story", ""], "year": 2020, "want": "SHOW"},
+    ]
+    assert _slug(_node("Foobar Story", "Foobar Story", 2020), zwei) == "foo-2020"
+
+
+def test_teilstring_titel_matcht_nicht():
+    """'Mono' in 'Hyouge Mono' war der Fehlschlag der Alt-Heuristik."""
+    mono = [{"id": 20, "slug": "mono", "titles": ["", "", "Mono", ""], "year": 2020, "want": "SHOW"}]
+    assert _slug(_node("Hyouge Mono", "Hyouge Mono", 2020), mono) is None
+    assert _slug(_node("Hyouge Mono", "Hyouge Mono", 2020), ANIME) is None
+
+
+def test_leere_titel_matchen_nichts():
+    assert _slug(_node(None, None, 2013)) is None
+    leer = [{"id": 30, "slug": "leer", "titles": ["", "", "", ""], "year": 2013, "want": "SHOW"}]
+    assert _slug(_node("", "", 2013), leer) is None
+
+
+def test_dedupe_bevorzugt_den_direktanbieter_link():
+    """Review Focus 3: Crunchyroll und Crunchyroll Amazon Channel sind ein Anbieter."""
+    offers = [
+        {"provider": "crunchyroll", "monetization": "flatrate", "url": "https://watch.amazon.de/x", "is_channel": True, "audio": {"de"}, "subs": set()},
+        {"provider": "crunchyroll", "monetization": "flatrate", "url": "https://crunchyroll.com/x", "is_channel": False, "audio": {"ja"}, "subs": {"de"}},
+    ]
+    out = cat.dedupe_offers(offers)
+    assert len(out) == 1
+    assert out[0]["url"] == "https://crunchyroll.com/x"
+    assert out[0]["audio"] == {"de", "ja"}
+    assert out[0]["subs"] == {"de"}
+
+
+def test_dedupe_direktlink_gewinnt_unabhaengig_von_der_reihenfolge_und_behaelt_sein_enddatum():
+    d = {"provider": "adn", "monetization": "flatrate", "url": "https://adn.example/x", "is_channel": False,
+         "audio": ["ja"], "subs": [], "available_to": "2027-01-01"}
+    c = {"provider": "adn", "monetization": "flatrate", "url": "https://amazon.example/x", "is_channel": True,
+         "audio": ["de"], "subs": [], "available_to": "2026-12-01"}
+    for offers in ([d, c], [c, d]):
+        out = cat.dedupe_offers(offers)
+        assert len(out) == 1
+        assert out[0]["url"] == "https://adn.example/x"
+        assert out[0]["available_to"] == "2027-01-01"
+        assert out[0]["audio"] == {"de", "ja"}
+
+
+def test_dedupe_channel_ist_nur_rueckfall():
+    c = {"provider": "adn", "monetization": "flatrate", "url": "https://amazon.example/x", "is_channel": True, "audio": [], "subs": []}
+    out = cat.dedupe_offers([c])
+    assert [o["url"] for o in out] == ["https://amazon.example/x"]
+
+
+def test_dedupe_trennt_monetarisierung_und_anbieter():
+    mk = lambda p, m, u: {"provider": p, "monetization": m, "url": u, "is_channel": False, "audio": [], "subs": []}
+    out = cat.dedupe_offers([mk("netflix", "flatrate", "u1"), mk("netflix", "ads", "u2"), mk("joyn", "flatrate", "u3")])
+    assert {(o["provider"], o["monetization"]) for o in out} == {("netflix", "flatrate"), ("netflix", "ads"), ("joyn", "flatrate")}
+
+
+def test_dedupe_verwirft_ohne_deeplink_und_veraendert_die_eingabe_nicht():
+    ohne = {"provider": "joyn", "monetization": "flatrate", "url": None, "is_channel": False, "audio": ["de"], "subs": []}
+    mit = {"provider": "netflix", "monetization": "flatrate", "url": "u", "is_channel": False, "audio": ["de"], "subs": []}
+    out = cat.dedupe_offers([ohne, mit])
+    assert [o["provider"] for o in out] == ["netflix"]
+    assert mit["audio"] == ["de"]  # Eingabe unverändert (Liste, nicht Set)
