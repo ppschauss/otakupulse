@@ -668,6 +668,29 @@ def test_veto_gilt_nur_fuer_sein_eigenes_paar():
     assert "'crunchyroll', 'flatrate'" in sql
 
 
+def test_paar_mit_handarbeitszeile_wird_nicht_eingefuegt():
+    """Fix-Runde 1: die Version des Redakteurs gewinnt, keine zweite Zeile daneben."""
+    a = {"id": 7, "offers": {("crunchyroll", "flatrate"): None}, "manual": {("crunchyroll", "flatrate")}}
+    stmts = cat.build_catalog_sql(a, [_offer(), _offer(provider="netflix")], NOW, discovery=False)
+    ins = [s for s in stmts if s.startswith("INSERT INTO anime_streaming_offers")]
+    assert len(ins) == 1 and "'netflix'" in ins[0] and "'crunchyroll'" not in ins[0]
+    # der Handarbeits-Anbieter bleibt im Filter-Index
+    assert "'crunchyroll'" in [s for s in stmts if s.startswith("INSERT INTO anime_streaming_providers")][0]
+
+
+def test_confidence_for_erbt_nicht_an_ein_gepflegtes_objekt():
+    """Fix-Runde 1: traegt das gematchte Objekt irgendein Angebot, ist das Fehlen eines
+    Anbieters eine Aussage — auch bei laufendem Titel."""
+    assert cat.confidence_for(["netflix"], ["netflix", "crunchyroll"], "crunchyroll", "RELEASING", 2026, 2026) is None
+    assert cat.confidence_for([], ["crunchyroll"], "crunchyroll", "RELEASING", 2026, 2026) == "unconfirmed"
+
+
+def test_anderes_paar_desselben_anbieters_wird_trotz_handarbeit_eingefuegt():
+    a = {"id": 7, "offers": {("crunchyroll", "flatrate"): None}, "manual": {("crunchyroll", "flatrate")}}
+    stmts = cat.build_catalog_sql(a, [_offer(monetization="ads")], NOW, discovery=False)
+    assert any("'crunchyroll', 'ads'" in s for s in stmts if s.startswith("INSERT INTO anime_streaming_offers"))
+
+
 def test_order_haengt_sich_an_den_bestand_an():
     """Das DELETE laesst Kauf/Leih- und Handarbeits-Zeilen stehen; _order darf
     deshalb nicht wieder bei 1 anfangen."""

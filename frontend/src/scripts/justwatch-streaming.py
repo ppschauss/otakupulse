@@ -439,7 +439,9 @@ def confidence_for(season_offers, series_offers, provider, status, year, current
     ganzen Werks (Serie samt aller Staffeln).
 
       - am gematchten Objekt belegt          -> `confirmed`
-      - nur am übergeordneten Werk vorhanden -> `unconfirmed`, aber NUR wenn der Titel
+      - nur am übergeordneten Werk vorhanden -> `unconfirmed`, aber NUR wenn das
+                                                gematchte Objekt GAR KEIN Angebot trägt
+                                                (`season_offers` leer) UND der Titel
                                                 läuft (`RELEASING`) oder zum laufenden
                                                 Jahrgang gehört
       - sonst                                -> None
@@ -455,6 +457,12 @@ def confidence_for(season_offers, series_offers, provider, status, year, current
         return "confirmed"
     if provider not in series_offers:
         return None  # der Anbieter kommt nirgends vor: es gibt nichts zu erben
+    if season_offers:
+        # Das gematchte Objekt trägt mindestens ein Angebot: JustWatch hat es gepflegt,
+        # und das FEHLEN dieses Anbieters ist dort eine Aussage, keine Lücke. Ihn trotzdem
+        # zu erben hieße, Verfügbarkeit gegen vorhandene Evidenz zu behaupten. Das Signal
+        # „noch nicht gepflegt" ist das vollständig leere Objekt (Returner S2: `[]`).
+        return None
     if status == "RELEASING":
         return "unconfirmed"
     try:
@@ -676,6 +684,11 @@ def build_sql(a, offers, now_iso, initial=False):
     for e in offers:
         if (e["provider"], e["monetization"]) in rejected:
             continue  # Veto des Redakteurs
+        if (e["provider"], e["monetization"]) in manual:
+            # Die Version des Redakteurs gewinnt (Entscheidung 8): das DELETE lässt die
+            # Handarbeits-Zeile stehen, eine zweite Zeile desselben Paares daneben wäre
+            # ein Widerspruch im Bestand (Anbieter-Karte doppelt).
+            continue
         written.append(e)
     for e in written:
         streaming = e["monetization"] in STREAMING

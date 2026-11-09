@@ -664,6 +664,7 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False):
              f"AND monetization IN ({monets});"]
     known = anime.get("offers") or {}
     rejected = set(anime.get("rejected") or ())
+    manual_keys = set(anime.get("manual") or ())
     slugs, langs = set(), set()
     for e in offers:
         key = (e["provider"], e["monetization"])
@@ -671,6 +672,8 @@ def build_catalog_sql(anime, offers, now_iso, discovery=False):
             continue  # Kauf/Leih: nicht gelöscht, also auch nicht eingefügt
         if key in rejected:
             continue  # Veto des Redakteurs
+        if key in manual_keys:
+            continue  # Handarbeit gewinnt (Entscheidung 8): keine zweite Zeile desselben Paares
         audio, subs = _csv(e.get("audio")), _csv(e.get("subs"))
         conf = e.get("confidence") or "confirmed"
         # `first_seen_at`: ein bekanntes Paar behält seinen gespeicherten Wert (auch

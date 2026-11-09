@@ -184,9 +184,31 @@ def test_belegtes_staffelangebot_ist_confirmed_und_wird_nicht_ueberschrieben():
     assert offers["crunchyroll"]["confidence"] == "confirmed"
     assert offers["crunchyroll"]["url"] == "https://crunchyroll.com/s2"
     assert offers["crunchyroll"]["audio"] == "ja"
-    # Netflix hängt nur an der Serie -> geerbt, daneben das belegte Crunchyroll
-    assert offers["netflix"]["confidence"] == "unconfirmed"
-    assert len(offers) == 2
+    # Die Staffel ist gepflegt (trägt ein Angebot): Netflix nur an der Serie wird NICHT geerbt
+    assert list(offers) == ["crunchyroll"]
+
+
+def test_gepflegte_staffel_erbt_nichts_leere_staffel_erbt_weiter():
+    """Fix-Runde 1: das FEHLEN eines Anbieters an einer gepflegten Staffel ist eine Aussage."""
+    serie = [_angebot(*CR)]
+    gepflegt = _returner(serie, [_angebot("Netflix", "https://netflix.com/s2")])
+    offers = jw.aggregate_offers(gepflegt, gepflegt["seasons"][0], status="RELEASING", year=2026, current_year=2026)
+    assert [(o["provider"], o["confidence"]) for o in offers] == [("netflix", "confirmed")]
+    leer = _returner(serie)
+    offers = jw.aggregate_offers(leer, leer["seasons"][0], status="RELEASING", year=2026, current_year=2026)
+    assert [(o["provider"], o["confidence"]) for o in offers] == [("crunchyroll", "unconfirmed")]
+
+
+def test_paar_mit_handarbeitszeile_wird_nicht_eingefuegt():
+    """Fix-Runde 1: die Version des Redakteurs gewinnt; ein anderes Paar kommt normal durch."""
+    a = _anime(manual={("crunchyroll", "flatrate")}, offers={("crunchyroll", "flatrate"): None}, have={"crunchyroll"})
+    stmts, changed = jw.build_sql(a, [_offer("crunchyroll"), _offer("crunchyroll", monet="ads"), _offer("netflix")], NOW)
+    ins = _inserts(stmts)
+    assert len(ins) == 2
+    assert not any("'crunchyroll', 'flatrate'" in s for s in ins)
+    assert any("'crunchyroll', 'ads'" in s for s in ins)
+    assert any("'netflix'" in s for s in ins)
+    assert "'crunchyroll'" in _inserts(stmts, "anime_streaming_providers")[0]
 
 
 def test_kauf_und_leih_angebote_der_serie_werden_nicht_vererbt():
@@ -223,14 +245,18 @@ def test_ohne_staffel_ist_alles_confirmed_und_nichts_wird_vererbt():
 
 @pytest.mark.parametrize("status", [None, "RELEASING", "FINISHED", "NOT_YET_RELEASED"])
 @pytest.mark.parametrize("year", [None, 2014, 2026, "2026"])
-def test_titelsuche_und_sweep_ergeben_dieselbe_stufe(status, year):
-    """Eine Regel, eine Implementierung: bei derselben Lage (Anbieter nur am Werk, nicht
-    am gematchten Objekt) ergeben Titelsuche und Katalog-Sweep dieselbe Stufe."""
+@pytest.mark.parametrize("staffel_leer", [True, False])
+def test_titelsuche_und_sweep_ergeben_dieselbe_stufe(status, year, staffel_leer):
+    """Eine Regel, eine Implementierung: bei derselben Lage (Crunchyroll nur am Werk, nicht
+    am gematchten Objekt; Objekt leer oder mit anderem Angebot) ergeben Titelsuche und
+    Katalog-Sweep dieselbe Stufe."""
     cat = load("justwatch-catalog")
-    node = _returner([_angebot(*CR)])
+    eigene = [] if staffel_leer else [_angebot("Netflix", "https://netflix.com/s2")]
+    node = _returner([_angebot(*CR)], eigene)
     offers = jw.aggregate_offers(node, node["seasons"][0], status=status, year=year, current_year=2026)
-    erwartet = cat.confidence_for([], ["crunchyroll"], "crunchyroll", status, year, 2026)
-    assert [o["confidence"] for o in offers] == ([erwartet] if erwartet else [])
+    erwartet = cat.confidence_for([] if staffel_leer else ["netflix"], ["crunchyroll"] + ([] if staffel_leer else ["netflix"]),
+                                  "crunchyroll", status, year, 2026)
+    assert [o["confidence"] for o in offers if o["provider"] == "crunchyroll"] == ([erwartet] if erwartet else [])
 
 
 def test_aggregate_offers_fragt_confidence_for_statt_eigene_regel(monkeypatch):
