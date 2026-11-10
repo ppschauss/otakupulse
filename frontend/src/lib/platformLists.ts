@@ -75,8 +75,28 @@ const genreFilter = (g: { slug: string; name: string }): ListFilter => ({
   intro: (p, n) => `${n} ${g.name}-Anime laufen aktuell auf ${p} — sortiert nach Beliebtheit.`,
 })
 
-/** SQL-Fragment über Aliase `a` (anime) und `o` (anime_streaming_offers); $1 ist der Provider. */
+/**
+ * Vertrauensstufe: `confidence` ist für den Bestand NULL und bedeutet „belegt" —
+ * deshalb IS DISTINCT FROM (ein `<>` wäre bei NULL nicht wahr und würde alles verwerfen).
+ * Literale statt Platzhalter, damit $1/$2 nicht verrutschen.
+ */
+const NOT_REJECTED = "o.confidence IS DISTINCT FROM 'rejected'"
+const NOT_UNCONFIRMED = "o.confidence IS DISTINCT FROM 'unconfirmed'"
+
+/**
+ * SQL-Fragment über Aliase `a` (anime) und `o` (anime_streaming_offers); $1 ist der Provider.
+ * Verworfene Angebote fallen überall heraus. Unbestätigte zählen mit, gelten aber nicht als
+ * „kostenlos" und tragen keine Sprachfassung — beides sind Detailbehauptungen ohne Beleg.
+ */
 export function filterCondition(f: ListFilter): { sql: string; params: any[] } {
+  const c = baseCondition(f)
+  const needsConfirmed = f.kind === 'static' && ['deutscher-dub', 'deutscher-sub', 'kostenlos'].includes(f.key)
+  const parts = [`(${c.sql})`, NOT_REJECTED]
+  if (needsConfirmed) parts.push(NOT_UNCONFIRMED)
+  return { sql: parts.join(' AND '), params: c.params }
+}
+
+function baseCondition(f: ListFilter): { sql: string; params: any[] } {
   switch (f.kind === 'genre' ? 'genre' : f.key) {
     case 'deutscher-dub':
       return { sql: "(',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%'", params: [] }
@@ -125,7 +145,7 @@ export async function platformListCounts(payload: any): Promise<Map<string, numb
      FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
      JOIN anime_rels ar ON ar.parent_id = a.id AND ar.genres_id IS NOT NULL
      JOIN genres g ON g.id = ar.genres_id
-     WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE GROUP BY o.provider, g.slug`,
+     WHERE o.monetization IN ('flatrate','ads','free') AND ${NOT_REJECTED} AND a.is_hentai IS NOT TRUE GROUP BY o.provider, g.slug`,
   )
   for (const r of g.rows) out.set(`${r.provider}/${r.slug}`, r.n)
   return out
@@ -167,9 +187,9 @@ export async function platformListStats(payload: any, providerSlug: string, f: L
   const [agg, top] = await Promise.all([
     p.query(
       `SELECT count(DISTINCT a.id)::int AS total,
-              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%')::int AS dub,
-              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.subs,'') || ',') LIKE '%,de,%')::int AS sub,
-              count(DISTINCT a.id) FILTER (WHERE o.monetization IN ('ads','free'))::int AS free,
+              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%' AND ${NOT_UNCONFIRMED})::int AS dub,
+              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.subs,'') || ',') LIKE '%,de,%' AND ${NOT_UNCONFIRMED})::int AS sub,
+              count(DISTINCT a.id) FILTER (WHERE o.monetization IN ('ads','free') AND ${NOT_UNCONFIRMED})::int AS free,
               count(DISTINCT a.id) FILTER (WHERE o.first_seen_at >= now() - interval '${NEW_DAYS} days')::int AS fresh,
               max(o.last_seen_at) AS checked
        ${base}`,

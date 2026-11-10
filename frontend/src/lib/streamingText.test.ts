@@ -38,6 +38,29 @@ describe('streamingMetaDescription / Title', () => {
   })
 })
 
+describe('Nichtverfügbarkeit nur mit Nachweis', () => {
+  const base = { titleEnglish: 'Testanime', format: 'TV', seasonYear: 2014, episodes: 22, streamingOffers: [] }
+  it('behauptet Nichtverfügbarkeit nur für die geprüften Anbieter, wenn verifiziert', () => {
+    const d = streamingMetaDescription({ ...base, streamingVerifiedAt: '2026-11-09T00:00:00Z' })
+    // Der Stempel deckt die Anbieter MIT Katalog-Paket (`PACKAGES`), nicht alle gemappten:
+    // HIDIVE, Paramount+, Apple TV+, Anime on Demand u. a. blättert der Abruf nicht.
+    expect(d).toContain('bei keinem der von uns geprüften Streaming-Anbieter in Deutschland')
+    expect(d).not.toContain('bei keinem Anbieter')
+    // Länge im Rahmen des Umgebenden (~160 Zeichen Zielmarke der Meta-Description).
+    expect(d.length).toBeLessThanOrEqual(175)   // alte Fassung: 170
+  })
+  it('behauptet sie NICHT, wenn nie verifiziert', () => {
+    const d = streamingMetaDescription({ ...base, streamingVerifiedAt: null })
+    expect(d).not.toContain('bei keinem')
+    expect(d).not.toContain('Gratis-Stream')
+  })
+  it('nennt auch ohne Nachweis Genre und Fakten', () => {
+    const d = streamingMetaDescription({ ...base, streamingVerifiedAt: null })
+    expect(d).toContain('Testanime')
+    expect(d).toContain('22 Folgen')
+  })
+})
+
 describe('shortTitle', () => {
   it('kürzt Untertitel und behält die Season', () => {
     expect(shortTitle('Re:ZERO -Starting Life in Another World- Season 4')).toBe('Re:ZERO Season 4')
@@ -53,8 +76,54 @@ describe('streamingGuide (Vorlagen-Wortlaut + Datenzusätze)', () => {
     expect(streamingGuide({ id: 1, titleEnglish: 'X' })).toBeNull()
     expect(streamingGuide({ id: 1, titleEnglish: 'X', streamingOffers: [{ provider: 'amazon-video', url: 'https://a', monetization: 'buy', audio: '', subs: '' }] })).toBeNull()
   })
+  describe('unbestätigte Angebote', () => {
+    const cr = { provider: 'crunchyroll', url: 'https://cr/x', monetization: 'flatrate', audio: 'ja', subs: 'de', confidence: 'confirmed' }
+    const nf = { provider: 'netflix', url: 'https://nf/x', monetization: 'flatrate', audio: '', subs: '', confidence: 'unconfirmed' }
+    const faqBig = (g: NonNullable<ReturnType<typeof streamingGuide>>) => g.faq.find((f) => f.q.startsWith('Streamen auch Dienste'))!.a
+    it('nur unbestätigtes Angebot: kein Guide', () => {
+      expect(streamingGuide({ ...naruto, streamingOffers: [nf] })).toBeNull()
+    })
+    it('belegt + unbestätigt: nur der belegte Anbieter wird genannt', () => {
+      const g = streamingGuide({ ...naruto, streamingOffers: [cr, nf] })!
+      expect(faqBig(g)).toContain('Aktuell: Crunchyroll hat Naruto im Programm.')
+      expect(faqBig(g)).not.toContain('Netflix hat')
+      expect(g.overview[0].value).toBe('Crunchyroll')
+      expect(JSON.stringify(g)).not.toContain('https://nf/x')
+    })
+    const nfConfirmed = { provider: 'netflix', url: 'https://nf/x', monetization: 'flatrate', audio: 'ja', subs: 'de', confidence: 'confirmed' }
+    const crUnconfirmed = { provider: 'crunchyroll', url: 'https://cr/x', monetization: 'flatrate', audio: '', subs: '', confidence: 'unconfirmed' }
+    it('„nicht gelistet" nur mit streamingVerifiedAt', () => {
+      const offers = [nfConfirmed]
+      const ohne = streamingGuide({ ...naruto, streamingOffers: offers, streamingVerifiedAt: null })!
+      expect(ohne.faq.some((f) => f.a.includes('derzeit nicht gelistet'))).toBe(false)
+      const mit = streamingGuide({ ...naruto, streamingOffers: offers, streamingVerifiedAt: '2026-11-09T00:00:00Z' })!
+      expect(faqBig(mit)).toContain('Bei Crunchyroll und Amazon Prime Video ist Naruto derzeit nicht gelistet')
+    })
+    it('„nicht gelistet" nennt das Prüfdatum des Belegs, nicht streamingCheckedAt', () => {
+      const g = streamingGuide({ ...naruto, streamingOffers: [nfConfirmed], streamingCheckedAt: '2026-09-10T00:00:00Z', streamingVerifiedAt: '2026-11-09T12:00:00Z' })!
+      expect(faqBig(g)).toContain('derzeit nicht gelistet (geprüft am 09.11.2026).')
+      expect(faqBig(g)).not.toContain('10.09.2026')
+    })
+    it('„nicht gelistet" mit unlesbarem Stempel: kein leeres Klammerpaar', () => {
+      const g = streamingGuide({ ...naruto, streamingOffers: [nfConfirmed], streamingVerifiedAt: 'kaputt' })!
+      expect(faqBig(g)).toContain('derzeit nicht gelistet.')
+    })
+    it('Anbieter mit unbestätigtem Angebot gilt auch mit Nachweis nie als „nicht gelistet"', () => {
+      const g = streamingGuide({ ...naruto, streamingOffers: [nfConfirmed, crUnconfirmed], streamingVerifiedAt: '2026-11-09T00:00:00Z' })!
+      expect(faqBig(g)).toContain('Amazon Prime Video ist Naruto derzeit nicht gelistet')
+      expect(faqBig(g)).not.toContain('Crunchyroll ist')
+      expect(faqBig(g)).not.toMatch(/Crunchyroll[^.]*nicht gelistet/)
+    })
+    it('nur belegte Angebote (auch ohne confidence): unverändert', () => {
+      const legacyRow = { provider: 'netflix', url: 'https://nf/x', monetization: 'flatrate', audio: '', subs: '' }
+      const g = streamingGuide({ ...naruto, streamingOffers: [cr, legacyRow] })!
+      expect(g.overview[0].value).toBe('Crunchyroll und Netflix')
+      expect(faqBig(g)).toContain('Aktuell: Netflix und Crunchyroll haben Naruto im Programm.')
+    })
+  })
   it('übernimmt die Vorlagensätze wörtlich und hängt Fakten an', () => {
-    const g = streamingGuide({ ...naruto, streamingOffers: [...naruto.streamingOffers, { provider: 'amazon-video', url: 'https://av', monetization: 'buy', audio: '', subs: '' }] })!
+    // streamingVerifiedAt gesetzt: dieser Fall prüft den Vorlagenwortlaut inkl. „nicht gelistet" (nur mit Nachweis).
+    const g = streamingGuide({ ...naruto, streamingVerifiedAt: '2026-09-10T00:00:00.000Z', streamingOffers: [...naruto.streamingOffers, { provider: 'amazon-video', url: 'https://av', monetization: 'buy', audio: '', subs: '' }] })!
     expect(g.heading).toBe('Wer streamt Naruto? Alle Anbieter & Optionen')
     expect(g.intro).toContain('Auf der Suche nach dem passenden Stream für **Naruto**? Wir zeigen dir, wo du die Serie aktuell findest.')
     expect(g.intro).toContain('Seit dem **Herbst 2002** führen **Crunchyroll**, **Amazon Prime Video** und **Joyn** den Anime im Sortiment.')

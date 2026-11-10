@@ -117,12 +117,16 @@ otakupulse/
 ├── docs/
 │   ├── PROJEKT.md                  # vollständige Pfad-Referenz (+ PDF)
 │   ├── BETRIEB.md                  # Betrieb, Deployment, Cron, Sicherheit (Detail)
+│   ├── streaming-rollout.md        # Rollout-Reihenfolge Streaming (Push vor Deploy, --discovery, Wrapper)
 │   └── ARCHITEKTUR-BLUEPRINT.md
 ├── n8n-workflows/                  # Autoposter-Workflow (+ README) für n8n
 ├── backup-db.sh                    # nächtliches DB-Backup (lokal + B2-Offsite)
 ├── watchdog.sh                     # Uptime-Watchdog (Auto-Neustart + Telegram-Alarm)
 ├── otakupulse-sync.sh              # täglicher Sync-Wrapper (AniList → JustWatch → News → Telegram → IndexNow)
-├── refresh-streaming.sh            # rollierender Streaming-Refresh (--stale)
+├── refresh-streaming.sh            # rollierender Streaming-Refresh (--stale-weighted)
+├── catalog-sweep.sh                # wöchentlicher JustWatch-Katalog-Sweep (+ Lücken-Alarm)
+├── crunchyroll-availability.sh     # täglicher Crunchyroll-Direktabgleich
+├── streaming-alarm.sh              # Telegram-Alarm bei Lücken (schweigt bei 0)
 ├── backfill-streaming.sh           # Einmal-Backfill (JustWatch + Dub-Scraper)
 └── README.md
 ```
@@ -229,7 +233,8 @@ Brauchen TLS-Impersonation (Cloudflare) bzw. eine **DE-IP**. Laufen außerhalb d
 | Script | Zweck |
 |---|---|
 | `crunchyroll-dub.py` | Echte Ger-/Eng-Dub & -Sub aus der Crunchyroll-Content-API |
-| `justwatch-streaming.py` | Anbieter-Verfügbarkeit (`--recent N`, `--only-missing`, `--stale N`) → `streamingProviders` |
+| `justwatch-streaming.py` | Anbieter-Verfügbarkeit je Titel (`--recent N`, `--only-missing`, `--stale N`, `--stale-weighted N`, `--gap-alarm`) → `streamingProviders` |
+| `justwatch-catalog.py` | Katalog-Abgleich: pro Anbieter der ganze DE-Anime-Katalog (`--sweep`, `--discovery`, `--count-only`, `--dry-run`); setzt `streamingVerifiedAt` |
 | `wikipedia-dub.py` | Legale Ger-Dub-Ergänzung (Klassiker/Filme) via Wikidata |
 | `studio-logos.py` | Studio-Logos (Wikimedia Commons) + Websites aus Wikidata |
 
@@ -264,13 +269,95 @@ News-Formate aus den Offers: `generate-recurring-news.ts --platform-new` / `--pl
 Detailrouten haben bewusst KEINE `loading.tsx` mehr — eine Suspense-Grenze über dem Segment macht
 `notFound()` zum Soft-404 (Status 200); nur `/suche` behält ihr Skeleton.
 
-**Rollierender Refresh** (`refresh-streaming.sh`, Cron alle 4 h): Feld
+**Rollierender Refresh** (`refresh-streaming.sh`, Cron alle 4 h, `--stale-weighted`: laufende Titel
+zuerst, dann Jahrgang absteigend, innerhalb eines Jahrgangs der am längsten nicht geprüfte; `--stale`
+bleibt für die reine Altersfolge erhalten): Feld
 **`streamingCheckedAt`** merkt sich pro Titel den letzten Abgleich. `justwatch-streaming.py
 --stale N` nimmt die N am längsten nicht geprüften Titel, gleicht sie **autoritativ** ab
 (Offers exakt auf JustWatch-Stand, nur bei sicherem Titel-Match ≥ 0.90; `firstSeenAt`
-bleibt erhalten) und stempelt sie. Rate-Limit 4 Worker + 0,25 s (ein großer Blast hatte
-JustWatch schon mit HTTP 403 geblockt). Voll-Backfill (~11k Titel, ~30 min) über
-`backfill-streaming.sh`.
+bleibt erhalten) und stempelt sie. Rate-Limit: **1 Worker + 1,2 s Pause pro Request**
+(`MAX_WORKERS = 1`, `REQUEST_PAUSE = 1.2`), bei HTTP 403/429 Backoff 30/60/120 s. **Diese Werte
+nicht hochdrehen:** JustWatch sperrt die IP für rund eine Stunde, sobald das Volumen zu hoch
+ist. Am 2026-09-10 reichten dafür nacheinander 4 Worker (TLS pro Titel), 3 Worker bei rund
+5 Titeln/s über 15 min und 2 Worker bei rund 3 Requests/s nach etwa 4 min (mit parallelem
+Cron). Belegt im Docstring von `justwatch-streaming.py`. Wer die Werte nach einem Umbau
+„wiederherstellt", stellt die Sperre wieder her; auch nie zwei Instanzen parallel (Instanz-Sperre).
+Ein Voll-Backfill über `backfill-streaming.sh` dauert bei dieser Rate entsprechend Stunden;
+für den Alltag deckt der Katalog-Sweep den Bestand mit rund 100 Requests ab.
+
+### Prüflisten im Payload-Admin
+
+Unsichere Angaben zeigt die Seite als „nicht bestätigt" statt zu schweigen — damit sind sie
+eine **Arbeitsliste**: von Hand prüfen muss man nur die unbestätigten Zeilen (Liste 1), nicht
+den ganzen Katalog. Die zweite Liste (Titel ohne Nachweis) ist dagegen eine
+**Beobachtungsliste**.
+Der Admin liegt unter `/legal/admin` (`routes.admin` in `payload.config.ts`); die Collection
+heißt `anime`. Beide Listen sind normale Admin-Listenansichten mit Filter in der URL — es gibt
+bewusst keine eigene Oberfläche. Die Felder bleiben unverändert, ein späteres Werkzeug kann
+sie über die Payload-API lesen. Die Listenansicht hat dafür die Spalte `streamingVerifiedAt`.
+
+**1. „Unbestätigt"** — Titel mit mindestens einem Angebot, das nur geerbt/vermutet ist:
+
+```
+/legal/admin/collections/anime?where[streamingOffers.confidence][equals]=unconfirmed&sort=-seasonYear
+```
+
+**2. „Kein Nachweis"** — Titel, die noch kein vollständiger Katalog-Durchlauf erfasst hat
+(`streamingVerifiedAt` leer; heute **alle**, der erste Durchlauf steht aus):
+
+```
+/legal/admin/collections/anime?where[streamingVerifiedAt][exists]=false&sort=-seasonYear
+```
+
+Größenordnung (gemessen am 09.11.2026): 11.061 Titel, davon 7.864 ohne jedes Angebot; in
+der laufenden Season FALL 2026 haben 52 von 110 Titeln keine Angabe. Liste 2 ist also zu
+Beginn riesig und schrumpft mit jedem Katalog-Durchlauf; die neuesten
+Titel (`-seasonYear`) stehen oben, weil dort die Lücken zählen: dort suchen Besucher
+tatsächlich.
+
+**Liste 2 ist eine Beobachtungsliste, keine Handarbeitsliste.** `streamingVerifiedAt` setzt
+ausschließlich der vollständige Katalog-Durchlauf (gebunden an das `complete`-Flag); von Hand
+wird der Stempel nicht gesetzt, sonst wäre er keine Beobachtung mehr, sondern eine Behauptung.
+Die Liste leert sich nach dem ersten vollständigen Durchlauf fast von selbst, weil dann jeder
+erfasste Titel den Stempel trägt. Von Hand eingreifen muss man dort nur, wenn man **weiß**,
+dass ein Titel verfügbar ist: dann eine Angebotszeile mit `confidence = confirmed` und `source = manual` anlegen (siehe
+unten). Ein so entschiedener Titel **bleibt bis zum nächsten Durchlauf auf der Liste** — man
+sieht ihn also wieder, das heißt nicht, dass die Entscheidung verloren ist.
+
+**So wird von Hand entschieden** (im Angebot, Array `Streaming-Angebote`):
+
+- **Stimmt es:** `confidence` auf `confirmed` **und** `source` auf `manual`. Erst `manual`
+  schützt die Zeile vor dem Sync; mit `confirmed` allein darf der Sync sie wieder überschreiben.
+- **Stimmt es nicht:** `confidence` auf `rejected` **und** `source` auf `manual`. Diese
+  Veto-Zeile bleibt stehen und verhindert, dass der Sync den Falschtreffer wieder einfügt;
+  die Seite zeigt sie nicht an.
+- **Eine Zeile einfach zu löschen genügt nicht** — der Sync findet denselben Treffer wieder
+  und legt sie wieder an, sobald ein Durchlauf diesen Titel erfasst. Der rollierende
+  Abgleich (150 Titel alle vier Stunden, bei 11.061 Titeln rund 74 Läufe) braucht dafür
+  rund zwölf Tage, spätestens beim wöchentlichen Katalog-Abgleich.
+
+Der Sync spart beim autoritativen Löschen `source = 'manual'` und `confidence = 'rejected'`
+aus und fügt ein Paar `(provider, monetization)` mit `manual`-Zeile nicht doppelt ein. Endet
+eine Lizenz wirklich, löscht der Sync trotzdem die übrigen Zeilen des Titels; die manuelle
+Zeile muss dann ebenfalls von Hand entfernt werden.
+
+**Was belegt ist und was nicht** (die URLs wurden nicht gegen den laufenden Admin
+ausgeführt — dort ist dieser Code noch nicht ausgerollt, und die Spalten fehlen in der
+Produktionsdatenbank bis zum Schema-Push):
+
+- Belegt im installierten Payload 3.85.0: der Admin liest die Query mit `qs-esm`
+  (`@payloadcms/ui/dist/utilities/parseSearchParams.js`), also `where[feld][operator]=wert`;
+  `exists` und `equals` sind gültige Operatoren; der Drizzle-Adapter löst Array-Unterfelder
+  über den Punktpfad `streamingOffers.confidence` auf (`@payloadcms/drizzle/dist/queries/getTableColumnFromPath.js`,
+  Fall `array`); das Sortierfeld heißt tatsächlich `seasonYear` (`Anime.ts`, `index: true`).
+- **Unsicher:** (a) `exists]=false` auf einem Datumsfeld — der Operator ist da, das
+  `false`-Verhalten (IS NULL) wurde nur im Adapter-Code gelesen, nicht ausgeführt.
+  (b) Der Admin übernimmt `sort` aus der URL **und speichert es als Nutzereinstellung**
+  (`collection-anime` in den Preferences) — die Sortierung bleibt also auch beim nächsten
+  Öffnen der Liste. Bei Zweifel die Liste über das Filter-Menü des Admins aufbauen; dann
+  bekommt man die korrekte URL aus der Adresszeile. (c) Titel ohne `seasonYear` landen
+  je nach Datenbank am Anfang oder Ende. (d) Hentai-Titel sind in den Admin-Listen
+  nicht ausgeblendet.
 
 ---
 
@@ -485,7 +572,9 @@ Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron
 |---|---|---|
 | `30 3 * * *` | `backup-db.sh` | DB-Backup lokal + B2-Offsite, rotierend |
 | `15 4 * * *` | `otakupulse-sync.sh` | AniList-Sync → JustWatch → News → Telegram → IndexNow |
-| `45 */4 * * *` | `refresh-streaming.sh` | rollierender Streaming-Abgleich (`--stale`) |
+| `45 */4 * * *` | `refresh-streaming.sh` | rollierender Streaming-Abgleich (`--stale-weighted 150`), danach Lücken-Alarm |
+| `20 5 * * 1` | `catalog-sweep.sh` | Katalog-Sweep (`justwatch-catalog.py --sweep`), setzt `streamingVerifiedAt`, danach Lücken-Alarm |
+| `40 5 * * *` | `crunchyroll-availability.sh` | Crunchyroll-Direktbeleg (`crunchyroll-dub.py --availability`), danach Frische-Verfall (> 7 Tage) |
 | `55 7 * * 1` | `generate-recurring-news --weekly-preview` | Wochenvorschau (Mo) |
 | `0 12 * * 3` | `generate-recurring-news --genre-spotlight` | Genre-Spotlight (Mi) |
 | `0 8 * * 4` | `generate-recurring-news --platform-new` | „Neu auf <Anbieter>" (Do) |
@@ -494,6 +583,43 @@ Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron
 | `*/30 * * * *` | `telegram-notify.ts` | neue Artikel in den Channel posten |
 | `*/5 * * * *` | `watchdog.sh` | Uptime-Watchdog + Auto-Neustart |
 | `23 * * * *` | `find …/.next/cache/images -size 0 -delete` | 0-Byte-Bilder, die den LRU-Start killen |
+
+**Reihenfolge ist eine Anforderung:** der Sweep (Mo 05:20) läuft **vor** dem Crunchyroll-Lauf
+(täglich 05:40). Der Sweep löscht autoritativ und ignoriert dabei `source` — er überschreibt die
+von Crunchyroll belegte Zeile mit einer geerbten, unbestätigten; der Crunchyroll-Lauf danach
+stellt den Beleg wieder her. Die Alternative (Sweep spart `source='crunchyroll'` aus) wurde
+verworfen: er könnte ein echtes Lizenzende nie mehr entfernen, und die Zeile wäre für Titel
+außerhalb des Crunchyroll-Umfangs dauerhaft eingefroren. Die Begründung steht auch im Kopf von
+`catalog-sweep.sh`. Die vierstündige Titelsuche (`build_sql`) spart `source = 'crunchyroll'`
+dagegen aus — sie ist der enge, titelweise Weg; sonst machte `--stale-weighted`, das laufende
+Titel zuerst nimmt, den Beleg binnen Stunden wieder zur geerbten Zeile.
+
+**Was die Aussparung sicher macht, ist nicht der Sweep, sondern der Frische-Verfall.** Der Sweep
+fasst nur gematchte Titel an, und eine Fortsetzungsstaffel matcht er nie (`match_node` trifft
+bewusst nur die Erststaffel) — eine dort liegende `confirmed`-Zeile könnte er also nie abräumen.
+Das tut der Crunchyroll-Lauf selbst: nach einem **erfolgreichen** Durchlauf löscht er alle Zeilen
+mit `source = 'crunchyroll'`, deren `lastSeenAt` älter als **7 Tage** ist (`AVAIL_STALE_DAYS`,
+`expiry_sql` in `crunchyroll-dub.py`) — Veto-Zeilen (`confidence = 'rejected'`) ausgenommen,
+sonst löschte sich das Veto selbst. Jeder Lauf schreibt seine Zeilen neu, eine gepflegte Zeile
+ist also immer frisch; ein Lizenzende verschwindet spätestens nach einer Woche. Ein unvollständiger
+Lauf (403/429, Token-Fehler, keine einzige Auflösung) räumt **nichts** ab. Folge eines längeren
+Ausfalls: belegte Crunchyroll-Zeilen verschwinden nach einer Woche, und die betroffenen Titel
+fallen auf die als „nicht bestätigt" gekennzeichnete JustWatch-Angabe zurück.
+
+**Erstmaliger Rollout:** die Reihenfolge ist eine Anforderung — Quellstand holen,
+Schema-Push, verifizieren, **dann** die App deployen (`db-push.ts` liest die Collections
+aus dem enrich-Mount, braucht also den neuen Code, während die App noch den alten Build
+fährt), danach `justwatch-catalog.py --discovery` genau einmal vor dem ersten `--sweep`
+und zuletzt die Wrapper nach `/opt/otakupulse-cron/` samt Pfadanpassung. Vollständig in
+[`docs/streaming-rollout.md`](docs/streaming-rollout.md); die Cron-Wrapper laufen **nicht**
+aus dem Repo.
+
+**Kennzahl und Alarm:** `npx tsx src/scripts/streaming-coverage.ts` weist Angebote und Titel je
+Vertrauensstufe (`confirmed`/`unconfirmed`/`rejected`), `streamingVerifiedAt` und die Lücke der
+laufenden Season aus. Der Alarm (`streaming-alarm.sh`, Token und `ALERT_CHAT_ID` aus `secrets.env`
+wie in `watchdog.sh`) meldet per Telegram, wenn Titel der laufenden Season **weder** ein Angebot
+**noch** `streamingVerifiedAt` haben; bei 0 schweigt er, höchstens eine Meldung pro Tag.
+Abnahmeziel: von 110 Titeln der Season FALL 2026 höchstens 10 ohne Angabe, keiner ohne Stempel.
 
 Der Tages-Digest (`--daily`, früher 06:00) ist seit 9f83275 abgeschafft: rund fünf
 Artikel pro Tag nach Schablone sind „Scaled content". Ersatz ist die Wochenvorschau.

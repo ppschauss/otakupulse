@@ -3,6 +3,8 @@
  *
  * Beantwortet zwei Fragen vor dem Scharfschalten der Indexregel:
  *   1. Wie viele Titel haben überhaupt belegte Streaming-Angebote (und bei wem)?
+ *      Unterschieden nach Vertrauensstufe (confirmed / unconfirmed / rejected; NULL = belegt)
+ *      und nach Prüfstempel `streamingVerifiedAt`, plus die Lücke der laufenden Season.
  *   2. Wie viele Seiten wären mit der aktuellen Regel (lib/anime.ts → animeIndexable)
  *      indexierbar — und was fällt bei welcher Popularitätsschwelle weg?
  *
@@ -18,7 +20,9 @@ const q = async (payload: any, sql: string, params: any[] = []) => (await (paylo
 async function main() {
   const payload = await getPayload({ config })
   const pub = 'a.is_hentai IS NOT TRUE'
-  const STREAM = "o.monetization IN ('flatrate','ads','free')"
+  // `rejected` ist ein Veto (die Seite zeigt die Zeile nicht) und zählt nie als Angebot.
+  // `confidence IS NULL` ist belegt (Altbestand) und zählt wie `confirmed`.
+  const STREAM = "o.monetization IN ('flatrate','ads','free') AND o.confidence IS DISTINCT FROM 'rejected'"
 
   const [total] = await q(payload, `SELECT count(*)::int n FROM anime a WHERE ${pub}`)
   const [withOffers] = await q(
@@ -52,6 +56,49 @@ async function main() {
   )
   console.log('\n=== Titel je Anbieter ===')
   for (const r of perProvider) console.log(`  ${String(r.provider).padEnd(22)} ${r.n}`)
+
+  // --- Vertrauensstufen: Angebote (Zeilen) und Titel je Stufe. NULL = belegt = confirmed. ---
+  const tiers = await q(
+    payload,
+    `SELECT COALESCE(o.confidence::text, 'confirmed') AS stufe, count(*)::int zeilen, count(DISTINCT a.id)::int titel
+     FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
+     WHERE o.monetization IN ('flatrate','ads','free') AND ${pub} GROUP BY 1`,
+  )
+  const tier = (k: string) => tiers.find((r: any) => r.stufe === k) ?? { zeilen: 0, titel: 0 }
+  const [onlyUnconfirmed] = await q(
+    payload,
+    `SELECT count(*)::int n FROM anime a WHERE ${pub}
+       AND EXISTS (SELECT 1 FROM anime_streaming_offers o WHERE o._parent_id = a.id AND ${STREAM} AND o.confidence = 'unconfirmed')
+       AND NOT EXISTS (SELECT 1 FROM anime_streaming_offers o WHERE o._parent_id = a.id AND ${STREAM} AND o.confidence IS DISTINCT FROM 'unconfirmed')`,
+  )
+  const [verified] = await q(payload, `SELECT count(*)::int n FROM anime a WHERE a.streaming_verified_at IS NOT NULL AND ${pub}`)
+  console.log('\n=== Vertrauensstufen (Angebote / Titel) ===')
+  for (const k of ['confirmed', 'unconfirmed', 'rejected']) {
+    const t = tier(k)
+    console.log(`  ${k.padEnd(12)} ${String(t.zeilen).padStart(6)} Angebote  ${String(t.titel).padStart(6)} Titel${k === 'rejected' ? '  (Veto, nie sichtbar)' : ''}`)
+  }
+  console.log(`  Titel NUR mit unbestätigten Angeboten: ${onlyUnconfirmed.n}`)
+  console.log(`  streamingVerifiedAt gesetzt:           ${verified.n}  (${((verified.n / total.n) * 100).toFixed(1)} %)`)
+
+  // --- Lücke der laufenden Season: dieselbe Zahl, die der Telegram-Alarm überwacht. ---
+  const now = new Date()
+  const season = ['WINTER', 'SPRING', 'SUMMER', 'FALL'][Math.floor(now.getUTCMonth() / 3)]
+  const year = now.getUTCFullYear()
+  const [cur] = await q(
+    payload,
+    `SELECT count(*)::int total,
+            count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM anime_streaming_offers o WHERE o._parent_id = a.id AND ${STREAM}))::int ohne_angebot,
+            count(*) FILTER (WHERE a.streaming_verified_at IS NULL)::int ohne_stempel,
+            count(*) FILTER (WHERE a.streaming_verified_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM anime_streaming_offers o WHERE o._parent_id = a.id))::int luecke
+     FROM anime a WHERE a.season_year = $1 AND a.season = $2 AND ${pub}`,
+    [year, season],
+  )
+  console.log(`\n=== Laufende Season ${season} ${year} ===`)
+  console.log(`  Titel:                                   ${cur.total}`)
+  console.log(`  ohne Angebot:                            ${cur.ohne_angebot}   (Abnahmeziel ≤ 10)`)
+  console.log(`  ohne streamingVerifiedAt:                ${cur.ohne_stempel}`)
+  console.log(`  Lücke (weder Angebot noch Stempel):      ${cur.luecke}   (Alarm ab > 0; Abnahmeziel 0)`)
 
   console.log(`\n=== Indexierung (aktuelle Schwelle: popularity ≥ ${INDEX_MIN_POPULARITY}) ===`)
   for (const th of [0, 1000, 2000, 5000, 10000, 20000]) {

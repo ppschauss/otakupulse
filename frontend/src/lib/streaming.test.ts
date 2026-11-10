@@ -8,6 +8,8 @@ import {
   streamingOffersOf,
   groupOffersByProvider,
   streamingSummary,
+  isAmazonChannelUrl,
+  languageItems,
 } from './streaming'
 
 describe('providerBySlug', () => {
@@ -107,6 +109,28 @@ describe('streamingOffersOf', () => {
     expect(v[0].offer.legacy).toBe(true)
     expect(v[1].offer.url).toBe('https://www.joyn.de')
   })
+  it('reicht confidence und source durch', () => {
+    const anime = {
+      streamingOffers: [
+        { provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence: 'unconfirmed', source: 'justwatch' },
+      ],
+    }
+    const [v] = streamingOffersOf(anime)
+    expect(v.offer.confidence).toBe('unconfirmed')
+    expect(v.offer.source).toBe('justwatch')
+  })
+  it('setzt confidence und source auf null, wenn das Angebot sie nicht trägt', () => {
+    const anime = { streamingOffers: [{ provider: 'netflix', url: 'https://netflix.com/x', monetization: 'flatrate' }] }
+    const [v] = streamingOffersOf(anime)
+    expect(v.offer.confidence).toBeNull()
+    expect(v.offer.source).toBeNull()
+  })
+  it('normalisiert unbekannte Werte auf null', () => {
+    const anime = { streamingOffers: [{ provider: 'netflix', url: 'https://netflix.com/x', confidence: 'bogus', source: 'tiktok' }] }
+    const [v] = streamingOffersOf(anime)
+    expect(v.offer.confidence).toBeNull()
+    expect(v.offer.source).toBeNull()
+  })
 })
 
 describe('groupOffersByProvider', () => {
@@ -144,5 +168,116 @@ describe('streamingSummary', () => {
   })
   it('ohne Anbieter: hasStream=false', () => {
     expect(streamingSummary({}).hasStream).toBe(false)
+  })
+})
+
+describe('streamingSummary mit Vertrauensstufen', () => {
+  const unconfirmed = { provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence: 'unconfirmed' }
+  it('meldet hasUnconfirmed, zählt den Anbieter aber mit', () => {
+    const s = streamingSummary({ streamingOffers: [unconfirmed] })
+    expect(s.hasUnconfirmed).toBe(true)
+    expect(s.hasStream).toBe(true)
+    expect(s.providerNames).toEqual(['Crunchyroll'])
+  })
+  it('leitet aus einem unbestätigten Angebot keine Sprachen ab', () => {
+    const s = streamingSummary({ streamingOffers: [{ ...unconfirmed, audio: 'de', subs: 'de' }] })
+    expect(s.hasDeDub).toBe(false)
+    expect(s.hasDeSub).toBe(false)
+  })
+  it('meldet kein hasFree für ein unbestätigtes Angebot', () => {
+    const s = streamingSummary({ streamingOffers: [{ ...unconfirmed, monetization: 'free' }] })
+    expect(s.hasFree).toBe(false)
+  })
+  it('ist bei rein belegten Angeboten unverändert', () => {
+    const s = streamingSummary({ streamingOffers: [{ provider: 'netflix', url: 'https://netflix.com/x', monetization: 'flatrate', audio: 'de' }] })
+    expect(s.hasUnconfirmed).toBe(false)
+    expect(s.hasDeDub).toBe(true)
+  })
+})
+
+describe('isAmazonChannelUrl', () => {
+  it('erkennt Amazon-Channel-Deep-Links', () => {
+    expect(isAmazonChannelUrl('https://watch.amazon.de/detail?gti=amzn1.dv.gti.abc')).toBe(true)
+  })
+  it('erkennt Direktanbieter-Links nicht als Channel', () => {
+    expect(isAmazonChannelUrl('https://animationdigitalnetwork.com/de/video/1433-suikoden')).toBe(false)
+    expect(isAmazonChannelUrl('https://www.crunchyroll.com/de/series/GABC')).toBe(false)
+    expect(isAmazonChannelUrl(null)).toBe(false)
+  })
+})
+
+describe('verworfene Angebote (confidence rejected)', () => {
+  const rejected = { provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence: 'rejected', source: 'manual' }
+  const confirmed = { provider: 'netflix', url: 'https://netflix.com/x', monetization: 'flatrate', confidence: 'confirmed' }
+  it('erscheinen nicht in streamingOffersOf', () => {
+    expect(streamingOffersOf({ streamingOffers: [rejected] })).toEqual([])
+  })
+  it('lassen einen Titel mit nur einem verworfenen Angebot ohne Stream', () => {
+    expect(streamingSummary({ streamingOffers: [rejected] }).hasStream).toBe(false)
+  })
+  it('neben einem belegten Angebot bleibt nur das belegte', () => {
+    const views = streamingOffersOf({ streamingOffers: [rejected, confirmed] })
+    expect(views.map((v) => v.provider.slug)).toEqual(['netflix'])
+  })
+})
+
+describe('verworfene Angebote und der Slug-Index streamingProviders', () => {
+  const rejectedCr = { provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence: 'rejected', source: 'manual' }
+  it('streamingProvidersOf zeigt einen per Veto verworfenen Anbieter nicht', () => {
+    expect(streamingProvidersOf({ streamingProviders: ['crunchyroll'], streamingOffers: [rejectedCr] })).toEqual([])
+  })
+  it('der Legacy-Rückfall greift dann nicht mehr (hasStream false)', () => {
+    expect(streamingSummary({ streamingProviders: ['crunchyroll'], streamingOffers: [rejectedCr] }).hasStream).toBe(false)
+  })
+  it('ein verworfener Crunchyroll-Eintrag lässt Netflix unberührt', () => {
+    const r = streamingProvidersOf({ streamingProviders: ['netflix'], streamingOffers: [rejectedCr] })
+    expect(r.map((x) => x.provider.slug)).toEqual(['netflix'])
+  })
+  it('ohne geladene streamingOffers bleibt das Verhalten unverändert', () => {
+    expect(streamingProvidersOf({ streamingProviders: ['netflix'] }).map((x) => x.provider.slug)).toEqual(['netflix'])
+    expect(streamingProvidersOf({ streamingProviders: ['netflix'], streamingOffers: null }).map((x) => x.provider.slug)).toEqual(['netflix'])
+  })
+})
+
+describe('languageItems', () => {
+  const offer = (confidence: string, audio: string, subs = '') => streamingOffersOf({
+    streamingOffers: [{ provider: 'crunchyroll', url: 'https://crunchyroll.com/x', monetization: 'flatrate', confidence, audio, subs }],
+  })[0].offer
+  it('nimmt im Mischfall nur die Sprachen des belegten Angebots', () => {
+    const items = languageItems([offer('unconfirmed', 'de,en', 'de'), offer('confirmed', 'ja', 'en')])
+    expect(items.map((i) => i.key)).toEqual(['en-sub'])
+  })
+  it('liefert nichts, wenn alle Angebote unbestätigt sind', () => {
+    expect(languageItems([offer('unconfirmed', 'de', 'de')])).toEqual([])
+  })
+  it('behandelt Altbestand ohne confidence als belegt', () => {
+    expect(languageItems([offer('', 'de')]).map((i) => i.key)).toEqual(['de-dub'])
+  })
+})
+
+describe('neue Anbieter aus dem Katalog-Befund', () => {
+  for (const slug of ['hbo-max', 'akibapass', 'pluto-tv']) {
+    it(`kennt ${slug}`, () => {
+      expect(providerBySlug(slug)).toBeDefined()
+    })
+  }
+  it('bildet Anbieter ohne Anime-Angebote nicht ab', () => {
+    expect(providerBySlug('plaion-pictures')).toBeUndefined()
+    expect(providerBySlug('prosieben-maxx')).toBeUndefined()
+  })
+  it('fuehrt sie nicht als DE-Plattformseite', () => {
+    for (const slug of ['hbo-max', 'akibapass', 'pluto-tv']) {
+      expect(DE_PROVIDER_SLUGS).not.toContain(slug)
+    }
+  })
+  it('matcht die JustWatch-Namen', () => {
+    expect(providerByName('HBO Max')?.slug).toBe('hbo-max')
+    expect(providerByName('HBO Max Amazon Channel')?.slug).toBe('hbo-max')
+    expect(providerByName('Akibapass')?.slug).toBe('akibapass')
+  })
+  it('fuehrt Akibapass als Kauf-/Leih-Store, Pluto TV und HBO Max nicht', () => {
+    expect(providerBySlug('akibapass')?.store).toBe(true)
+    expect(providerBySlug('pluto-tv')?.store).not.toBe(true)
+    expect(providerBySlug('hbo-max')?.store).not.toBe(true)
   })
 })

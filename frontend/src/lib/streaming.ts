@@ -11,6 +11,8 @@
  * die Anbieter-Startseite.
  */
 
+import { isConfirmed, isUnconfirmed, rejectedProviderSlugs, type Confidence, type OfferSource } from './streamingConfidence'
+
 export type StreamingProvider = {
   slug: string
   name: string
@@ -229,6 +231,14 @@ export const STREAMING_PROVIDERS: StreamingProvider[] = [
   { slug: 'microsoft-store', name: 'Microsoft Store', aliases: ['Microsoft Store'], region: 'DE', store: true, color: '#0078d4', homepage: 'https://www.microsoft.com/de-de/store/movies-and-tv', blurb: 'Kaufen oder leihen im Microsoft Store.' },
   { slug: 'sky-store', name: 'Sky Store', aliases: ['Sky Store'], region: 'DE', store: true, color: '#0072c9', homepage: 'https://store.sky.de', blurb: 'Kaufen oder leihen im Sky Store.' },
   { slug: 'tencent', name: 'Tencent Video', aliases: ['Tencent Video'], region: 'INTL', color: '#0052d9', homepage: 'https://v.qq.com', blurb: 'Chinesische Plattform mit großem Donghua- und Anime-Angebot.' },
+  // Aus dem JustWatch-Katalogbefund vom 2026-11-09. Bewusst ohne `region`: keine öffentliche
+  // /plattform/<slug>-Seite (Entscheidung 22), daher auch kein blurb/about/logo.
+  // Plaion Pictures und ProSieben MAXX fehlen absichtlich — null Anime-Angebote im DE-Katalog.
+  { slug: 'hbo-max', name: 'HBO Max', aliases: ['HBO Max', 'HBO Max Amazon Channel'], homepage: 'https://www.hbomax.com' },
+  // Gemessen nur RENT/BUY, kein FLATRATE: Einzelkauf/Leihe, kein Abo. Ohne `store: true` würde
+  // Akibapass im Streaming-Index landen und „läuft bei Akibapass" behaupten — nicht aufwerten.
+  { slug: 'akibapass', name: 'Akibapass', aliases: ['Akibapass'], store: true, homepage: 'https://www.akibapass.de' },
+  { slug: 'pluto-tv', name: 'Pluto TV', aliases: ['Pluto TV'], homepage: 'https://pluto.tv/de' },
 ]
 
 const BY_SLUG = new Map(STREAMING_PROVIDERS.map((p) => [p.slug, p]))
@@ -260,7 +270,10 @@ export function streamingProvidersOf(anime: any): { provider: StreamingProvider;
     const hit = links.find((l: any) => providerByName(l?.platform)?.slug === p.slug && l?.url)
     return hit?.url || p.homepage || '#'
   }
+  // Von Hand verworfene Anbieter (Veto) auch hier ausnehmen, sonst zeigt sie der Legacy-Rückfall weiter.
+  const rejected = rejectedProviderSlugs(anime)
   return slugs
+    .filter((s) => !rejected.has(s))
     .map((s) => providerBySlug(s))
     .filter((p): p is StreamingProvider => !!p)
     .sort((a, b) => PROVIDER_SLUGS.indexOf(a.slug) - PROVIDER_SLUGS.indexOf(b.slug))
@@ -296,6 +309,10 @@ export type StreamingOffer = {
   lastSeenAt?: string | null
   /** true = aus den Legacy-Flags abgeleitet: kein Deep-Link-Nachweis, keine Sprachen. */
   legacy?: boolean
+  /** Vertrauensstufe; null = Altbestand ohne Feld (gilt als belegt, siehe `isConfirmed`). */
+  confidence: Confidence | null
+  /** Herkunft des Angebots; null = Altbestand bzw. Legacy-Flag. */
+  source: OfferSource | null
 }
 
 export type OfferView = { provider: StreamingProvider; offer: StreamingOffer }
@@ -308,6 +325,8 @@ export const splitCsv = (s?: string | null): string[] =>
     .filter(Boolean)
 
 const MONETIZATIONS: readonly string[] = ['flatrate', 'ads', 'free', 'buy', 'rent']
+const CONFIDENCES: readonly string[] = ['confirmed', 'unconfirmed', 'rejected']
+const SOURCES: readonly string[] = ['justwatch', 'crunchyroll', 'adn', 'manual']
 const providerRank = (slug: string) => PROVIDER_SLUGS.indexOf(slug)
 
 /**
@@ -322,6 +341,8 @@ export function streamingOffersOf(anime: any): OfferView[] {
   for (const o of raw) {
     const provider = providerBySlug(o?.provider)
     if (!provider || !o?.url) continue
+    // Von Hand verworfen (Veto gegen Falschtreffer): darf nirgends erscheinen.
+    if (o.confidence === 'rejected') continue
     views.push({
       provider,
       offer: {
@@ -335,6 +356,8 @@ export function streamingOffersOf(anime: any): OfferView[] {
         availableTo: o.availableTo ?? null,
         firstSeenAt: o.firstSeenAt ?? null,
         lastSeenAt: o.lastSeenAt ?? null,
+        confidence: CONFIDENCES.includes(o.confidence) ? (o.confidence as Confidence) : null,
+        source: SOURCES.includes(o.source) ? (o.source as OfferSource) : null,
       },
     })
   }
@@ -344,13 +367,13 @@ export function streamingOffersOf(anime: any): OfferView[] {
     if (views.some((v) => isStreamingOffer(v.offer))) return views
     const legacy = streamingProvidersOf(anime).map(({ provider, url }) => ({
       provider,
-      offer: { provider: provider.slug, url, monetization: null as Monetization | null, audio: [] as string[], subs: [] as string[], legacy: true },
+      offer: { provider: provider.slug, url, monetization: null as Monetization | null, audio: [] as string[], subs: [] as string[], legacy: true, confidence: null, source: null },
     }))
     return [...legacy, ...views]
   }
   return streamingProvidersOf(anime).map(({ provider, url }) => ({
     provider,
-    offer: { provider: provider.slug, url, monetization: null, audio: [], subs: [], legacy: true },
+    offer: { provider: provider.slug, url, monetization: null, audio: [], subs: [], legacy: true, confidence: null, source: null },
   }))
 }
 
@@ -388,6 +411,8 @@ export type StreamingSummary = {
   hasDeDub: boolean
   hasDeSub: boolean
   hasFree: boolean
+  /** Mindestens ein Angebot ist unbestätigt (Staffel nicht belegt, vom Serien-Angebot geerbt). */
+  hasUnconfirmed: boolean
   /** Mindestens ein Angebot ist jünger als 30 Tage. */
   isNew: boolean
   checkedAt: string | null
@@ -400,9 +425,12 @@ const NEW_WINDOW_MS = 30 * 86400_000
 export function streamingSummary(anime: any, now: Date = new Date()): StreamingSummary {
   const views = streamingOffersOf(anime).filter((v) => isStreamingOffer(v.offer))
   const legacy = views.length > 0 && views.every((v) => v.offer.legacy)
+  // Sprachen und „kostenlos" sind nur für belegte Angebote verbürgt; ein geerbtes Angebot
+  // zählt als Anbieter (hasStream, providerNames), behauptet aber nichts darüber hinaus.
+  const confirmed = views.filter((v) => isConfirmed(v.offer))
   const langs: string[] = Array.isArray(anime?.availableLanguages) ? anime.availableLanguages : []
-  const hasDeDub = legacy ? langs.includes('de-dub') : views.some((v) => v.offer.audio.includes('de'))
-  const hasDeSub = legacy ? langs.includes('de-sub') : views.some((v) => v.offer.subs.includes('de'))
+  const hasDeDub = legacy ? langs.includes('de-dub') : confirmed.some((v) => v.offer.audio.includes('de'))
+  const hasDeSub = legacy ? langs.includes('de-sub') : confirmed.some((v) => v.offer.subs.includes('de'))
   const isNew = views.some((v) => {
     const t = v.offer.firstSeenAt ? Date.parse(v.offer.firstSeenAt) : NaN
     return Number.isFinite(t) && now.getTime() - t <= NEW_WINDOW_MS
@@ -412,9 +440,44 @@ export function streamingSummary(anime: any, now: Date = new Date()): StreamingS
     providerNames: groupOffersByProvider(views).map((g) => g.provider.name),
     hasDeDub,
     hasDeSub,
-    hasFree: views.some((v) => v.offer.monetization === 'ads' || v.offer.monetization === 'free'),
+    hasFree: confirmed.some((v) => v.offer.monetization === 'ads' || v.offer.monetization === 'free'),
+    hasUnconfirmed: views.some((v) => isUnconfirmed(v.offer)),
     isNew,
     checkedAt: anime?.streamingCheckedAt || null,
     legacy,
   }
+}
+
+/**
+ * Amazon-Channel-Link? JustWatch liefert für zubuchbare Channels (Aniverse, ADN,
+ * Crunchyroll …) Deep-Links auf `watch.amazon.*` — der Titel läuft dann über Prime,
+ * nicht beim Direktanbieter.
+ */
+export function isAmazonChannelUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  try {
+    return new URL(url).hostname.toLowerCase().startsWith('watch.amazon.')
+  } catch {
+    return false
+  }
+}
+
+export type LanguageItem = { key: string; label: string; dub: boolean }
+
+/**
+ * Sprach-Chips einer Anbieter-Karte, über deren Angebote vereinigt; Dub hervorgehoben.
+ * Nur belegte Angebote liefern Sprachen — ein geerbtes (unbestätigtes) Angebot
+ * behauptet nichts über die Fassung, auch nicht neben einem belegten.
+ */
+export function languageItems(offers: StreamingOffer[]): LanguageItem[] {
+  const confirmed = offers.filter(isConfirmed)
+  const audio = new Set(confirmed.flatMap((o) => o.audio))
+  const subs = new Set(confirmed.flatMap((o) => o.subs))
+  const items: LanguageItem[] = []
+  if (audio.has('de')) items.push({ key: 'de-dub', label: 'Deutscher Dub', dub: true })
+  if (subs.has('de')) items.push({ key: 'de-sub', label: 'Deutscher Sub', dub: false })
+  if (audio.has('en')) items.push({ key: 'en-dub', label: 'Englischer Dub', dub: true })
+  if (subs.has('en') && !subs.has('de')) items.push({ key: 'en-sub', label: 'Englischer Sub', dub: false })
+  if (!items.length && audio.has('ja')) items.push({ key: 'ja', label: 'Japanisch (OmU)', dub: false })
+  return items
 }
