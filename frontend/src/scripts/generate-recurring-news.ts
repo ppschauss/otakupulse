@@ -676,7 +676,9 @@ async function runTagSpotlight(payload: Payload, authorId: any, ymd: string): Pr
         t.beschreibung
           ? `So beschreiben wir dieses Thema (halte dich daran, formuliere es um): ${t.beschreibung}`
           : `Es gibt keine Beschreibung des Themas. Erkläre in EINEM vorsichtigen Satz, was „${t.name}" bedeutet — nur das, was der Begriff selbst hergibt. Erfinde keine Definition.`,
-        `In unserer Datenbank treffen ${t.n} Titel dieses Thema deutlich: mindestens ${TAG_RANG_MIN} % der Community-Stimmen bestätigen den Tag.`,
+        // Die beiden Zahlen MÜSSEN auseinandergehalten werden: der erste Lauf machte aus
+        // 46 Titeln über der Schwelle die Headline „Die besten 46 Titel" für eine Top 10.
+        `Zwei Zahlen, nicht verwechseln: ${t.n} Titel treffen dieses Thema deutlich (mindestens ${TAG_RANG_MIN} % der Community-Stimmen bestätigen den Tag) — die Liste zeigt davon die besten ${rows.length}. In der headline darf NUR die ${rows.length} vorkommen, „die besten ${t.n} Titel" wäre falsch.`,
         `Die Liste nennt pro Reihe nur den besten Teil — erwähne das, wenn es sich anbietet.`,
         `Die Top 3 (Bausteine wörtlich einbauen):`,
         ...rows.slice(0, 3).map((r, i) => `- Platz ${i + 1}: [[anime:${r.slug}|${r.t}]] (Score ${r.score}/100${r.jahr ? `, ${r.jahr}` : ''})`),
