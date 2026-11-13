@@ -212,7 +212,7 @@ NEXT_PUBLIC_ADSENSE_SLOT_MULTIPLEX=<slot-id>
 | `mirror` | Cover/Banner/Portraits lokal nach `public/media` spiegeln (inkrementell) |
 | `translate` | Beschreibungen ins Deutsche umschreiben (Claude Haiku, inkrementell) |
 | `news:anime` | Ankündigungs-/Simulcast-Artikel je neuem Titel (siehe Redaktion) |
-| `scripts/generate-recurring-news.ts` | wiederkehrende Formate (`--weekly-preview`, `--genre-spotlight`, `--weekly-recap`, `--platform-new`, `--platform-leaving`; `--daily` ist abgeschafft) |
+| `scripts/generate-recurring-news.ts` | wiederkehrende Formate (`--weekly-preview`, `--tag-spotlight`, `--weekly-recap`, `--platform-new`, `--platform-leaving`; `--genre-spotlight` ist durch, `--daily` abgeschafft) |
 | `telegram:notify` | neue Artikel in den Telegram-Channel posten |
 | `indexnow` | URLs an IndexNow pushen (`--all`, `--recent N`, `--dry`) |
 | `backfill:languages` | `availableLanguages` aus vorhandenen Daten ableiten |
@@ -479,7 +479,7 @@ nicht auf fehlende Spalten trifft. Mehr in [`docs/BETRIEB.md`](docs/BETRIEB.md).
 
 ## Cronjobs
 
-Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron`):
+Auf dem VPS in `/etc/cron.d/otakupulse` (nicht im Repo — Änderungen dort mit Backup):
 
 | Zeit | Job | Zweck |
 |---|---|---|
@@ -487,7 +487,7 @@ Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron
 | `15 4 * * *` | `otakupulse-sync.sh` | AniList-Sync → JustWatch → News → Telegram → IndexNow |
 | `45 */4 * * *` | `refresh-streaming.sh` | rollierender Streaming-Abgleich (`--stale`) |
 | `55 7 * * 1` | `generate-recurring-news --weekly-preview` | Wochenvorschau (Mo) |
-| `0 12 * * 3` | `generate-recurring-news --genre-spotlight` | Genre-Spotlight (Mi) |
+| `0 12 * * 3` | `generate-recurring-news --tag-spotlight` | Tag-Spotlight (Mi) |
 | `0 8 * * 4` | `generate-recurring-news --platform-new` | „Neu auf <Anbieter>" (Do) |
 | `0 8 * * 5` | `generate-recurring-news --platform-leaving` | „verlässt <Anbieter>" (Fr) |
 | `0 19 * * 0` | `generate-recurring-news --weekly-recap` | Wochenrückblick (So) |
@@ -497,6 +497,12 @@ Reboot-fest über Unraid (`/boot/config/plugins/dynamix/*.cron` → `update_cron
 
 Der Tages-Digest (`--daily`, früher 06:00) ist seit 9f83275 abgeschafft: rund fünf
 Artikel pro Tag nach Schablone sind „Scaled content". Ersatz ist die Wochenvorschau.
+
+Der Mittwochs-Lauf war bis 11/2026 das Genre-Spotlight. Das ist durch — alle 19 Live-
+Genres haben einen Artikel, `hentai` ist ausgeschlossen. Seither läuft dort das
+Tag-Spotlight: es zieht per Zufall einen Tag mit mindestens acht Titeln über der
+Qualitätsschwelle und kann dauerhaft laufen, weil es ein Vielfaches an Tags gibt.
+Ein Tag kommt höchstens einmal pro Jahr dran (Slug enthält das Jahr).
 
 ---
 

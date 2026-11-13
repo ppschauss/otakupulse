@@ -9,7 +9,11 @@
  *   --weekly-preview   „Anime-Woche": was startet, was läuft weiter, was endet —
  *                      ein Artikel pro Kalenderwoche. Montags früh (07:55).
  *   --weekly-recap     Wochenrückblick (was lief, Highlights). Sonntags abends.
- *   --genre-spotlight  Rotierendes Genre-Ranking („Die besten X-Anime"). Wöchentlich.
+ *   --genre-spotlight  Rotierendes Genre-Ranking („Die besten X-Anime"). Seit 11/2026 durch:
+ *                      alle 19 Live-Genres haben einen Artikel. Läuft erst 2027 wieder an.
+ *   --tag-spotlight    Zufälliges Tag-Ranking („Anime mit <Tag>"). Ersetzt das Genre-Spotlight
+ *                      im Mittwochs-Lauf; läuft dauerhaft, weil es viel mehr Tags als Genres gibt.
+ *                      Ein Tag höchstens einmal pro Jahr. Wöchentlich.
  *   --platform-new     „Neu auf <Anbieter> im <Monat>" — je DE-Anbieter die Titel, die in
  *                      den letzten 30 Tagen neu in den Katalog kamen (streamingOffers.
  *                      first_seen_at, gegengeprüft über ECHT_NEU, siehe dort).
@@ -24,7 +28,7 @@
  *
  * Aufruf (im enrich-Container): npx tsx src/scripts/generate-recurring-news.ts --daily
  * Flags: --dry (nur Vorschau) · --draft · --date YYYY-MM-DD (Testdatum)
- *        --max-highlights N (Default 4)
+ *        --max-highlights N (Default 4) · --tag <slug> (Tag-Spotlight erzwingen)
  */
 import { getPayload, type Payload } from 'payload'
 import config from '../payload.config'
@@ -479,6 +483,222 @@ async function runGenreSpotlight(payload: Payload, authorId: any, ymd: string): 
 }
 
 // ---------------------------------------------------------------------------
+// Modus: --tag-spotlight  (zufälliges Tag-Ranking, läuft dauerhaft)
+// ---------------------------------------------------------------------------
+// Das Genre-Spotlight ist nach 19 Wochen durch (19 Live-Genres, Stand 11/2026
+// alle veröffentlicht). Tags gibt es ein Vielfaches davon, deshalb läuft dieses
+// Format in Schleife: gewählt wird per Zufall unter allen Tags, die genug gute
+// Titel haben. Es muss nicht jeder Tag drankommen.
+// Der Slug enthält das Jahr — ein Tag kommt also höchstens einmal pro Jahr dran,
+// sonst stünde zweimal fast dieselbe Liste im Index (Duplicate Content).
+//
+// `rank` ist der AniList-Rang: Anteil der Stimmen, die bestätigen, dass der Tag
+// auf den Titel zutrifft. Ist er niedrig, ist der Tag eine Randnotiz und der Titel
+// gehört nicht in eine Liste, die genau damit überschrieben ist. 60 war messbar zu
+// locker: die Liste zu „Teacher" begann mit drei Titeln bei 60–62 %, GTO mit 96 %
+// stand erst auf Platz 4. Bei 65 kostet es fast nichts — 277 statt 296 Tags bleiben
+// Kandidaten (13.11.2026) —, die Listen treffen aber ihr eigenes Thema.
+const TAG_RANG_MIN = 65
+const TAG_SCORE_MIN = 65
+const TAG_MIN_TITEL = 8
+// Nur vollwertige Werke. SPECIAL/TV_SHORT/MUSIC haben oft hohe Scores von wenigen
+// treuen Stimmen und vertreten dann eine ganze Reihe: „ONE PIECE FAN LETTER"
+// (SPECIAL, 90/100) stand fuer One Piece, ein AoT-Special fuer Attack on Titan.
+// OVA bleibt drin — Hellsing Ultimate ist eine.
+const TAG_FORMATE = ['TV', 'MOVIE', 'ONA', 'OVA']
+
+// Tags, die keine Empfehlungsliste tragen. Alle Slugs am 13.11.2026 gegen die
+// Kandidatenliste geprüft — ein Tippfehler hier fällt sonst nie auf, der Tag wird
+// irgendwann einfach gezogen.
+//   Besetzungs-Metadaten: sagen nichts über den Inhalt. „Male Protagonist" trifft
+//   2.043 Titel, „Ensemble Cast" 988 — daraus wird keine Liste, die etwas behauptet.
+//   Heikle Themen: nicht wegen der Titel, sondern wegen der Verpackung. „Die besten
+//   Anime mit Suizid" ist eine Schlagzeile, die wir nicht setzen, und AdSense stuft
+//   solche Seiten als heikel ein (schlechtere Anzeigen bis gar keine). Die
+//   sexuellen Tags (rape, incest, prostitution …) sind bereits über `is_adult`
+//   draußen — 68 Tags sind so markiert; diese acht sind es nicht.
+// Krieg, Terrorismus, Mobbing, Mafia und Klassenkampf bleiben drin: sie benennen
+// einen Konflikt, keine Tat, die eine Bestenliste zu feiern scheint.
+const TAG_SPERRE = new Set<string>([
+  'ensemble-cast', 'male-protagonist', 'female-protagonist', 'primarily-adult-cast',
+  'primarily-child-cast', 'primarily-female-cast', 'primarily-male-cast', 'primarily-teen-cast',
+  'heterosexual',
+  'suicide', 'gore', 'torture', 'cannibalism', 'nudity', 'psychosexual', 'drugs', 'slavery',
+])
+
+type TagKand = { id: number; slug: string; name: string; beschreibung: string | null; n: number }
+type TagRow = { id: number; slug: string; t: string; score: number | null; jahr: number | null; banner: string | null; rang: number | null }
+
+// Franchise-Zusammenfassung: pro Reihe nur der stärkste Titel. Ohne das bestand
+// die „Top 10" zu Vampire aus sechs Monogatari-Teilen, die zu Isekai aus drei
+// Re:Zero- und zwei Mushoku-Tensei-Staffeln (gemessen am 13.11.2026) — eine
+// Liste, die zehnmal dasselbe empfiehlt, ist keine Empfehlung.
+// Verbunden wird über die AniList-Relationen; OTHER und ADAPTATION bleiben
+// draußen, weil sie auch Manga-Vorlagen und lose Bezüge verknüpfen.
+const REIHEN_BANDE = ['SEQUEL', 'PREQUEL', 'PARENT', 'SIDE_STORY', 'ALTERNATIVE', 'SPIN_OFF']
+
+async function einProReihe(pool: any, rows: TagRow[], max: number): Promise<TagRow[]> {
+  const ids = rows.map((r) => r.id)
+  const kanten = (
+    await pool.query(
+      `SELECT _parent_id AS a, anime_id AS b FROM anime_relations
+        WHERE relation_type::text = ANY($2::text[])
+          AND (_parent_id = ANY($1::int[]) OR anime_id = ANY($1::int[]))`,
+      [ids, REIHEN_BANDE],
+    )
+  ).rows as { a: number; b: number }[]
+
+  // Auch Kanten mit nur EINER Seite im Kandidatensatz, sonst reisst die Kette an
+  // Teilen, die den Tag selbst nicht tragen: „Attack on Titan Final Season" und
+  // „… THE FINAL CHAPTERS Special" haengen nur ueber „Part 2" zusammen, und Part 2
+  // hat den Tag „Time Skip" nicht — beide standen dadurch in der Liste.
+  const wurzel = new Map<number, number>()
+  const hole = (x: number): number => {
+    if (!wurzel.has(x)) wurzel.set(x, x)
+    return x
+  }
+  for (const i of ids) hole(i)
+  const finde = (x: number): number => {
+    let r = hole(x)
+    while (wurzel.get(r) !== r) r = wurzel.get(r)!
+    return r
+  }
+  for (const k of kanten) {
+    const [ra, rb] = [finde(k.a), finde(k.b)]
+    if (ra !== rb) wurzel.set(rb, ra)
+  }
+
+  const gesehen = new Set<number>()
+  const out: TagRow[] = []
+  for (const r of rows) {
+    // rows kommen nach Score sortiert — der erste Treffer einer Reihe ist ihr bester.
+    const w = finde(r.id)
+    if (gesehen.has(w)) continue
+    gesehen.add(w)
+    out.push(r)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+/** Fisher-Yates — `sort(() => Math.random() - 0.5)` ist nachweislich schief. */
+function mischen<T>(xs: T[]): T[] {
+  const a = [...xs]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+async function runTagSpotlight(payload: Payload, authorId: any, ymd: string): Promise<void> {
+  const jahr = Number(ymd.slice(0, 4))
+  const pool = (payload.db as any).pool
+
+  const kand: TagKand[] = (
+    await pool.query(
+      `SELECT t.id, t.slug, t.name, t.description_de AS beschreibung, count(*)::int AS n
+         FROM anime_tags ta
+         JOIN tags t ON t.id = ta.tag_id
+         JOIN anime a ON a.id = ta._parent_id
+        WHERE ta."rank" >= $1 AND t.is_adult IS NOT TRUE
+          AND a.is_hentai IS NOT TRUE AND a.average_score >= $2
+          AND a.format::text = ANY($4::text[])
+        GROUP BY t.id, t.slug, t.name, t.description_de
+       HAVING count(*) >= $3`,
+      [TAG_RANG_MIN, TAG_SCORE_MIN, TAG_MIN_TITEL, TAG_FORMATE],
+    )
+  ).rows.filter((k: TagKand) => k.slug && !TAG_SPERRE.has(k.slug))
+
+  // Schon dagewesen? Ein Artikel im laufenden Jahr sperrt den Tag.
+  const gehabt = new Set<string>(
+    (await pool.query(`SELECT slug FROM articles WHERE slug LIKE 'tag-spotlight-%'`)).rows.map((r: any) => r.slug),
+  )
+  const frei = kand.filter((k) => !gehabt.has(`tag-spotlight-${k.slug}-${jahr}`))
+
+  const erzwungen = arg('tag')
+  if (erzwungen && !kand.some((k) => k.slug === erzwungen)) {
+    console.log(`[=] Tag "${erzwungen}" ist kein Kandidat (unbekannt, gesperrt oder zu wenig Titel)`)
+    return
+  }
+  // Zufall statt Rotation: bei 280+ Kandidaten wäre eine feste Reihenfolge nur
+  // Buchhaltung, und es muss nicht jeder Tag drankommen. Bis zu VERSUCHE Anläufe,
+  // damit der Mittwochs-Lauf nicht leer ausgeht, wenn ein Tag nach der
+  // Reihen-Zusammenfassung zu dünn wird.
+  const reihe = erzwungen ? kand.filter((k) => k.slug === erzwungen) : mischen(frei)
+  if (!reihe.length) {
+    console.log(`[=] alle ${kand.length} Tag-Kandidaten hatten wir ${jahr} schon — übersprungen`)
+    return
+  }
+  console.log(`→ Tag-Spotlight: ${frei.length} von ${kand.length} Tags noch frei in ${jahr}`)
+
+  const VERSUCHE = 5
+  for (const t of reihe.slice(0, erzwungen ? 1 : VERSUCHE)) {
+    const roh: TagRow[] = (
+      await pool.query(
+        `SELECT a.id, a.slug, COALESCE(NULLIF(a.title_german,''), NULLIF(a.title_english,''), a.title_romaji) AS t,
+                a.average_score AS score, a.season_year AS jahr, a.banner_image_local AS banner, ta."rank" AS rang
+           FROM anime_tags ta JOIN anime a ON a.id = ta._parent_id
+          WHERE ta.tag_id = $1 AND ta."rank" >= $2 AND a.is_hentai IS NOT TRUE AND a.average_score >= $3
+            AND a.format::text = ANY($4::text[])
+          ORDER BY a.average_score DESC NULLS LAST, a.popularity DESC NULLS LAST
+          LIMIT 150`,
+        [t.id, TAG_RANG_MIN, TAG_SCORE_MIN, TAG_FORMATE],
+      )
+    ).rows
+    const rows = await einProReihe(pool, roh, 10)
+    if (rows.length < TAG_MIN_TITEL) {
+      console.log(`[=] ${t.name}: nur ${rows.length} eigenständige Reihen (von ${roh.length} Titeln) — nächster Tag`)
+      continue
+    }
+    console.log(`→ ${t.name}: ${rows.length} Reihen aus ${t.n} Titeln über der Schwelle`)
+
+    const seiten = new Map(PAGES)
+    seiten.set('tag', '/tag')
+
+    const lines = rows.map(
+      (r, i) =>
+        `| ${i + 1} | [[anime:${r.slug}|${cell(r.t)}]] | ${r.jahr || '—'} | ${r.score ? `${r.score}/100` : '—'} | ${
+          r.rang != null ? `${r.rang} %` : '—'
+        } |`,
+    )
+
+    await createArticle(payload, authorId, {
+      slug: `tag-spotlight-${t.slug}-${jahr}`,
+      category: 'ranking',
+      coverImageUrl: rows[0].banner || undefined,
+      relatedAnime: rows.map((r) => r.id),
+      valid: { anime: new Set(rows.map((r) => r.slug)), genre: new Set(), studio: new Set(), tag: new Set([t.slug]), page: seiten },
+      fallbackTitle: `Anime mit ${t.name}: unsere Top ${rows.length}`,
+      prompt: [
+        `Schreibe das Intro (2–3 Absätze, 120–180 Wörter) für unsere Liste der besten Anime zum Thema „${t.name}".`,
+        `Tag-Baustein (wörtlich einbauen): [[tag:${t.slug}|${t.name}]]`,
+        t.beschreibung
+          ? `So beschreiben wir dieses Thema (halte dich daran, formuliere es um): ${t.beschreibung}`
+          : `Es gibt keine Beschreibung des Themas. Erkläre in EINEM vorsichtigen Satz, was „${t.name}" bedeutet — nur das, was der Begriff selbst hergibt. Erfinde keine Definition.`,
+        `In unserer Datenbank treffen ${t.n} Titel dieses Thema deutlich: mindestens ${TAG_RANG_MIN} % der Community-Stimmen bestätigen den Tag.`,
+        `Die Liste nennt pro Reihe nur den besten Teil — erwähne das, wenn es sich anbietet.`,
+        `Die Top 3 (Bausteine wörtlich einbauen):`,
+        ...rows.slice(0, 3).map((r, i) => `- Platz ${i + 1}: [[anime:${r.slug}|${r.t}]] (Score ${r.score}/100${r.jahr ? `, ${r.jahr}` : ''})`),
+        `Verweise darauf, dass die vollständige Liste unten steht, und auf [[page:tag|alle Themen-Tags]].`,
+        `headline: Muss „${t.name}" und einen Ranking-Bezug enthalten ("Die besten …", "Top ${rows.length}"). Formuliere natürliches Deutsch um den englischen Tag-Namen herum, z. B. „Anime mit ${t.name}: die ${rows.length} besten".`,
+      ].join('\n'),
+      appendix: [
+        `## Die Top ${rows.length}: Anime mit ${t.name}`,
+        '',
+        '| Platz | Anime | Jahr | Score | Tag-Treffer |',
+        '|---|---|---|---|---|',
+        ...lines,
+        '',
+        `Sortiert nach Community-Score, pro Reihe nur der beste Teil. „Tag-Treffer" ist der Anteil der Community-Stimmen, die bestätigen, dass „${t.name}" auf den Titel zutrifft — wir listen nur Titel ab ${TAG_RANG_MIN} %.`,
+      ].join('\n'),
+    })
+    return
+  }
+  console.log(`[=] ${VERSUCHE} Tags in Folge zu dünn — diesmal kein Artikel`)
+}
+
+// ---------------------------------------------------------------------------
 // Modus: --platform-new / --platform-leaving  (aus den Streaming-Offers)
 // ---------------------------------------------------------------------------
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
@@ -624,10 +844,13 @@ async function main() {
   } else if (process.argv.includes('--weekly-preview')) await runWeeklyPreview(payload, authorId, ymd)
   else if (process.argv.includes('--weekly-recap')) await runWeeklyRecap(payload, authorId, ymd)
   else if (process.argv.includes('--genre-spotlight')) await runGenreSpotlight(payload, authorId, ymd)
+  else if (process.argv.includes('--tag-spotlight')) await runTagSpotlight(payload, authorId, ymd)
   else if (process.argv.includes('--platform-new')) await runPlatformNew(payload, authorId, ymd)
   else if (process.argv.includes('--platform-leaving')) await runPlatformLeaving(payload, authorId, ymd)
   else {
-    console.error('✗ Modus fehlt: --daily | --weekly-preview | --weekly-recap | --genre-spotlight | --platform-new | --platform-leaving')
+    console.error(
+      '✗ Modus fehlt: --weekly-preview | --weekly-recap | --genre-spotlight | --tag-spotlight | --platform-new | --platform-leaving',
+    )
     process.exit(1)
   }
 
