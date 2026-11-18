@@ -33,46 +33,51 @@ NEXT_PUBLIC_UMAMI_SRC=https://<umami>/script.js
 2. Property in der Search Console anlegen (Domain oder URL-Präfix).
 3. Sitemap einreichen: `https://<domain>/sitemap.xml`
 
-## Täglicher Auto-Sync (Cron) — EINGERICHTET
+## Cron-Jobs auf dem VPS (Stand 18.11.2026)
 
-Läuft täglich **04:15** automatisch. Wrapper (persistent in der Appdata, da `/root` auf
-Unraid den Reboot nicht überlebt): `/mnt/cache/appdata/otakupulse/otakupulse-sync.sh`
-(`/root/otakupulse-sync.sh` ist ein Symlink darauf). Er macht:
+Definition: `/etc/cron.d/otakupulse` (Backup: `/root/otakupulse.cron.bak-*`). Die Skripte
+liegen in `/opt/otakupulse-cron/` und werden **aus dem Repo installiert, nicht dort
+bearbeitet**: `sudo install -m 750 /srv/sites/otakupulse/app-src/<skript> /opt/otakupulse-cron/`.
+Jedes Skript setzt seinen `PATH` selbst — `/opt/otakupulse-cron/bin/docker` übersetzt die
+alten Containernamen (`otakupulse-db`) auf die Coolify-Namen. Ohne das scheitert ein
+Aufruf von Hand, und ein Test kann falsch positiv ausfallen (der Watchdog meldete Exit 0,
+weil er den Container nicht fand).
 
-1. `docker exec otakupulse-app npm run sync` — laufende Anime + aktuelle Season inkl. Episoden.
-2. `justwatch-streaming.py --recent 3` — Streaming-Anbieter **für neu hinzugekommene Titel**
-   (nur die letzten 3 Tage → kleine Charge, kaum 429-Drosselung). So bekommt jeder neue
-   Anime automatisch seine Plattform-Zuordnung; die `/plattform`-Seiten aktualisieren sich.
+| Zeit | Job | Log |
+|---|---|---|
+| alle 5 min | `watchdog.sh` — Neustart bei HTTP ≠ 200, hält bei Deploy-Sperre still | `/srv/backups/otakupulse/watchdog.log` |
+| alle 15 min | `app-memory.sh` — Speicherstand der App (Heap-Diagnose) | `/srv/backups/otakupulse/app-memory.log` |
+| alle 30 min | `telegram-notify.ts --max 8` (enrich) | `/tmp/otaku-telegram.log` |
+| stündlich :23 | 0-Byte-Dateien im Next-Bildcache löschen | — |
+| alle 4 h :45 | `refresh-streaming.sh` — `--due 80`, Nachholaktion, Audit | `/tmp/otaku-streaming-refresh.log` |
+| täglich 03:30 | `backup-db.sh` — lokal 14 Tage, offsite 7 (B2) | `/srv/backups/otakupulse/backup.log` |
+| täglich 04:15 | `otakupulse-sync.sh` — AniList, JustWatch neu, Blog, Telegram, IndexNow | `/tmp/otaku-sync.log` |
+| täglich 06:30 | `restart-app.sh` — kontrollierter Neustart (Heap) | `watchdog.log` |
+| So 02:15 | `wikipedia-dub.py` — Ger-Dub-Flag, ID-basiert | `/tmp/otaku-wikipedia-dub.log` |
+| Mo 07:55 / Mi 12:00 / So 19:00 | Wochenvorschau / Tag-Spotlight / Wochenrückblick | `/tmp/otaku-news.log` |
+| Do 08:00 / Fr 08:00 | Neu auf / Verlässt (Plattform-Listen) | `/tmp/otaku-news.log` |
+| 1. des Monats 08:10 | `qa-dub-sample.sh` — Stichprobe zur Handprüfung | `/tmp/otaku-qa-dub.log` |
 
-Geplant **reboot-fest** über Unraids Cron-Mechanismus (kein User-Scripts-Plugin nötig):
+**Zeitfenster bewusst gewählt:** Der AniList-Sync läuft ab 04:15 *im* App-Container
+(`docker exec … npm run sync`) — ein App-Neustart vorher würde ihn abschießen, deshalb
+`restart-app.sh` erst um 06:30 (und es prüft zusätzlich, ob der Sync noch läuft).
+`wikipedia-dub.py` und die Streaming-Auffrischung schreiben beide `availableLanguages`,
+darum liegt der Wikipedia-Lauf zwischen zwei Auffrischungen.
 
-```
-/boot/config/plugins/dynamix/otakupulse-sync.cron   # Flash → überlebt Reboot
-15 4 * * * /mnt/cache/appdata/otakupulse/otakupulse-sync.sh &> /dev/null
-```
+**Deploy-Sperre:** `deploy-vps.sh` und `restart-app.sh` legen `/tmp/otakupulse-deploy.lock`
+an (per `trap` auch bei Abbruch entfernt). Der Watchdog hält dann still — vorher startete
+er die App mitten im Deploy neu (18.11.2026, das Deploy fiel auf den alten Build zurück).
+Eine Sperre älter als 20 Minuten gilt als liegengeblieben.
 
-Nach Änderungen am Fragment: `update_cron` ausführen (regeneriert `/etc/cron.d/root`).
-Log: `/tmp/otaku-sync.log`.
+**Heap-Abstürze:** Die App stirbt etwa alle 2–4 Tage mit `JavaScript heap out of memory`
+(Limit 4.144 MB), immer zwischen 21:30 und 22:05 Uhr. `restart-app.sh` verlegt das in die
+ruhigste Stunde, behebt es aber nicht. `app-memory.log` zeigt nach ein paar Tagen, ob die
+Kurve gleichmäßig wächst (Leck) oder vor 21:30 springt (Auslöser).
 
-**JustWatch-Modi** (`justwatch-streaming.py`):
-- *(ohne Flag)* — voll, alle Anime. Achtung: 8 Worker × ~7.800 Titel ⇒ viele 429-Fehler,
-  nur populäre Titel kommen sicher durch. Für gelegentliche Voll-Auffrischung (z.B. wöchentlich).
-- `--recent N` — nur Titel der letzten N Tage (täglicher Lauf, s.o.).
-- `--only-missing` — nur Titel ganz ohne Anbieter.
-
-Die übrigen Host-Skripte (Dub/Logos) weiter nach Bedarf, wöchentlich genügt. `curl_cffi` ist
-auf dem Host installiert:
-
-```sh
-F=/mnt/cache/appdata/otakupulse/frontend/src/scripts
-python3 $F/crunchyroll-dub.py        # echte Ger/Eng-Dub (audio_locales)
-python3 $F/wikipedia-dub.py           # legale Ger-Dub-Ergänzung (Klassiker/Filme)
-python3 $F/studio-logos.py            # Studio-Logos + Websites aus Wikidata (selten nötig)
-```
-
-> **Erst-Lauf-Hinweis:** Bis ~2026-06-08 fällt der Großimport (06-05) noch ins `--recent 3`-
-> Fenster → der erste, zweite Lauf ist größer und teils gedrosselt. Danach rollt das Fenster
-> weiter und der tägliche Lauf umfasst nur noch die paar wirklich neuen Titel.
+**Offsite-Backup:** `offsite_sync` lädt ERST die neuesten 7 lokalen Dumps hoch und entfernt
+nur bei Erfolg den Rest. Die umgekehrte Reihenfolge hat am 18.11.2026 den Bucket geleert,
+ohne dass der Upload danach klappte: die Speichergrenze (`403 storage_cap_exceeded`) gilt
+fürs ganze B2-Konto, nicht für den Bucket. Behebt sich nur unter *Caps & Alerts* im B2-Konto.
 
 ## Auto-Blog für neue Titel + Telegram-Channel
 
@@ -137,6 +142,9 @@ zählt aber nicht als Streaming. Neue Anbieter im Mapping müssen auch in `lib/s
 Legale Dub-Ergänzung: Wikidata (MAL-ID P4086 / AniList-ID P8729) → de.wikipedia-Artikel →
 Abschnitt „Synchronisation" vorhanden ⇒ `de-dub` (gemerged). HOST, `curl_cffi` + `docker`.
 Fängt Klassiker/Filme, die Crunchyroll fehlen (FMA: Brotherhood, Code Geass, Your Name …).
+Läuft sonntags 02:15 per Cron. Seit 18.11.2026 seriell (vorher 6 parallel) mit User-Agent
+samt Kontakt — Wikimedia-Etikette für Bots. Wichtiger als früher: der Dub-Fallback für
+Anbieter ohne Tonspurdaten (Netflix, Joyn, Toggo, WOW) zählt genau dieses Flag.
 
 ## Studio-Logos (`studio-logos.py`)
 
@@ -146,7 +154,14 @@ validiert über Label-Match + instance-of (Animationsstudio/Produktionsfirma). H
 466 Websites. WICHTIG: kein `maxlag`-Parameter (Wikidata-Replikations-Lag ließ sonst
 jeden Read als Fehler zurückkommen → 0 Treffer).
 
-## Crunchyroll-Dub-Sync (`crunchyroll-dub.py`)
+## Crunchyroll-Dub-Sync (`crunchyroll-dub.py`) — STILLGELEGT seit 18.11.2026
+
+Läuft nur noch mit `--trotzdem`. Gleicht für Titel ohne CR-Link per Titelähnlichkeit ab
+(für Titel mit Link ausdrücklich großzügiger) und ersetzt pro Treffer den kompletten
+Sprachsatz — dieselbe Fehlerklasse, die im JustWatch-Sync hunderte Spinoffs mit den
+Anbietern ihrer Hauptserie versehen hatte. Überholt durch die Tonspuren aus JustWatch
+(98,5 % der Crunchyroll-Angebote) und den ID-Abgleich über Wikipedia. Die Beschreibung
+unten ist der Stand vor der Stilllegung.
 
 Holt echte deutsche/englische Dub- & Sub-Verfügbarkeit aus der Crunchyroll-Content-API
 (`audio_locales`/`subtitle_locales`) für alle Anime mit Crunchyroll-`/series/<ID>`-Link
