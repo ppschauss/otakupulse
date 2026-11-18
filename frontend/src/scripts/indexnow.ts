@@ -21,6 +21,7 @@ import { getPayload } from 'payload'
 import config from '../payload.config'
 import { SITE_URL, url } from '../lib/site'
 import { TYPES, STATIC_PATHS, resolveWhere } from '../lib/sitemap'
+import { platformListPaths } from '../lib/platformLists'
 
 type SitemapType = (typeof TYPES)[number]
 
@@ -64,6 +65,10 @@ if (SITE_URL.includes('localhost')) fail(`SITE_URL ist ${SITE_URL} — IndexNow 
 async function collectAll(payload: any): Promise<string[]> {
   const out = new Set<string>()
   for (const p of STATIC_PATHS) out.add(url(p))
+  // Plattform-Listen (/plattform/<anbieter>/<filter>, ab MIN_LIST_SIZE) stehen im
+  // statischen Sitemap-Chunk, aber nicht in STATIC_PATHS — ohne sie fehlten genau die
+  // Intent-Seiten („Anime mit deutschem Dub auf Netflix") in jeder IndexNow-Meldung.
+  for (const p of await platformListPaths(payload)) out.add(url(p))
 
   for (const type of TYPES) {
     const where = resolveWhere(type.where)
