@@ -5,6 +5,13 @@
 # alarmiert via Telegram (falls ALERT_CHAT_ID in secrets.env gesetzt).
 set -uo pipefail
 
+# PATH selbst setzen statt sich auf die Cron-Datei zu verlassen: der Docker-Wrapper
+# in /opt/otakupulse-cron/bin übersetzt die Unraid-Containernamen auf die Coolify-
+# Namen. Ohne ihn findet `docker exec otakupulse-db` nichts — bei einem Aufruf von
+# Hand (sudo) brach der Dump ab, und der Watchdog hielt den Container für gestoppt
+# und meldete Exit 0, ohne die App je geprüft zu haben.
+export PATH=/opt/otakupulse-cron/bin:/opt/otakupulse-cron/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 APP=otakupulse-app
 URL=http://localhost:3001/
 LOG=/srv/backups/otakupulse/watchdog.log

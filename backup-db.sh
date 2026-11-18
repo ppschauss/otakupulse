@@ -4,6 +4,13 @@
 # namens "gdrive" konfiguriert ist.
 set -euo pipefail
 
+# PATH selbst setzen statt sich auf die Cron-Datei zu verlassen: der Docker-Wrapper
+# in /opt/otakupulse-cron/bin übersetzt die Unraid-Containernamen auf die Coolify-
+# Namen. Ohne ihn findet `docker exec otakupulse-db` nichts — bei einem Aufruf von
+# Hand (sudo) brach der Dump ab, und der Watchdog hielt den Container für gestoppt
+# und meldete Exit 0, ohne die App je geprüft zu haben.
+export PATH=/opt/otakupulse-cron/bin:/opt/otakupulse-cron/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 DEST=/srv/backups/otakupulse
 KEEP=14
 # Offsite je Präfix behalten. Der B2-Bucket hat eine Speichergrenze (Caps & Alerts),
