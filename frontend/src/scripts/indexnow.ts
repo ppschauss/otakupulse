@@ -22,6 +22,16 @@ import config from '../payload.config'
 import { SITE_URL, url } from '../lib/site'
 import { TYPES, STATIC_PATHS, resolveWhere } from '../lib/sitemap'
 
+type SitemapType = (typeof TYPES)[number]
+
+// Felder für das keep-Prädikat des Typs laden und es anwenden — exakt wie der
+// Sitemap-Chunk. Vorher wurde nur `where` übernommen: IndexNow meldete rund 4.700
+// Anime, die auf der Seite selbst `noindex, nofollow` tragen und in keiner Sitemap
+// stehen (z. B. /anime/haiyore-nyaruko-san-f). Gemeldete Seiten, die sich beim
+// Abruf als noindex ausweisen, sind verschenkter Crawl und ein schlechtes Signal.
+const selectFor = (type: SitemapType) => ({ slug: true, ...(type.select || {}) }) as any
+const keeps = (type: SitemapType, doc: any) => !!doc.slug && (!type.keep || type.keep(doc))
+
 const ENDPOINT = 'https://api.indexnow.org/indexnow'
 const BATCH = 10000 // IndexNow-Maximum pro Request
 const PAGE = 2000 // Payload-Pagination pro Query
@@ -50,7 +60,7 @@ if (SITE_URL.includes('localhost')) fail(`SITE_URL ist ${SITE_URL} — IndexNow 
 
 // --- URL-Sammlung -----------------------------------------------------------
 
-/** Alle kanonischen Site-URLs (dieselben Quellen wie die Sitemap). */
+/** Alle kanonischen Site-URLs — dieselben Quellen UND dieselbe Indexregel (keep) wie die Sitemap. */
 async function collectAll(payload: any): Promise<string[]> {
   const out = new Set<string>()
   for (const p of STATIC_PATHS) out.add(url(p))
@@ -65,11 +75,11 @@ async function collectAll(payload: any): Promise<string[]> {
         limit: PAGE,
         page,
         depth: 0,
-        select: { slug: true } as any,
+        select: selectFor(type),
         pagination: true,
       })
       for (const doc of res.docs as any[]) {
-        if (doc.slug) out.add(url(type.path(doc.slug)))
+        if (keeps(type, doc)) out.add(url(type.path(doc.slug)))
       }
       console.log(`  ${type.key}: Seite ${page}/${res.totalPages} (${out.size} URLs gesamt)`)
       if (!res.hasNextPage) break
@@ -99,10 +109,10 @@ async function collectRecent(payload: any, days: number): Promise<string[]> {
         limit: PAGE,
         page,
         depth: 0,
-        select: { slug: true } as any,
+        select: selectFor(type),
         pagination: true,
       })
-      for (const doc of res.docs as any[]) if (doc.slug) out.add(url(type.path(doc.slug)))
+      for (const doc of res.docs as any[]) if (keeps(type, doc)) out.add(url(type.path(doc.slug)))
       if (!res.hasNextPage) break
       page++
     }
@@ -121,10 +131,10 @@ async function collectRecent(payload: any, days: number): Promise<string[]> {
         limit: PAGE,
         page,
         depth: 0,
-        select: { slug: true } as any,
+        select: selectFor(artType),
         pagination: true,
       })
-      for (const doc of res.docs as any[]) if (doc.slug) out.add(url(artType.path(doc.slug)))
+      for (const doc of res.docs as any[]) if (keeps(artType, doc)) out.add(url(artType.path(doc.slug)))
       if (!res.hasNextPage) break
       page++
     }

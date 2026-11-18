@@ -34,7 +34,9 @@ export const TYPES: SitemapType[] = [
     collection: 'anime',
     path: (s) => `/anime/${s}`,
     where: publicAnimeFilter,
-    select: { descriptionDe: true, format: true, noindex: true, popularity: true, isHentai: true, streamingProviders: true, streamingOffers: true },
+    // `episodes` braucht das QA-Gate in animeIndexable (offerContradictsEntry) — ohne
+    // das Feld zählt ein widersprüchliches Angebot wieder als Streaming-Daten.
+    select: { descriptionDe: true, format: true, episodes: true, noindex: true, popularity: true, isHentai: true, streamingProviders: true, streamingOffers: true },
     keep: animeIndexable,
   },
   // Charaktere/Personen: nur mit substanziellem DEUTSCHEM Text in Index + Sitemap — der
