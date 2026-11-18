@@ -150,6 +150,19 @@ describe('offerContradictsEntry', () => {
     expect(streamingOffersOf(a).map((v) => v.provider.slug)).toEqual(['joyn'])
     expect(streamingSummary(a).providerNames).toEqual(['Joyn'])
   })
+  it('kein Legacy-Fallback, wenn das Gate alle Angebote verwirft', () => {
+    // Der Anbieter-Index stammt aus derselben falschen Zuordnung — sonst behauptet
+    // die Seite den Anbieter weiter, nur ohne Sprache und Folgenzahl.
+    const a = {
+      episodes: 5,
+      format: 'OVA' as string,
+      streamingProviders: ['crunchyroll'],
+      externalLinks: [{ platform: 'Crunchyroll', url: 'https://cr/x' }],
+      streamingOffers: [{ provider: 'crunchyroll', url: 'https://cr/x', monetization: 'flatrate', audio: 'de', subs: '', episodes: 28 }],
+    }
+    expect(streamingOffersOf(a)).toEqual([])
+    expect(streamingSummary(a).hasStream).toBe(false)
+  })
 })
 
 describe('groupOffersByProvider', () => {

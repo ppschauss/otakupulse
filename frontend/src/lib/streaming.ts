@@ -356,6 +356,7 @@ const providerRank = (slug: string) => PROVIDER_SLUGS.indexOf(slug)
  */
 export function streamingOffersOf(anime: any): OfferView[] {
   // QA-Gate: widersprüchliche Angebote werden nicht ausgegeben (s. offerContradictsEntry).
+  const all: any[] = Array.isArray(anime?.streamingOffers) ? anime.streamingOffers : []
   const raw: any[] = plausibleOffers(anime)
   const views: OfferView[] = []
   for (const o of raw) {
@@ -387,6 +388,11 @@ export function streamingOffersOf(anime: any): OfferView[] {
     }))
     return [...legacy, ...views]
   }
+  // Hatte der Titel Angebote, die das QA-Gate ALLE verworfen hat, darf der
+  // Legacy-Fallback nicht einspringen: `streamingProviders` ist aus derselben
+  // falschen Zuordnung entstanden und würde den Anbieter nur leiser behaupten
+  // („läuft bei Crunchyroll", ohne Sprache und Folgen).
+  if (all.length) return []
   return streamingProvidersOf(anime).map(({ provider, url }) => ({
     provider,
     offer: { provider: provider.slug, url, monetization: null, audio: [], subs: [], legacy: true },
