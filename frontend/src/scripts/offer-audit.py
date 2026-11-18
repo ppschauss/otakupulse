@@ -11,11 +11,11 @@ Folgenzahl des Eintrags. Genau das prüft dieses Skript — billig, vollständig
 ohne JustWatch-Abfrage, weil es auf der eigenen DB läuft.
 
 Checks (error = blockiert, warn = nur Bericht):
-  C1 episode_mismatch   error  Folgen beim Anbieter weichen > 25 % (min. ±1) ab
+  C1 episode_mismatch   warn   Folgen beim Anbieter weichen > 25 % (min. ±1) ab
   C2 spinoff_inherits   error  Titelzusatz (Yokoku, Mini Anime, Petit, Picture Drama …)
                                mit Anbieter-Angebot → Franchise-Vererbung
   C3 tiny_entry         error  ≤ 3 Folgen im Eintrag, ≥ 3 Folgen mehr beim Anbieter
-  C4 sub_lt_dub         error  pro Anbieter mehr Dub- als Sub-Titel (unmöglich)
+  C4 sub_lt_dub         warn   pro Anbieter mehr Dub- als Sub-Titel
   C5 dub_without_sub    warn   deutsche Tonspur ohne deutsche Untertitel
   C6 lang_without_offer warn   `de-dub`-Flag, aber kein Angebot mit deutscher Tonspur
                                (= die Lücke zwischen Kopfzahl und Listenzahl)
@@ -52,7 +52,9 @@ NORM = ("lower(regexp_replace(coalesce(a.title_romaji,'') || coalesce(a.title_en
 STREAM = "o.monetization IN ('flatrate','ads','free')"
 
 CHECKS = [
-    ("C1", "episode_mismatch", "error", f"""
+    # Nur Hinweis: ein Season-1-Eintrag, dessen Anbieter die ganze Serie führt,
+    # weicht legitim ab. Die eindeutigen Fälle fängt C3.
+    ("C1", "episode_mismatch", "warn", f"""
         SELECT a.slug, o.provider, a.episodes::text, o.episodes::text
           FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
          WHERE {STREAM} AND a.episodes > 0 AND o.episodes IS NOT NULL
@@ -69,7 +71,9 @@ CHECKS = [
          WHERE {STREAM} AND a.episodes > 0 AND a.episodes <= 3
            AND o.episodes IS NOT NULL AND o.episodes >= a.episodes + 3
          ORDER BY o.episodes DESC"""),
-    ("C4", "sub_lt_dub", "error", f"""
+    # Für Simulcast-Plattformen (Crunchyroll) gilt sub >= dub; deutsche Dub-first-
+    # Label wie Aniverse (377 Dub / 367 Sub) verletzen das legitim. Daher nur Hinweis.
+    ("C4", "sub_lt_dub", "warn", f"""
         SELECT o.provider, '', count(DISTINCT a.id) FILTER (WHERE (',' || coalesce(o.audio,'') || ',') LIKE '%,de,%')::text,
                count(DISTINCT a.id) FILTER (WHERE (',' || coalesce(o.subs,'') || ',') LIKE '%,de,%')::text
           FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id

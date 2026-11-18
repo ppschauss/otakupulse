@@ -493,8 +493,16 @@ def aggregate_offers(node, season=None):
     return out
 
 
+# Rückgabewerte von fetch_offers: ein verworfener Treffer ist etwas anderes als
+# „nicht gefunden". Wer verworfen wurde, hat mit hoher Wahrscheinlichkeit genau die
+# geerbten Anbieter im Bestand — die löschen wir auch ohne --purge-unmatched, sonst
+# bliebe „100% Pascal-sensei" für immer mit den Angeboten von Mob Psycho 100 stehen.
+IMPLAUSIBLE = "implausible"
+
+
 def fetch_offers(session, a):
-    """None = API-Fehler, False = kein sicherer Match, sonst Offer-Liste.
+    """None = API-Fehler, False = kein sicherer Match, IMPLAUSIBLE = Treffer verworfen,
+    sonst Offer-Liste.
 
     Sucht nacheinander mit deutschem, englischem und Romaji-Titel (dedupliziert),
     bis ein sicherer Match kommt — die JustWatch-Suche findet „Frieren – Nach dem
@@ -508,6 +516,7 @@ def fetch_offers(session, a):
             queries.append(t)
     if not queries:
         return False
+    rejected = False
     for query in queries:
         r = api_post(session, {"query": SEARCH_Q, "variables": {"c": "DE", "l": "de", "q": query}})
         if r.status_code != 200:
@@ -519,6 +528,7 @@ def fetch_offers(session, a):
         node, remainder = hit
         # Vorschau/Mini-Anime/Picture Drama sind eigene Werke — nie die Serie erben.
         if spinoff_mismatch(a["titles"], node):
+            rejected = True
             continue
         if not remainder:
             offers = aggregate_offers(node)
@@ -533,9 +543,10 @@ def fetch_offers(session, a):
                 # Anbieter pauschal auf eine Fortsetzung übertragen).
                 continue
         if episodes_implausible(a.get("eps"), node, offers):
+            rejected = True
             continue
         return offers
-    return False
+    return IMPLAUSIBLE if rejected else False
 
 
 def build_sql(a, offers, now_iso, initial=False):
@@ -658,9 +669,11 @@ def main():
             else:
                 checked_ids.append(a["id"])
                 stats["checked"] += 1
-                if offers is False:
+                if offers is False or offers == IMPLAUSIBLE:
                     stats["nomatch"] += 1
-                    if purge and not dry and (a["have"] or a["offers"]):
+                    # Verworfener Treffer → Bestand ist unbelegt und wird immer entfernt.
+                    # Reines „nicht gefunden" nur mit --purge-unmatched.
+                    if (purge or offers == IMPLAUSIBLE) and not dry and (a["have"] or a["offers"]):
                         sql.append(f"DELETE FROM anime_streaming_offers WHERE _parent_id = {a['id']};")
                         sql.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {a['id']};")
                         changed_ids.append(a["id"])
