@@ -1,5 +1,7 @@
 // Hilfsfunktionen rund um Anime-Daten (Anzeige & Labels).
 
+import { offerContradictsEntry } from './streaming'
+
 export function displayTitle(a: any): string {
   return a?.titleGerman || a?.titleEnglish || a?.titleRomaji || 'Unbekannt'
 }
@@ -161,9 +163,13 @@ export function animeIndexable(a: any): boolean {
   if (a?.noindex) return false
   // Adult-Policy: gesperrter Bestand ist öffentlich nicht erreichbar (301 → /genre/ecchi).
   if (a?.isHentai === true) return false
+  // Nur Angebote, die dem Eintrag nicht widersprechen, zählen als Streaming-Daten:
+  // sonst ist eine falsche Titel-Zuordnung die Index-Eintrittskarte für eine dünne
+  // Seite (ein 1-teiliger Trailer-Eintrag mit dem Katalog der Hauptserie).
+  const offers = Array.isArray(a?.streamingOffers) ? a.streamingOffers : []
   const hasStream =
-    (Array.isArray(a?.streamingOffers) && a.streamingOffers.length > 0) ||
-    (Array.isArray(a?.streamingProviders) && a.streamingProviders.length > 0)
+    offers.filter((o: any) => !offerContradictsEntry(a, o)).length > 0 ||
+    (offers.length === 0 && Array.isArray(a?.streamingProviders) && a.streamingProviders.length > 0)
   if (hasStream) return true
   if (a?.format === 'MUSIC') return false
   if (textTooThin(a?.descriptionDe)) return false

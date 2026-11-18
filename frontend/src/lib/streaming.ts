@@ -308,6 +308,44 @@ export const splitCsv = (s?: string | null): string[] =>
     .filter(Boolean)
 
 const MONETIZATIONS: readonly string[] = ['flatrate', 'ads', 'free', 'buy', 'rent']
+
+/**
+ * Formate, bei denen der Eintrag die Serie selbst sein kann (Staffel 1 oder ein Cour
+ * trägt dann legitim die Angebote der ganzen Serie). ONA gehört dazu: AniList führt
+ * moderne Streaming-Originals so (Cyberpunk: Edgerunners 10 Folgen, Netflix listet
+ * 20; JoJo Stone Ocean 12 gegen 38). Echtes Beiwerk sind nur OVA, SPECIAL, MUSIC.
+ */
+const SERIES_FORMATS: readonly string[] = ['TV', 'TV_SHORT', 'ONA']
+
+/**
+ * Widerspricht ein Angebot dem Eintrag? Letzte Instanz vor der Ausgabe — gleiche
+ * Grenze wie `episodes_implausible` in `scripts/justwatch-streaming.py`.
+ *
+ * Eine falsche Titel-Zuordnung zeigt sich daran, dass die Folgenzahl beim Anbieter
+ * nicht zum Eintrag passt („Harukana Receive: Yokoku", 11 Folgen, mit einem
+ * Crunchyroll-Block über 1 Staffel · 12 Folgen). Der Sync schreibt solche Zeilen
+ * nicht mehr, aber der Bestand wird rollierend geprüft — bis ein Titel wieder dran
+ * ist, darf die Seite die Behauptung nicht zeigen.
+ *
+ * Bei Serien-Formaten darf der Anbieter mehr Folgen führen als der Eintrag
+ * (Season-1-Eintrag, Anbieter listet die ganze Serie); für OVA, Special und Music
+ * gilt das nicht. Ein Eintrag mit höchstens drei Folgen ist nie ein Angebot mit
+ * drei Folgen mehr. Unbekannte Zahlen sind kein Verdacht.
+ */
+export function offerContradictsEntry(anime: any, offer: { episodes?: number | null }): boolean {
+  const ours = Number(anime?.episodes) || 0
+  const theirs = Number(offer?.episodes) || 0
+  if (ours <= 0 || theirs <= 0) return false
+  if (ours <= 3 && theirs >= ours + 3) return true
+  if (SERIES_FORMATS.includes(anime?.format)) return false
+  return Math.abs(theirs - ours) > Math.max(1, ours * 0.25)
+}
+
+/** Angebote eines Anime, die dem Eintrag nicht widersprechen (Rohdaten, ungefiltert sortiert). */
+export function plausibleOffers(anime: any): any[] {
+  const raw: any[] = Array.isArray(anime?.streamingOffers) ? anime.streamingOffers : []
+  return raw.filter((o) => !offerContradictsEntry(anime, o))
+}
 const providerRank = (slug: string) => PROVIDER_SLUGS.indexOf(slug)
 
 /**
@@ -317,7 +355,8 @@ const providerRank = (slug: string) => PROVIDER_SLUGS.indexOf(slug)
  * `legacy`, damit die UI keine Sprach-/Episodenangaben vortäuscht.
  */
 export function streamingOffersOf(anime: any): OfferView[] {
-  const raw: any[] = Array.isArray(anime?.streamingOffers) ? anime.streamingOffers : []
+  // QA-Gate: widersprüchliche Angebote werden nicht ausgegeben (s. offerContradictsEntry).
+  const raw: any[] = plausibleOffers(anime)
   const views: OfferView[] = []
   for (const o of raw) {
     const provider = providerBySlug(o?.provider)

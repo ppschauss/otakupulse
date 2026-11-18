@@ -103,6 +103,12 @@ describe('animeIndexable', () => {
     expect(animeIndexable({ descriptionSource: de, popularity: 50000 })).toBe(false) // englischer Quelltext zählt nicht
     expect(animeIndexable({ descriptionDe: 'kurz', popularity: 50000 })).toBe(false)
   })
+  it('ein widersprüchliches Angebot ist keine Streaming-Daten (sonst indexiert der Trailer)', () => {
+    const trailer = { episodes: 1, format: 'OVA', streamingOffers: [{ provider: 'crunchyroll', url: 'https://cr/x', episodes: 87 }] }
+    expect(animeIndexable(trailer)).toBe(false)
+    expect(animeIndexable({ ...trailer, descriptionDe: de, popularity: 50000 })).toBe(true) // eigener Text trägt die Seite
+    expect(animeIndexable({ ...trailer, streamingOffers: [{ provider: 'crunchyroll', url: 'https://cr/x', episodes: 1 }] })).toBe(true)
+  })
   it('Musikvideos ohne Streaming nie; redaktionelles noindex gewinnt', () => {
     expect(animeIndexable({ format: 'MUSIC', descriptionDe: de, popularity: 50000 })).toBe(false)
     expect(animeIndexable({ noindex: true, streamingProviders: ['netflix'] })).toBe(false)

@@ -10,6 +10,16 @@
 import { DE_PROVIDER_SLUGS, PROVIDER_SLUGS, providerBySlug } from './streaming'
 
 export const MIN_LIST_SIZE = 10
+
+/**
+ * QA-Gate in SQL — wortgleich zu `offerContradictsEntry` in lib/streaming.ts.
+ * Angebote, deren Folgenzahl dem Eintrag widerspricht, zählen in keiner Liste mit;
+ * sonst nennt eine Liste Titel, deren Anbieter-Block auf der Detailseite gar nicht
+ * erscheint. Setzt die Aliase `a` (anime) und `o` (anime_streaming_offers) voraus.
+ */
+export const PLAUSIBLE_OFFER_SQL = `NOT (a.episodes > 0 AND o.episodes > 0 AND (
+       (a.episodes <= 3 AND o.episodes >= a.episodes + 3)
+    OR (COALESCE(a.format::text,'') NOT IN ('TV','TV_SHORT','ONA') AND abs(o.episodes - a.episodes) > greatest(1, a.episodes * 0.25))))`
 const NEW_DAYS = 30
 
 export type ListFilter = {
@@ -158,10 +168,10 @@ let fallbackCache: { at: number; value: string[] } | null = null
 export async function dubFallbackProviders(payload: any): Promise<string[]> {
   if (fallbackCache && Date.now() - fallbackCache.at < COUNTS_TTL_MS) return fallbackCache.value
   const res = await pool(payload).query(
-    `SELECT provider FROM anime_streaming_offers
-      WHERE monetization IN ('flatrate','ads','free')
-      GROUP BY provider
-     HAVING count(*) FILTER (WHERE audio IS NOT NULL AND audio <> '') = 0`,
+    `SELECT o.provider FROM anime_streaming_offers o JOIN anime a ON a.id = o._parent_id
+      WHERE o.monetization IN ('flatrate','ads','free') AND ${PLAUSIBLE_OFFER_SQL}
+      GROUP BY o.provider
+     HAVING count(*) FILTER (WHERE o.audio IS NOT NULL AND o.audio <> '') = 0`,
   )
   const value = res.rows.map((r: any) => r.provider as string)
   fallbackCache = { at: Date.now(), value }
@@ -178,7 +188,8 @@ export async function platformListCounts(payload: any): Promise<Map<string, numb
     const res = await p.query(
       `SELECT o.provider, count(DISTINCT a.id)::int AS n
        FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
-       WHERE ${c.sql} AND o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE GROUP BY o.provider`,
+       WHERE ${c.sql} AND o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE
+         AND ${PLAUSIBLE_OFFER_SQL} GROUP BY o.provider`,
     )
     for (const r of res.rows) out.set(`${r.provider}/${f.key}`, r.n)
   }
@@ -187,7 +198,8 @@ export async function platformListCounts(payload: any): Promise<Map<string, numb
      FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
      JOIN anime_rels ar ON ar.parent_id = a.id AND ar.genres_id IS NOT NULL
      JOIN genres g ON g.id = ar.genres_id
-     WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE GROUP BY o.provider, g.slug`,
+     WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE
+       AND ${PLAUSIBLE_OFFER_SQL} GROUP BY o.provider, g.slug`,
   )
   for (const r of g.rows) out.set(`${r.provider}/${r.slug}`, r.n)
   return out
@@ -198,7 +210,8 @@ export async function platformListPage(payload: any, providerSlug: string, f: Li
   const c = filterCondition(f, await dubFallbackProviders(payload))
   const p = pool(payload)
   const base = `FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
-                WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND ${c.sql} AND a.is_hentai IS NOT TRUE`
+                WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND ${c.sql}
+                  AND a.is_hentai IS NOT TRUE AND ${PLAUSIBLE_OFFER_SQL}`
   const [cnt, ids] = await Promise.all([
     p.query(`SELECT count(DISTINCT a.id)::int AS n ${base}`, [providerSlug, ...c.params]),
     p.query(
@@ -227,7 +240,8 @@ export async function platformListStats(payload: any, providerSlug: string, f: L
   const dubSql = filterCondition(staticFilter('deutscher-dub')!, fb).sql
   const p = pool(payload)
   const base = `FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
-                WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND ${c.sql} AND a.is_hentai IS NOT TRUE`
+                WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND ${c.sql}
+                  AND a.is_hentai IS NOT TRUE AND ${PLAUSIBLE_OFFER_SQL}`
   const [agg, top] = await Promise.all([
     p.query(
       `SELECT count(DISTINCT a.id)::int AS total,
@@ -275,7 +289,8 @@ export async function dubOverview(payload: any): Promise<{
   const fb = await dubFallbackProviders(payload)
   const dubSql = filterCondition(staticFilter('deutscher-dub')!, fb).sql
   const base = `FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
-                WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE`
+                WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE
+                  AND ${PLAUSIBLE_OFFER_SQL}`
   const p = pool(payload)
   const [per, uniq] = await Promise.all([
     p.query(`SELECT o.provider,
@@ -305,6 +320,7 @@ export async function topDubAnime(payload: any, limit: number): Promise<any[]> {
   const res = await pool(payload).query(
     `SELECT a.id FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
       WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE AND ${dubSql}
+        AND ${PLAUSIBLE_OFFER_SQL}
       GROUP BY a.id ORDER BY max(a.popularity) DESC NULLS LAST, a.id LIMIT ${Number(limit) || 24}`,
   )
   const order: number[] = res.rows.map((r: any) => r.id)

@@ -362,45 +362,40 @@ def spinoff_mismatch(our_titles, node):
     return False
 
 
-# Formate, bei denen unser Eintrag die Serie selbst sein KANN (Staffel 1 trägt dann
-# legitim die Angebote der ganzen Serie). OVA/SPECIAL/ONA/MUSIC sind immer Beiwerk.
-_SERIES_FORMATS = {"TV", "TV_SHORT"}
+# Formate, bei denen unser Eintrag die Serie selbst sein KANN (Staffel 1 oder ein
+# Cour trägt dann legitim die Angebote der ganzen Serie). ONA gehört dazu: AniList
+# führt moderne Streaming-Originals so (Cyberpunk: Edgerunners, Sakamoto Days,
+# JoJo Stone Ocean), und die sind nach Cours geteilt, während der Anbieter den
+# ganzen Lauf listet. Nur OVA, SPECIAL und MUSIC sind echtes Beiwerk.
+_SERIES_FORMATS = {"TV", "TV_SHORT", "ONA"}
 
 
-def _season_episode_counts(node):
-    """Folgenzahlen der Einzelstaffeln des Treffers (aus `elementCount`)."""
-    out = set()
-    for se in node.get("seasons") or []:
-        for o in se.get("offers") or []:
-            if o.get("elementCount"):
-                out.add(int(o["elementCount"]))
-    return {n for n in out if n > 0}
+def episodes_implausible(ours, offers, fmt=None):
+    """True, wenn die Folgenzahl der geschriebenen Angebote dem Eintrag widerspricht.
 
+    WORTGLEICH zu `offerContradictsEntry` in `lib/streaming.ts` — die Regel steht an
+    zwei Stellen (Schreibweg und Ausgabe) und darf nicht auseinanderlaufen:
 
-def episodes_implausible(ours, node, offers, fmt=None):
-    """True, wenn unsere Folgenzahl nicht zu dem passt, was geschrieben würde.
+      1. Ein Eintrag mit höchstens drei Folgen ist nie ein Angebot mit drei Folgen
+         mehr. Gilt für jedes Format („Harukana Receive: Yokoku", 1 Folge, mit dem
+         87-Folgen-Katalog der Serie).
+      2. Bei Serien-Formaten (TV, TV_SHORT, ONA) darf der Anbieter den ganzen Lauf
+         listen, während unser Eintrag ein Cour ist — keine weitere Prüfung.
+      3. Sonst (OVA, SPECIAL, MUSIC) muss die Zahl auf 25 % (mindestens ±1) passen.
 
-    Vergleichsmaßstab sind die Zahlen der tatsächlich geschriebenen Angebote.
-    Nur bei TV-Formaten zählt zusätzlich eine Einzelstaffel des Treffers als
-    Erklärung — ein Season-1-Eintrag darf die Angebote der ganzen Serie tragen.
-    Für OVA, Special und ONA gilt das nicht: die Staffelliste einer langen Serie
-    enthält fast immer irgendeine kleine Zahl, und genau daran rutschte
-    „Haikyuu!!: Lev Kenzan!" (1 Folge, OVA) als „Haikyu!!" mit 87 Folgen durch.
     Unbekannte Zahlen (laufende Titel, Filme) sind kein Verdacht.
     """
     if not ours or int(ours) <= 0:
         return False
     ours = int(ours)
-    offer_counts = {int(o["episodes"]) for o in offers if o.get("episodes")}
-    offer_counts = {n for n in offer_counts if n > 0}
-    explain = offer_counts | (_season_episode_counts(node) if fmt in _SERIES_FORMATS else set())
-    tol = max(1.0, ours * 0.25)
-    if explain and all(abs(ours - c) > tol for c in explain):
+    counts = {int(o["episodes"]) for o in offers if o.get("episodes")}
+    counts = {n for n in counts if n > 0}
+    if ours <= 3 and any(c >= ours + 3 for c in counts):
         return True
-    # Harte Grenze, wortgleich zu C3 in offer-audit.py: ein Eintrag mit höchstens
-    # drei Folgen ist nie ein Angebot mit drei Folgen mehr. Hier zählen nur die
-    # geschriebenen Angebote, nicht die Staffelliste.
-    return ours <= 3 and any(c >= ours + 3 for c in offer_counts)
+    if fmt in _SERIES_FORMATS or not counts:
+        return False
+    tol = max(1.0, ours * 0.25)
+    return all(abs(ours - c) > tol for c in counts)
 
 
 _SEASON_NUM = re.compile(r"(?:season|staffel|part|cour|s|r)(\d{1,2})$|^(\d{1,2})(?:nd|rd|th)?(?:season|staffel)?$")
@@ -559,7 +554,7 @@ def fetch_offers(session, a):
                 # Serie erkannt, aber Staffel nicht eindeutig → kein Match (keine Serien-
                 # Anbieter pauschal auf eine Fortsetzung übertragen).
                 continue
-        if episodes_implausible(a.get("eps"), node, offers, a.get("fmt")):
+        if episodes_implausible(a.get("eps"), offers, a.get("fmt")):
             rejected = True
             continue
         return offers

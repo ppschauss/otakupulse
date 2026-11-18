@@ -61,12 +61,16 @@ NORM = ("lower(regexp_replace(coalesce(a.title_romaji,''), '[^a-zA-Z0-9]', '', '
 STREAM = "o.monetization IN ('flatrate','ads','free')"
 
 CHECKS = [
-    # Nur Hinweis: ein Season-1-Eintrag, dessen Anbieter die ganze Serie führt,
-    # weicht legitim ab. Die eindeutigen Fälle fängt C3.
+    # Spiegelt `offerContradictsEntry` (lib/streaming.ts) und `episodes_implausible`
+    # (justwatch-streaming.py): Serien-Formate dürfen abweichen, weil der Anbieter
+    # den ganzen Lauf listet, während unser Eintrag ein Cour ist. Solche Zeilen
+    # blendet die Ausgabe aus und der nächste Sync-Lauf entfernt sie — deshalb
+    # Hinweis, kein Gate.
     ("C1", "episode_mismatch", "warn", f"""
         SELECT a.slug, o.provider, a.episodes::text, o.episodes::text
           FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
          WHERE {STREAM} AND a.episodes > 0 AND o.episodes IS NOT NULL
+           AND coalesce(a.format::text,'') NOT IN ('TV','TV_SHORT','ONA')
            AND abs(o.episodes - a.episodes) > greatest(1, a.episodes * 0.25)
          ORDER BY abs(o.episodes - a.episodes) DESC"""),
     ("C2", "spinoff_inherits", "error", f"""

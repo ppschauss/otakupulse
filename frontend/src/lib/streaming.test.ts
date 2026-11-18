@@ -8,6 +8,7 @@ import {
   streamingOffersOf,
   groupOffersByProvider,
   streamingSummary,
+  offerContradictsEntry,
 } from './streaming'
 
 describe('providerBySlug', () => {
@@ -106,6 +107,48 @@ describe('streamingOffersOf', () => {
     expect(v[0].offer.url).toBe('https://www.crunchyroll.com/naruto')
     expect(v[0].offer.legacy).toBe(true)
     expect(v[1].offer.url).toBe('https://www.joyn.de')
+  })
+})
+
+// QA-Gate: eine falsche Titel-Zuordnung verrät sich durch die Folgenzahl beim
+// Anbieter. Grenze identisch zu episodes_implausible in justwatch-streaming.py.
+describe('offerContradictsEntry', () => {
+  it('verwirft Beiwerk mit dem Katalog der Hauptserie', () => {
+    // „Haikyuu!!: Lev Kenzan!" — 1 Folge, Angebot über 87
+    expect(offerContradictsEntry({ episodes: 1, format: 'OVA' }, { episodes: 87 })).toBe(true)
+    expect(offerContradictsEntry({ episodes: 3, format: 'SPECIAL' }, { episodes: 18 })).toBe(true)
+    expect(offerContradictsEntry({ episodes: 6, format: 'SPECIAL' }, { episodes: 37 })).toBe(true)
+  })
+  it('lässt Season-1-Einträge die Angebote der ganzen Serie behalten', () => {
+    expect(offerContradictsEntry({ episodes: 12, format: 'TV' }, { episodes: 36 })).toBe(false)
+    expect(offerContradictsEntry({ episodes: 12, format: 'TV_SHORT' }, { episodes: 36 })).toBe(false)
+  })
+  it('ONA zählt als Serie — Streaming-Originals sind nach Cours geteilt', () => {
+    // Cyberpunk: Edgerunners (10 Folgen) bei Netflix mit 20, JoJo Stone Ocean (12) mit 38
+    expect(offerContradictsEntry({ episodes: 10, format: 'ONA' }, { episodes: 20 })).toBe(false)
+    expect(offerContradictsEntry({ episodes: 12, format: 'ONA' }, { episodes: 38 })).toBe(false)
+    // Die harte Grenze gilt trotzdem
+    expect(offerContradictsEntry({ episodes: 1, format: 'ONA' }, { episodes: 12 })).toBe(true)
+  })
+  it('die harte Grenze gilt auch für TV: ≤ 3 Folgen sind nie ein Angebot mit 3 mehr', () => {
+    expect(offerContradictsEntry({ episodes: 1, format: 'TV' }, { episodes: 24 })).toBe(true)
+  })
+  it('kleine Abweichungen und unbekannte Zahlen sind kein Verdacht', () => {
+    expect(offerContradictsEntry({ episodes: 12, format: 'OVA' }, { episodes: 13 })).toBe(false)
+    expect(offerContradictsEntry({ episodes: 0, format: 'OVA' }, { episodes: 24 })).toBe(false)
+    expect(offerContradictsEntry({ episodes: 24, format: 'MOVIE' }, { episodes: null })).toBe(false)
+  })
+  it('streamingOffersOf gibt widersprüchliche Angebote nicht aus', () => {
+    const a = {
+      episodes: 1,
+      format: 'OVA' as string,
+      streamingOffers: [
+        { provider: 'crunchyroll', url: 'https://cr/x', monetization: 'flatrate', audio: 'de', subs: 'de', episodes: 85 },
+        { provider: 'joyn', url: 'https://joyn/x', monetization: 'ads', audio: 'de', subs: '', episodes: 1 },
+      ],
+    }
+    expect(streamingOffersOf(a).map((v) => v.provider.slug)).toEqual(['joyn'])
+    expect(streamingSummary(a).providerNames).toEqual(['Joyn'])
   })
 })
 
