@@ -46,8 +46,15 @@ SPINOFF_RE = ("yokoku|vorschau|preview|trailer|minianime|miniaftershow|petit|puc
               "dougagekijou|specialedition|digest")
 
 # Normalisierter Titel (ein Ausdruck für alle Titelspalten).
-NORM = ("lower(regexp_replace(coalesce(a.title_romaji,'') || coalesce(a.title_english,'') || "
-        "coalesce(a.title_german,''), '[^a-zA-Z0-9]', '', 'g'))")
+# Trenner zwischen den Titeln: ohne ihn entstehen Marker ueber die Spaltengrenze
+# hinweg ("Isekai Mahou" + "Maker" ergab "omake") und die Prüfung meldet Unsinn.
+# Jeder Titel wird EINZELN zusammengezogen und die Titel dann mit Leerzeichen
+# getrennt — genau wie `spinoff_mismatch` in justwatch-streaming.py. Verkettet man
+# erst und sauebert dann, entstehen Marker ueber die Spaltengrenze hinweg
+# ("Isekai Mahou" + "Maker" ergab "omake") und die Pruefung meldet Unsinn.
+NORM = ("lower(regexp_replace(coalesce(a.title_romaji,''), '[^a-zA-Z0-9]', '', 'g') || ' ' || "
+        "regexp_replace(coalesce(a.title_english,''), '[^a-zA-Z0-9]', '', 'g') || ' ' || "
+        "regexp_replace(coalesce(a.title_german,''), '[^a-zA-Z0-9]', '', 'g'))")
 
 STREAM = "o.monetization IN ('flatrate','ads','free')"
 

@@ -230,6 +230,7 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
     ).strip() or "[]")
     anime = {r["id"]: {"id": r["id"], "slug": r["slug"],
                        "want": "MOVIE" if r.get("fmt") == "MOVIE" else "SHOW",
+                       "fmt": r.get("fmt"),
                        "year": r.get("year"),
                        "eps": r.get("eps"),
                        "titles": [r.get("de") or "", r.get("en") or "", r.get("ro") or "", r.get("na") or ""],
@@ -357,10 +358,14 @@ def spinoff_mismatch(our_titles, node):
     return False
 
 
-def _candidate_episode_counts(node, offers):
-    """Alle Folgenzahlen, die der gematchte Titel hergibt: Summe pro Anbieter und
-    die Einzelstaffeln (aus `elementCount` der Staffel-Angebote)."""
-    out = {int(o["episodes"]) for o in offers if o.get("episodes")}
+# Formate, bei denen unser Eintrag die Serie selbst sein KANN (Staffel 1 trägt dann
+# legitim die Angebote der ganzen Serie). OVA/SPECIAL/ONA/MUSIC sind immer Beiwerk.
+_SERIES_FORMATS = {"TV", "TV_SHORT"}
+
+
+def _season_episode_counts(node):
+    """Folgenzahlen der Einzelstaffeln des Treffers (aus `elementCount`)."""
+    out = set()
     for se in node.get("seasons") or []:
         for o in se.get("offers") or []:
             if o.get("elementCount"):
@@ -368,22 +373,30 @@ def _candidate_episode_counts(node, offers):
     return {n for n in out if n > 0}
 
 
-def episodes_implausible(ours, node, offers):
-    """True, wenn unsere Folgenzahl beim gematchten Titel nirgends vorkommt.
+def episodes_implausible(ours, node, offers, fmt=None):
+    """True, wenn unsere Folgenzahl nicht zu dem passt, was geschrieben würde.
 
-    Ein 1-teiliges Special kann nicht die 24-Folgen-Serie sein („100 Years of Work
-    in Japan" erbte 2 Staffeln/24 Folgen). Toleranz 25 % (mindestens ±1), und eine
-    Staffel des Treffers zählt genauso wie die Gesamtzahl — sonst würden Season-1-
-    Einträge ihre korrekten Serien-Angebote verlieren. Unbekannte Zahlen (laufende
-    Titel, Filme) sind kein Verdacht.
+    Vergleichsmaßstab sind die Zahlen der tatsächlich geschriebenen Angebote.
+    Nur bei TV-Formaten zählt zusätzlich eine Einzelstaffel des Treffers als
+    Erklärung — ein Season-1-Eintrag darf die Angebote der ganzen Serie tragen.
+    Für OVA, Special und ONA gilt das nicht: die Staffelliste einer langen Serie
+    enthält fast immer irgendeine kleine Zahl, und genau daran rutschte
+    „Haikyuu!!: Lev Kenzan!" (1 Folge, OVA) als „Haikyu!!" mit 87 Folgen durch.
+    Unbekannte Zahlen (laufende Titel, Filme) sind kein Verdacht.
     """
     if not ours or int(ours) <= 0:
         return False
-    cands = _candidate_episode_counts(node, offers)
-    if not cands:
-        return False
-    tol = max(1.0, int(ours) * 0.25)
-    return all(abs(int(ours) - c) > tol for c in cands)
+    ours = int(ours)
+    offer_counts = {int(o["episodes"]) for o in offers if o.get("episodes")}
+    offer_counts = {n for n in offer_counts if n > 0}
+    explain = offer_counts | (_season_episode_counts(node) if fmt in _SERIES_FORMATS else set())
+    tol = max(1.0, ours * 0.25)
+    if explain and all(abs(ours - c) > tol for c in explain):
+        return True
+    # Harte Grenze, wortgleich zu C3 in offer-audit.py: ein Eintrag mit höchstens
+    # drei Folgen ist nie ein Angebot mit drei Folgen mehr. Hier zählen nur die
+    # geschriebenen Angebote, nicht die Staffelliste.
+    return ours <= 3 and any(c >= ours + 3 for c in offer_counts)
 
 
 _SEASON_NUM = re.compile(r"(?:season|staffel|part|cour|s|r)(\d{1,2})$|^(\d{1,2})(?:nd|rd|th)?(?:season|staffel)?$")
@@ -542,7 +555,7 @@ def fetch_offers(session, a):
                 # Serie erkannt, aber Staffel nicht eindeutig → kein Match (keine Serien-
                 # Anbieter pauschal auf eine Fortsetzung übertragen).
                 continue
-        if episodes_implausible(a.get("eps"), node, offers):
+        if episodes_implausible(a.get("eps"), node, offers, a.get("fmt")):
             rejected = True
             continue
         return offers
