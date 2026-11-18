@@ -9,9 +9,8 @@ KEEP=14
 # Offsite je Präfix behalten. Der B2-Bucket hat eine Speichergrenze (Caps & Alerts),
 # und 14 Dumps à 36 MB + Umami lagen mit 507 MB genau darüber: ab dem 13.11.2026
 # scheiterte jeder Upload mit `403 storage_cap_exceeded`, die neueste Kopie
-# offsite war vom 12.11. Mit 7 liegt der Höchststand (7 + 1 frischer Upload vor
-# der Nach-Rotation) bei rund 290 MB — Luft, auch wenn die DB weiter wächst.
-# Lokal bleiben weiter 14 Tage (KEEP).
+# offsite war vom 12.11. Mit 7 liegt der Höchststand bei rund 260 MB (siehe
+# offsite_sync) — Luft, auch wenn die DB weiter wächst. Lokal bleiben 14 Tage (KEEP).
 KEEP_OFFSITE=7
 TS=$(date +%Y%m%d-%H%M%S)
 LOG=/srv/backups/otakupulse/backup.log
@@ -37,31 +36,45 @@ for p in otakupulse umami; do
   ls -1t "$DEST"/$p-*.sql.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f
 done
 
-# Offsite (Google Drive via rclone), nur wenn Remote "gdrive" konfiguriert ist.
+# Offsite (Backblaze B2 via rclone), nur wenn Remote "offsite" konfiguriert ist.
 RCLONE=/usr/bin/rclone
 export RCLONE_CONFIG=/srv/sites/otakupulse/app-src/rclone.conf
-# Offsite-Rotation: je Präfix nur die KEEP_OFFSITE neuesten behalten (B2-Cap!)
-offsite_rotate() {
+
+# Offsite = genau die KEEP_OFFSITE neuesten LOKALEN Dumps je Präfix, nicht mehr.
+#
+# Vorher: Rotation auf die neuesten N im Bucket, dann `rclone copy` aller lokalen
+# Dumps. Das trägt nur, solange lokal und offsite gleich viele behalten (14/14) —
+# und genau damit stand der Bucket an der Grenze. Mit weniger offsite lädt `copy`
+# jede Nacht die lokalen Dumps wieder hoch, die die Rotation gerade gelöscht hat.
+# Und nach einem Ausfall rotiert die alte Logik auf die neuesten N IM BUCKET (also
+# alte Stände) und lädt dann die verpassten Tage obendrauf — über die Grenze.
+#
+# Jetzt: Liste der neuesten N lokalen Dumps bilden, im Bucket alles löschen, was
+# nicht darauf steht (VOR dem Upload, damit Platz ist), dann nur diese Liste
+# hochladen. Höchststand = N Dumps je Präfix, auch beim Nachholen nach Ausfällen.
+# Hard-Delete, weil bei B2 auch versteckte Altversionen auf die Grenze zählen.
+offsite_sync() {
+  local keep="$DEST/.offsite-keep"
+  : > "$keep"
   for p in otakupulse umami; do
-    "$RCLONE" lsf offsite:otakupulse-backups --include "$p-*.sql.gz" 2>/dev/null \
-      | sort | head -n -$KEEP_OFFSITE | while read -r f; do
-        "$RCLONE" deletefile --b2-hard-delete "offsite:otakupulse-backups/$f" 2>>"$LOG"
-      done
+    ls -1t "$DEST"/$p-*.sql.gz 2>/dev/null | head -n "$KEEP_OFFSITE" | xargs -r -n1 basename >> "$keep"
   done
-  log "Offsite-Rotation: je Präfix neueste $KEEP_OFFSITE behalten"
+  local weg=0
+  while read -r f; do
+    if ! grep -qxF "$f" "$keep"; then
+      "$RCLONE" deletefile --b2-hard-delete "offsite:otakupulse-backups/$f" 2>>"$LOG" && weg=$((weg + 1))
+    fi
+  done < <("$RCLONE" lsf offsite:otakupulse-backups --include "*.sql.gz" 2>/dev/null)
+  log "Offsite: $weg veraltete Dumps entfernt, Soll = neueste $KEEP_OFFSITE je Präfix"
+  "$RCLONE" copy "$DEST" offsite:otakupulse-backups --files-from "$keep" --transfers 2 2>>"$LOG"
 }
 if [ -x "$RCLONE" ] && "$RCLONE" listremotes 2>/dev/null | grep -q '^offsite:'; then
-  # Auch VOR dem Upload rotieren: Ist der Cap voll, scheitert der Upload, und eine
-  # Rotation nur nach Erfolg käme nie zum Zug (Deadlock seit 2026-10-29).
-  offsite_rotate
-  if "$RCLONE" copy "$DEST" offsite:otakupulse-backups --include "*.sql.gz" --transfers 2 2>>"$LOG"; then
+  if offsite_sync; then
     log "Offsite: nach offsite:otakupulse-backups (Backblaze B2) kopiert"
-    offsite_rotate
   else
     log "Offsite-Upload FEHLGESCHLAGEN"
   fi
 else
   log "Offsite übersprungen (rclone-Remote 'offsite' noch nicht konfiguriert)"
 fi
-
 log "=== fertig ==="
