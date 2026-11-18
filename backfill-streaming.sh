@@ -4,21 +4,21 @@
 # bekamen — der tägliche Sync deckt nur --recent 3 ab. Alle drei Scraper laufen
 # auf dem HOST (curl_cffi), sind idempotent und mergen. Sequenziell, um die
 # Dienste nicht parallel zu hämmern.
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-F=/mnt/cache/appdata/otakupulse/frontend
+export PATH=/opt/otakupulse-cron/bin:/opt/otakupulse-cron/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+F=/srv/sites/otakupulse/app-src/frontend
 LOG=/tmp/otaku-backfill-streaming.log
 cd "$F" || exit 1
 
 echo "===== $(date) Backfill-Start =====" >> "$LOG"
 
 # JustWatch voll (alle Titel, Offers autoritativ): ~11k Requests bei 8–10 req/s ≈ 30 min.
-echo "----- $(date) [1/3] JustWatch (voll, Offers) -----" >> "$LOG"
+echo "----- $(date) [1/2] JustWatch (voll, Offers) -----" >> "$LOG"
 python3 -u src/scripts/justwatch-streaming.py >> "$LOG" 2>&1
 
-echo "----- $(date) [2/3] Crunchyroll-Dub (voller Katalog, idempotent) -----" >> "$LOG"
-python3 -u src/scripts/crunchyroll-dub.py >> "$LOG" 2>&1
-
-echo "----- $(date) [3/3] Wikipedia-Dub (voller Katalog, idempotent) -----" >> "$LOG"
+# crunchyroll-dub.py ist seit 18.11.2026 stillgelegt (Titel-Fuzzy-Match, ersetzt
+# den Sprachsatz komplett; siehe Kopf der Datei). Tonspuren kommen anbieter-genau
+# aus JustWatch, das Titel-Flag ID-basiert aus Wikipedia.
+echo "----- $(date) [2/2] Wikipedia-Dub (voller Katalog, idempotent) -----" >> "$LOG"
 python3 -u src/scripts/wikipedia-dub.py >> "$LOG" 2>&1
 
 echo "----- $(date) IndexNow: geänderte URLs melden -----" >> "$LOG"

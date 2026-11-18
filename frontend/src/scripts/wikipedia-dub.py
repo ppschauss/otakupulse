@@ -30,10 +30,16 @@ except ImportError:
 DB_CONTAINER = "otakupulse-db"
 SPARQL = "https://query.wikidata.org/sparql"
 WIKI_API = "https://de.wikipedia.org/w/api.php"
-UA = "OtakuPulse/1.0 (Anime-DB; research)"
+# Wikimedia-Etikette für Bots (meta.wikimedia.org/wiki/User-Agent_policy,
+# mediawiki.org/wiki/API:Etiquette): User-Agent mit Kontaktmöglichkeit, Anfragen
+# NACHEINANDER statt parallel, und maxlag=5, damit wir bei Replikationsverzug der
+# Server zurückstecken statt nachzulegen. Bis 18.11.2026 liefen hier 6 Worker
+# parallel — für einen wöchentlichen Cron gegen fremde Infrastruktur nicht tragbar.
+UA = "OtakuPulse/1.0 (https://www.otakupulse.de; Abgleich deutscher Synchronfassungen) curl_cffi"
 IMPERSONATE = "chrome124"
 SPARQL_BATCH = 150
-MAX_WORKERS = 6
+MAX_WORKERS = 1
+MAXLAG = 5
 
 
 def psql(sql: str, read: bool = True) -> str:
@@ -102,14 +108,19 @@ def has_german_dub(session, title: str) -> bool | None:
     for attempt in range(4):
         r = session.get(WIKI_API,
                         params={"action": "parse", "page": title, "prop": "sections",
-                                "format": "json", "redirects": 1},
+                                "format": "json", "redirects": 1, "maxlag": MAXLAG},
                         headers={"User-Agent": UA}, impersonate=IMPERSONATE, timeout=30)
         if r.status_code == 429:
             time.sleep(2 ** attempt)
             continue
         if r.status_code != 200:
             return None
-        secs = r.json().get("parse", {}).get("sections", [])
+        data = r.json()
+        if (data.get("error") or {}).get("code") == "maxlag":
+            # Server melden Verzug: warten, wie lange sie sagen, dann erneut.
+            time.sleep(int(r.headers.get("Retry-After", 5)))
+            continue
+        secs = data.get("parse", {}).get("sections", [])
         return any("synchron" in (x.get("line") or "").lower() for x in secs)
     return None
 

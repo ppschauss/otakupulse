@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
 """
+STILLGELEGT seit 18.11.2026 — läuft nur noch mit --trotzdem.
+
+Gründe: (1) Der Abgleich läuft für Titel ohne Crunchyroll-Link per
+Titelähnlichkeit, für Titel MIT Link ausdrücklich „großzügiger" — dieselbe
+Fehlerklasse, die im JustWatch-Sync am 18.11.2026 hunderte Spinoffs mit den
+Anbietern ihrer Hauptserie versehen hatte. (2) Pro Treffer wird der KOMPLETTE
+Sprachsatz ersetzt, ein Fehltreffer überschreibt also auch richtige Angaben.
+(3) Überholt: JustWatch liefert für 98,5 % der Crunchyroll-Angebote die
+Tonspuren selbst (anbieter-genau), und wikipedia-dub.py gleicht ID-basiert ab.
+(4) Grauzone: anonymer Web-Client-Token.
+Wer es wiederbeleben will, braucht vorher die Grenzen aus justwatch-streaming.py
+(spinoff_mismatch, episodes_implausible, ID-Verifikation).
+
 Crunchyroll-Dub-Sync (Sprach-Verfügbarkeit) — maximale Abdeckung.
 
 Bestückt `anime_available_languages` mit echten Sprach-/Dub-Daten aus der
@@ -215,6 +228,8 @@ def resolve(session, token, a: dict) -> tuple[list[str] | None, str]:
 
 
 def main():
+    if "--trotzdem" not in sys.argv:
+        sys.exit("crunchyroll-dub.py ist stillgelegt (siehe Kopf der Datei). Bewusst ausführen: --trotzdem")
     print("→ Lade Anime + Crunchyroll-Links …")
     anime = load_anime()
     with_id = sum(1 for a in anime if a["series_id"])
