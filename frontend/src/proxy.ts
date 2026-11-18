@@ -149,6 +149,13 @@ export function proxy(req: NextRequest): NextResponse {
     res.headers.set('Content-Security-Policy', buildContentSecurityPolicy(secure))
   }
 
+  // Staging-Instanz (Unraid, nur LAN/Tailnet): jede Antwort als noindex markieren —
+  // zweite Ebene neben robots.txt, falls die Instanz doch einmal erreichbar wird.
+  // In Produktion ist NEXT_PUBLIC_STAGING nicht gesetzt, der Zweig wirkungslos.
+  if (process.env.NEXT_PUBLIC_STAGING === '1') {
+    res.headers.set('X-Robots-Tag', 'noindex, nofollow')
+  }
+
   // HSTS ausschließlich über die öffentliche HTTPS-Domain.
   if (secure) {
     res.headers.set(

@@ -2,6 +2,12 @@ import type { MetadataRoute } from 'next'
 import { SITE_URL } from '@/lib/site'
 
 export default function robots(): MetadataRoute.Robots {
+  // Staging-Instanz (Unraid): alles sperren. Sie rendert mit der Produktions-URL,
+  // damit Canonicals und Sitemaps wie live aussehen — umso wichtiger, dass kein
+  // Crawler sie je indexiert. In Produktion ist die Variable nicht gesetzt.
+  if (process.env.NEXT_PUBLIC_STAGING === '1') {
+    return { rules: [{ userAgent: '*', disallow: '/' }] }
+  }
   return {
     // `/legal/admin` statt `/admin`: das Payload-Panel liegt seit dem Verstecken
     // unter /legal/admin (die alte Regel lief ins Leere). Beides wird für
