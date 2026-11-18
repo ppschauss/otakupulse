@@ -56,9 +56,12 @@ export RCLONE_CONFIG=/srv/sites/otakupulse/app-src/rclone.conf
 # Und nach einem Ausfall rotiert die alte Logik auf die neuesten N IM BUCKET (also
 # alte Stände) und lädt dann die verpassten Tage obendrauf — über die Grenze.
 #
-# Jetzt: Liste der neuesten N lokalen Dumps bilden, im Bucket alles löschen, was
-# nicht darauf steht (VOR dem Upload, damit Platz ist), dann nur diese Liste
-# hochladen. Höchststand = N Dumps je Präfix, auch beim Nachholen nach Ausfällen.
+# Jetzt: Liste der neuesten N lokalen Dumps bilden, ERST diese hochladen, und nur
+# wenn das gelungen ist, im Bucket alles entfernen, was nicht darauf steht.
+# Reihenfolge ist Pflicht: am 18.11.2026 lief es andersherum (erst löschen, damit
+# Platz ist) — der Bucket war danach leer, und der Upload scheiterte trotzdem, weil
+# die Speichergrenze fürs ganze B2-Konto gilt und nicht für den Bucket. Scheitert
+# der Upload, bleibt der Bucket jetzt, wie er war: veraltet ist besser als leer.
 # Hard-Delete, weil bei B2 auch versteckte Altversionen auf die Grenze zählen.
 offsite_sync() {
   local keep="$DEST/.offsite-keep"
@@ -66,14 +69,14 @@ offsite_sync() {
   for p in otakupulse umami; do
     ls -1t "$DEST"/$p-*.sql.gz 2>/dev/null | head -n "$KEEP_OFFSITE" | xargs -r -n1 basename >> "$keep"
   done
+  "$RCLONE" copy "$DEST" offsite:otakupulse-backups --files-from "$keep" --transfers 2 2>>"$LOG" || return 1
   local weg=0
   while read -r f; do
     if ! grep -qxF "$f" "$keep"; then
       "$RCLONE" deletefile --b2-hard-delete "offsite:otakupulse-backups/$f" 2>>"$LOG" && weg=$((weg + 1))
     fi
   done < <("$RCLONE" lsf offsite:otakupulse-backups --include "*.sql.gz" 2>/dev/null)
-  log "Offsite: $weg veraltete Dumps entfernt, Soll = neueste $KEEP_OFFSITE je Präfix"
-  "$RCLONE" copy "$DEST" offsite:otakupulse-backups --files-from "$keep" --transfers 2 2>>"$LOG"
+  log "Offsite: $weg veraltete Dumps entfernt, Stand = neueste $KEEP_OFFSITE je Präfix"
 }
 if [ -x "$RCLONE" ] && "$RCLONE" listremotes 2>/dev/null | grep -q '^offsite:'; then
   if offsite_sync; then
