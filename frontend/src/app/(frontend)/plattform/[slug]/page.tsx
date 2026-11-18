@@ -11,7 +11,7 @@ import { AdBanner } from '@/components/AdSlot'
 import { JsonLd } from '@/components/JsonLd'
 import { breadcrumbLd, pageMeta } from '@/lib/seo'
 import { providerBySlug } from '@/lib/streaming'
-import { platformListCounts, MIN_LIST_SIZE, staticFilter } from '@/lib/platformLists'
+import { dubFallbackProviders, platformListCounts, MIN_LIST_SIZE, staticFilter } from '@/lib/platformLists'
 import { blockedGenreSlugList, publicAnimeFilter, publicGenreFilter } from '@/lib/adult'
 
 export const dynamic = 'force-dynamic'
@@ -70,6 +70,9 @@ export default async function PlatformDetail({
   let topGenres: { name: string; slug: string; n: number }[] = []
   let lists: { key: string; label: string; n: number }[] = []
   let n = { dub: 0, free: 0, fresh: 0 }
+  // Anbieter ohne Tonspur-Daten bei JustWatch (Netflix): dort ist `n.dub` nicht
+  // „Katalog weist deutsche Tonspur aus", sondern „deutsche Synchro bekannt".
+  let dubFallback = false
   if (isFirst) {
     const pool = (payload.db as any).pool
     const [dub, genres] = await Promise.all([
@@ -96,10 +99,12 @@ export default async function PlatformDetail({
     topGenres = genres.rows
 
     // Listen-Chips: nur Kombinationen, die indexwürdig sind (≥ MIN_LIST_SIZE).
-    const [counts, allGenres] = await Promise.all([
+    const [counts, allGenres, fallback] = await Promise.all([
       platformListCounts(payload),
       payload.find({ collection: 'genres', where: publicGenreFilter, limit: 100, depth: 0, select: { slug: true, name: true } as any }),
+      dubFallbackProviders(payload),
     ])
+    dubFallback = fallback.includes(provider.slug)
     const genreName = new Map((allGenres.docs as any[]).map((g) => [g.slug, g.name]))
     n = {
       dub: counts.get(`${provider.slug}/deutscher-dub`) ?? 0,
@@ -121,13 +126,22 @@ export default async function PlatformDetail({
   const faq = [
     {
       q: `Welche Anime kann ich auf ${provider.name} streamen?`,
-      a: `In unserer Datenbank sind aktuell ${totalStr} Anime gelistet, die auf ${provider.name} verfügbar sind — von laufenden Simulcasts bis zu Klassikern.${topGenres.length ? ` Besonders stark vertreten sind die Genres ${topGenres.slice(0, 4).map((g) => g.name).join(', ')}.` : ''} Das Angebot kann sich je nach Region und Lizenzlaufzeit unterscheiden.`,
+      // Zählweise offenlegen: wir zählen Einträge, nicht Franchises — sonst ist die
+      // Zahl nicht mit Quellen vergleichbar, die Serien zählen.
+      a: `In unserer Datenbank sind aktuell ${totalStr} Einträge gelistet, die auf ${provider.name} verfügbar sind — von laufenden Simulcasts bis zu Klassikern. Staffeln, Filme, OVAs und Specials zählen dabei einzeln.${topGenres.length ? ` Besonders stark vertreten sind die Genres ${topGenres.slice(0, 4).map((g) => g.name).join(', ')}.` : ''} Das Angebot kann sich je nach Region und Lizenzlaufzeit unterscheiden.`,
     },
     {
       q: `Gibt es die Anime auf ${provider.name} mit deutschem Dub?`,
-      a: deDub > 0
-        ? `Bei mindestens ${deDub.toLocaleString('de-DE')} dieser Titel ist eine deutsche Synchronfassung bekannt. Ob ein konkreter Titel deutschen Dub oder nur Untertitel bietet, steht auf der jeweiligen Anime-Detailseite — die genaue Sprachfassung prüfst du am besten direkt bei ${provider.name}.`
-        : `Ob ein Titel deutschen Dub oder Sub hat, hängt vom jeweiligen Anime ab. Auf der Detailseite jedes Anime findest du die verfügbaren Sprachfassungen — die genaue Fassung prüfst du am besten direkt bei ${provider.name}.`,
+      // Zwei verschiedene Aussagen, die vorher beide „Dub" hießen und sich dadurch
+      // widersprachen: anbieter-genaue Tonspur (`n.dub`, aus den Angeboten) und
+      // „hat überhaupt eine deutsche Synchro" (`deDub`, Titel-Flag aus allen Quellen).
+      a: n.dub > 0 && dubFallback
+        ? `Für ${n.dub.toLocaleString('de-DE')} der dort verfügbaren Titel ist eine deutsche Synchronfassung bekannt — die Liste dazu: „Anime mit deutschem Dub auf ${provider.name}". ${provider.name} weist die Tonspuren im eigenen Katalog nicht aus; welche Fassung ein konkreter Titel hat, steht auf seiner Detailseite.`
+        : n.dub > 0
+        ? `Bei ${n.dub.toLocaleString('de-DE')} dieser Titel weist der Katalog von ${provider.name} eine deutsche Tonspur aus — die Liste dazu: „Anime mit deutschem Dub auf ${provider.name}".${deDub > n.dub ? ` Insgesamt haben ${deDub.toLocaleString('de-DE')} der dort verfügbaren Anime überhaupt eine deutsche Synchronfassung; bei der Differenz ist die Tonspur beim Anbieter nicht ausgewiesen.` : ''}`
+        : deDub > 0
+          ? `${provider.name} weist die Tonspuren im eigenen Katalog nicht aus. Von den dort verfügbaren Titeln haben ${deDub.toLocaleString('de-DE')} eine bekannte deutsche Synchronfassung — welche Fassung ${provider.name} anbietet, steht auf der jeweiligen Anime-Detailseite.`
+          : `Ob ein Titel deutschen Dub oder Sub hat, hängt vom jeweiligen Anime ab. Auf der Detailseite jedes Anime findest du die verfügbaren Sprachfassungen — die genaue Fassung prüfst du am besten direkt bei ${provider.name}.`,
     },
     {
       q: `Kann man Anime auf ${provider.name} kostenlos streamen?`,
@@ -190,8 +204,8 @@ export default async function PlatformDetail({
       </div>
 
       <p className="mt-3 max-w-3xl leading-relaxed text-zinc-300">
-        {provider.blurb ? `${provider.blurb} ` : ''}Hier findest du alle {totalStr} Titel aus unserer Datenbank, die bei{' '}
-        {provider.name} verfügbar sind — sortier- und durchsuchbar. Tipp: Über die{' '}
+        {provider.blurb ? `${provider.blurb} ` : ''}Hier findest du alle {totalStr} Einträge aus unserer Datenbank, die bei{' '}
+        {provider.name} verfügbar sind — Staffeln, Filme und Specials einzeln gezählt, sortier- und durchsuchbar. Tipp: Über die{' '}
         <Link href="/suche" className="text-accent hover:underline">
           Suche
         </Link>{' '}
@@ -202,12 +216,15 @@ export default async function PlatformDetail({
       {isFirst ? (
         <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
-            <dt className="text-xs text-zinc-500">Titel verfügbar</dt>
+            <dt className="text-xs text-zinc-500">Einträge verfügbar</dt>
             <dd className="text-lg font-bold text-white">{totalStr}</dd>
           </div>
           <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
-            <dt className="text-xs text-zinc-500">davon mit dt. Dub</dt>
-            <dd className="text-lg font-bold text-white">{deDub > 0 ? deDub.toLocaleString('de-DE') : '–'}</dd>
+            <dt className="text-xs text-zinc-500">{dubFallback ? 'mit bekanntem dt. Dub' : 'mit dt. Tonspur im Katalog'}</dt>
+            <dd className="text-lg font-bold text-white">{n.dub > 0 ? n.dub.toLocaleString('de-DE') : '–'}</dd>
+            {!dubFallback && deDub > n.dub ? (
+              <dd className="mt-0.5 text-xs text-zinc-500">{deDub.toLocaleString('de-DE')} mit bekanntem dt. Dub</dd>
+            ) : null}
           </div>
           <div className="rounded-xl border border-white/10 bg-zinc-900/40 p-3">
             <dt className="text-xs text-zinc-500">Top-Genre</dt>

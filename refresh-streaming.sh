@@ -16,3 +16,10 @@ BATCH=150
 cd "$F" || exit 1
 echo "===== $(date) --stale $BATCH =====" >> "$LOG"
 python3 -u src/scripts/justwatch-streaming.py --stale "$BATCH" >> "$LOG" 2>&1
+
+# Selbstprüfung der Angebote (C1-C6, rein SQL): die Folgenzahl beim Anbieter muss
+# zur Folgenzahl des Eintrags passen, sonst zeigt das Mapping auf einen anderen
+# Titel. Nur ins Log — der Cron soll nicht an Restbefunden hängen; `|| true`, weil
+# das Skript bei error-Befunden bewusst mit 1 endet (CI-Gate).
+echo "--- offer-audit ---" >> "$LOG"
+python3 -u src/scripts/offer-audit.py >> "$LOG" 2>&1 || true

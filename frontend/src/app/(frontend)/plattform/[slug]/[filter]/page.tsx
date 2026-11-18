@@ -8,7 +8,7 @@ import { Pagination } from '@/components/Pagination'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { pageMeta } from '@/lib/seo'
 import { DE_PROVIDER_SLUGS, providerBySlug } from '@/lib/streaming'
-import { MIN_LIST_SIZE, platformListPage, platformListStats, resolveListFilter, STATIC_FILTER_KEYS, staticFilter } from '@/lib/platformLists'
+import { dubFallbackProviders, listIntro, MIN_LIST_SIZE, platformListPage, platformListStats, resolveListFilter, STATIC_FILTER_KEYS, staticFilter } from '@/lib/platformLists'
 import { Faq } from '@/components/Faq'
 import { joinNames } from '@/lib/anime'
 import { formatDateDe } from '@/lib/anime'
@@ -35,11 +35,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // entfernt; ungültige Anbieter/Filter liefern so einen echten 404.
   if (!ctx) notFound()
   const { payload, provider, f } = ctx
-  const { total } = await platformListPage(payload, provider.slug, f, 1, 1)
+  const [{ total }, fallback] = await Promise.all([
+    platformListPage(payload, provider.slug, f, 1, 1),
+    dubFallbackProviders(payload),
+  ])
   const month = new Date().toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'Europe/Berlin' })
   return pageMeta({
     title: `${f.title(provider.name)} — ${total} Titel (${month}) | OtakuPulse`,
-    description: f.intro(provider.name, total).slice(0, 160),
+    description: listIntro(f, provider.name, total, fallback.includes(provider.slug)).slice(0, 160),
     path: `/plattform/${provider.slug}/${f.key}`,
     image: provider.logo,
     // Unter MIN_LIST_SIZE ist die Liste dünn → noindex (und nicht in der Sitemap).
@@ -60,10 +63,14 @@ export default async function PlatformListPage({
   if (!ctx) notFound()
   const { payload, provider, f } = ctx
   const page = Math.max(1, Number(sp.page) || 1)
-  const [{ docs, total }, stats] = await Promise.all([
+  const [{ docs, total }, stats, fallback] = await Promise.all([
     platformListPage(payload, provider.slug, f, page, PER_PAGE),
     platformListStats(payload, provider.slug, f),
+    dubFallbackProviders(payload),
   ])
+  // Anbieter ohne Tonspur-Daten (Netflix): die Dub-Liste beruht auf dem Titel-Flag,
+  // nicht auf dem Anbieter-Katalog — das muss die Seite sagen.
+  const dubFallback = fallback.includes(provider.slug)
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
   const siblings = STATIC_FILTER_KEYS.filter((k) => k !== f.key)
   const stand = formatDateDe(stats.checkedAt)
@@ -81,7 +88,9 @@ export default async function PlatformListPage({
     },
     {
       q: `Wie viele dieser Anime laufen auf ${provider.name} mit deutscher Synchro?`,
-      a: stats.dub ? `${stats.dub} von ${total} Titeln sind auf ${provider.name} mit deutscher Synchronfassung (Ger Dub) verfügbar${stats.sub ? `, ${stats.sub} mit deutschen Untertiteln` : ''}.` : `Für diese Auswahl ist auf ${provider.name} aktuell keine deutsche Synchronfassung gelistet – die Titel laufen im Original mit Untertiteln.`,
+      a: dubFallback
+        ? `Für ${stats.dub} von ${total} Titeln ist eine deutsche Synchronfassung bekannt. ${provider.name} weist die Tonspuren im eigenen Katalog nicht aus, deshalb stammt die Angabe aus Anbieter-APIs und Wikipedia und nicht von ${provider.name} selbst.`
+        : stats.dub ? `${stats.dub} von ${total} Titeln sind auf ${provider.name} mit deutscher Synchronfassung (Ger Dub) verfügbar${stats.sub ? `, ${stats.sub} mit deutschen Untertiteln` : ''}.` : `Für diese Auswahl ist auf ${provider.name} aktuell keine deutsche Synchronfassung gelistet – die Titel laufen im Original mit Untertiteln.`,
     },
     {
       q: `Kann man diese Anime auf ${provider.name} kostenlos streamen?`,
@@ -108,7 +117,7 @@ export default async function PlatformListPage({
       </p>
       <h1 className="mt-1 text-3xl font-extrabold text-white">{f.title(provider.name)}</h1>
       <p className="mt-3 max-w-3xl leading-relaxed text-zinc-300">
-        {f.intro(provider.name, total)}
+        {listIntro(f, provider.name, total, dubFallback)}
         {facts.length ? ` Davon ${joinNames(facts)}.` : ''}
         {stand ? ` Stand: ${stand}.` : ''}
       </p>
@@ -120,6 +129,14 @@ export default async function PlatformListPage({
         >
           Alle auf {provider.name}
         </Link>
+        {f.key === 'deutscher-dub' ? (
+          <Link
+            href="/anime-mit-deutschem-dub"
+            className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-zinc-200 transition hover:border-accent hover:text-white"
+          >
+            Alle Anbieter im Ger-Dub-Vergleich
+          </Link>
+        ) : null}
         {siblings.map((k) => (
           <Link
             key={k}

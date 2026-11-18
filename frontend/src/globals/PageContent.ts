@@ -15,6 +15,9 @@ export const PAGE_KEYS = [
   { label: 'News-Übersicht', value: 'news' },
   { label: 'Season-Übersicht', value: 'season' },
   { label: 'Top-Anime', value: 'top-anime' },
+  { label: 'Ger-Dub-Übersicht', value: 'ger-dub' },
+  { label: 'Telegram-Landingpage', value: 'anime-telegram' },
+  { label: 'Discord-Landingpage', value: 'anime-discord' },
 ] as const
 
 export const PageContent: GlobalConfig = {

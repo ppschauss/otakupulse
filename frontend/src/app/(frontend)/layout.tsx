@@ -43,7 +43,12 @@ export default async function FrontendLayout({ children }: { children: React.Rea
   // Footer-Streaming-Listen (gecacht, 10 min) — bei DB-Problemen lieber ohne als 500.
   let footerLists: { href: string; label: string }[] = []
   try {
-    footerLists = topListLinks(await cachedPlatformListCounts(await getPayload({ config })))
+    // Die anbieterübergreifende Ger-Dub-Übersicht zuerst: sie ist der Einstieg,
+    // die Einzellisten sind die Vertiefung.
+    footerLists = [
+      { href: '/anime-mit-deutschem-dub', label: 'Anime mit deutschem Dub — alle Anbieter' },
+      ...topListLinks(await cachedPlatformListCounts(await getPayload({ config }))),
+    ]
   } catch (err) {
     console.warn('[layout] Streaming-Listen für den Footer nicht ladbar:', (err as Error)?.message || err)
   }

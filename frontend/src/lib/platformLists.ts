@@ -7,7 +7,7 @@
  * noindex und nicht in der Sitemap (sonst züchten wir wieder Doorway-Pages).
  * Datenbasis ist ausschließlich `anime_streaming_offers` (anbieter-genau).
  */
-import { DE_PROVIDER_SLUGS, providerBySlug } from './streaming'
+import { DE_PROVIDER_SLUGS, PROVIDER_SLUGS, providerBySlug } from './streaming'
 
 export const MIN_LIST_SIZE = 10
 const NEW_DAYS = 30
@@ -62,6 +62,29 @@ const STATIC: ListFilter[] = [
   },
 ]
 
+/**
+ * Hinweis für Dub-Listen von Anbietern ohne Tonspur-Daten: dort ist die Liste
+ * „bei X verfügbar UND deutsche Synchro bekannt" — nicht „X weist deutsche
+ * Tonspur aus". Der Unterschied gehört auf die Seite, nicht in eine Fußnote.
+ */
+export const dubFallbackNote = (providerName: string) =>
+  `${providerName} weist im eigenen Katalog keine Tonspuren aus. Diese Liste zeigt deshalb Titel, die bei ${providerName} verfügbar sind und für die eine deutsche Synchronfassung bekannt ist (aus Anbieter-APIs und Wikipedia). Ob ${providerName} die deutsche Fassung selbst anbietet, prüfst du am besten direkt dort.`
+
+/**
+ * Intro der Liste. Bei Dub-Fallback-Anbietern darf dort NICHT „aus dem aktuellen
+ * Katalog des Anbieters" stehen — die Datenbasis ist dann das Titel-Flag.
+ */
+export function listIntro(f: ListFilter, providerName: string, total: number, dubFallback: boolean) {
+  if (dubFallback && f.key === 'deutscher-dub') {
+    return `${total} Anime bei ${providerName} haben eine bekannte deutsche Synchronfassung. ${dubFallbackNote(providerName)}`
+  }
+  return f.intro(providerName, total)
+}
+
+/** SQL-Literalliste aus Anbieter-Slugs — nur bekannte Slugs, nie Fremdeingaben. */
+const providerSqlList = (slugs: string[]) =>
+  slugs.filter((s) => PROVIDER_SLUGS.includes(s)).map((s) => `'${s}'`).join(',')
+
 export const staticFilter = (key: string) => STATIC.find((f) => f.key === key)
 export const STATIC_FILTER_KEYS = STATIC.map((f) => f.key)
 
@@ -75,11 +98,26 @@ const genreFilter = (g: { slug: string; name: string }): ListFilter => ({
   intro: (p, n) => `${n} ${g.name}-Anime laufen aktuell auf ${p} — sortiert nach Beliebtheit.`,
 })
 
-/** SQL-Fragment über Aliase `a` (anime) und `o` (anime_streaming_offers); $1 ist der Provider. */
-export function filterCondition(f: ListFilter): { sql: string; params: any[] } {
+/**
+ * SQL-Fragment über Aliase `a` (anime) und `o` (anime_streaming_offers); $1 ist der Provider.
+ *
+ * `dubFallback` sind Anbieter, die bei JustWatch gar keine Tonspuren ausweisen
+ * (Netflix): für die zählt die Dub-Liste ersatzweise das Titel-Flag `de-dub`,
+ * sonst bliebe die größte Dub-Liste des Marktes leer. Alle anderen Anbieter
+ * bleiben anbieter-genau.
+ */
+export function filterCondition(f: ListFilter, dubFallback: string[] = []): { sql: string; params: any[] } {
   switch (f.kind === 'genre' ? 'genre' : f.key) {
-    case 'deutscher-dub':
-      return { sql: "(',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%'", params: [] }
+    case 'deutscher-dub': {
+      const audio = "(',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%'"
+      const fb = providerSqlList(dubFallback)
+      return {
+        sql: fb
+          ? `(${audio} OR (o.provider IN (${fb}) AND EXISTS (SELECT 1 FROM anime_available_languages l WHERE l.parent_id = a.id AND l.value = 'de-dub')))`
+          : `(${audio})`,
+        params: [],
+      }
+    }
     case 'deutscher-sub':
       return { sql: "(',' || COALESCE(o.subs,'') || ',') LIKE '%,de,%'", params: [] }
     case 'kostenlos':
@@ -105,14 +143,38 @@ export async function resolveListFilter(payload: any, key: string): Promise<List
   return docs.length ? genreFilter(docs[0] as any) : null
 }
 
+const COUNTS_TTL_MS = 10 * 60_000
+
 const pool = (payload: any) => (payload.db as any).pool
+
+let fallbackCache: { at: number; value: string[] } | null = null
+
+/**
+ * Anbieter, deren Angebote KEINE einzige Tonspur tragen — JustWatch liefert für
+ * sie keine `audioLanguages` (Stand 11/2026: Netflix). Ohne diese Liste zeigt
+ * `/plattform/netflix/deutscher-dub` 0 Titel, obwohl ~200 der dort verfügbaren
+ * Anime eine deutsche Synchronfassung haben.
+ */
+export async function dubFallbackProviders(payload: any): Promise<string[]> {
+  if (fallbackCache && Date.now() - fallbackCache.at < COUNTS_TTL_MS) return fallbackCache.value
+  const res = await pool(payload).query(
+    `SELECT provider FROM anime_streaming_offers
+      WHERE monetization IN ('flatrate','ads','free')
+      GROUP BY provider
+     HAVING count(*) FILTER (WHERE audio IS NOT NULL AND audio <> '') = 0`,
+  )
+  const value = res.rows.map((r: any) => r.provider as string)
+  fallbackCache = { at: Date.now(), value }
+  return value
+}
 
 /** Titelzahl je `${provider}/${filter}` für DE-Anbieter — 6 gruppierte Abfragen statt Anbieter×Filter. */
 export async function platformListCounts(payload: any): Promise<Map<string, number>> {
   const out = new Map<string, number>()
   const p = pool(payload)
+  const fb = await dubFallbackProviders(payload)
   for (const f of STATIC) {
-    const c = filterCondition(f)
+    const c = filterCondition(f, fb)
     const res = await p.query(
       `SELECT o.provider, count(DISTINCT a.id)::int AS n
        FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
@@ -133,7 +195,7 @@ export async function platformListCounts(payload: any): Promise<Map<string, numb
 
 /** Eine Seite der Liste, nach Popularität. Hentai bleibt draußen (wie in ähnlichen Listen). */
 export async function platformListPage(payload: any, providerSlug: string, f: ListFilter, page: number, perPage: number) {
-  const c = filterCondition(f)
+  const c = filterCondition(f, await dubFallbackProviders(payload))
   const p = pool(payload)
   const base = `FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
                 WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND ${c.sql} AND a.is_hentai IS NOT TRUE`
@@ -160,14 +222,16 @@ export type ListStats = { total: number; dub: number; sub: number; free: number;
  * Zahlen statt Prosa: das ist, was KI-Antworten und Snippets zitieren.
  */
 export async function platformListStats(payload: any, providerSlug: string, f: ListFilter): Promise<ListStats> {
-  const c = filterCondition(f)
+  const fb = await dubFallbackProviders(payload)
+  const c = filterCondition(f, fb)
+  const dubSql = filterCondition(staticFilter('deutscher-dub')!, fb).sql
   const p = pool(payload)
   const base = `FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
                 WHERE o.provider = $1 AND o.monetization IN ('flatrate','ads','free') AND ${c.sql} AND a.is_hentai IS NOT TRUE`
   const [agg, top] = await Promise.all([
     p.query(
       `SELECT count(DISTINCT a.id)::int AS total,
-              count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.audio,'') || ',') LIKE '%,de,%')::int AS dub,
+              count(DISTINCT a.id) FILTER (WHERE ${dubSql})::int AS dub,
               count(DISTINCT a.id) FILTER (WHERE (',' || COALESCE(o.subs,'') || ',') LIKE '%,de,%')::int AS sub,
               count(DISTINCT a.id) FILTER (WHERE o.monetization IN ('ads','free'))::int AS free,
               count(DISTINCT a.id) FILTER (WHERE o.first_seen_at >= now() - interval '${NEW_DAYS} days')::int AS fresh,
@@ -193,6 +257,63 @@ export async function platformListStats(payload: any, providerSlug: string, f: L
   }
 }
 
+export type DubProviderRow = { slug: string; name: string; total: number; dub: number; fallback: boolean }
+
+/**
+ * Anbieter-Vergleich für die Ger-Dub-Übersicht: pro Anbieter Katalogbreite und
+ * Titel mit deutscher Synchro, dazu die eindeutige Gesamtzahl (ein Titel bei
+ * drei Anbietern zählt einmal) und der letzte Abgleich.
+ *
+ * Diese Zahlen sind der Grund, warum die Seite existiert: die SERP zu „Anime mit
+ * deutschem Dub" gehört Prosa-Artikeln ohne Datenbank.
+ */
+export async function dubOverview(payload: any): Promise<{
+  rows: DubProviderRow[]
+  unique: number
+  checkedAt: string | null
+}> {
+  const fb = await dubFallbackProviders(payload)
+  const dubSql = filterCondition(staticFilter('deutscher-dub')!, fb).sql
+  const base = `FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
+                WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE`
+  const p = pool(payload)
+  const [per, uniq] = await Promise.all([
+    p.query(`SELECT o.provider,
+                    count(DISTINCT a.id)::int AS total,
+                    count(DISTINCT a.id) FILTER (WHERE ${dubSql})::int AS dub
+             ${base} GROUP BY o.provider`),
+    p.query(`SELECT count(DISTINCT a.id)::int AS n, max(o.last_seen_at) AS checked ${base} AND ${dubSql}`),
+  ])
+  const rows: DubProviderRow[] = per.rows
+    .filter((r: any) => DE_PROVIDER_SLUGS.includes(r.provider) && providerBySlug(r.provider))
+    .map((r: any) => ({
+      slug: r.provider,
+      name: providerBySlug(r.provider)!.name,
+      total: r.total,
+      dub: r.dub,
+      fallback: fb.includes(r.provider),
+    }))
+    .sort((a: DubProviderRow, b: DubProviderRow) => b.dub - a.dub)
+  const checked = uniq.rows[0]?.checked
+  return { rows, unique: uniq.rows[0]?.n ?? 0, checkedAt: checked ? new Date(checked).toISOString() : null }
+}
+
+/** Die beliebtesten Titel mit deutscher Synchro, anbieterübergreifend. */
+export async function topDubAnime(payload: any, limit: number): Promise<any[]> {
+  const fb = await dubFallbackProviders(payload)
+  const dubSql = filterCondition(staticFilter('deutscher-dub')!, fb).sql
+  const res = await pool(payload).query(
+    `SELECT a.id FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
+      WHERE o.monetization IN ('flatrate','ads','free') AND a.is_hentai IS NOT TRUE AND ${dubSql}
+      GROUP BY a.id ORDER BY max(a.popularity) DESC NULLS LAST, a.id LIMIT ${Number(limit) || 24}`,
+  )
+  const order: number[] = res.rows.map((r: any) => r.id)
+  if (!order.length) return []
+  const docs = await payload.find({ collection: 'anime', where: { id: { in: order } }, limit: order.length, depth: 0 })
+  const byId = new Map((docs.docs as any[]).map((d) => [d.id, d]))
+  return order.map((id) => byId.get(id)).filter(Boolean)
+}
+
 /** Alle indexwürdigen Listen-URLs (Sitemap + Hub-Chips). */
 export async function platformListPaths(payload: any): Promise<string[]> {
   const counts = await platformListCounts(payload)
@@ -209,7 +330,6 @@ export async function platformListPaths(payload: any): Promise<string[]> {
 // --- Interne Verlinkung: nur auf indexierbare Listen (≥ MIN_LIST_SIZE) ------------
 
 let countsCache: { at: number; value: Map<string, number> } | null = null
-const COUNTS_TTL_MS = 10 * 60_000
 
 /** platformListCounts mit 10-Minuten-Cache — wird auf jeder Anime-/Genre-Seite und im Footer gebraucht. */
 export async function cachedPlatformListCounts(payload: any): Promise<Map<string, number>> {

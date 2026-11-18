@@ -36,7 +36,11 @@ function langPhrase(g: Group): string {
   if (dub) return 'mit deutscher Synchro'
   if (sub) return 'im Original mit deutschen Untertiteln'
   const en = g.offers.some((o) => o.subs.includes('en') || o.audio.includes('en'))
-  return en ? 'im Original mit englischen Untertiteln' : 'im japanischen Original'
+  if (en) return 'im Original mit englischen Untertiteln'
+  // Gar keine Sprachangabe (z. B. Netflix): „im japanischen Original" wäre eine
+  // Behauptung, die die Daten nicht hergeben.
+  if (!g.offers.some((o) => o.audio.length || o.subs.length)) return 'ohne Angabe zur Sprachfassung'
+  return 'im japanischen Original'
 }
 
 /** „im Abo" / „kostenlos (mit Werbung)" / „kostenlos" */
@@ -185,12 +189,20 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
   const studio = studioName(anime)
   const serie = isMovie ? 'den Film' : 'die Serie'
   const anime_ = isMovie ? 'den Film' : 'den Anime'
-  // Sprache: aus Offers (je Anbieter) oder im Legacy-Fall aus den globalen Flags.
-  const dubAt = s.legacy ? (s.hasDeDub ? names : []) : groups.filter(hasDe).map((g) => g.provider.name)
-  const subAt = s.legacy ? (s.hasDeSub ? names : []) : groups.filter(hasDeSub).map((g) => g.provider.name)
+  // Sprache NUR aus den Angeboten: das Titel-Flag „de-dub" belegt, dass eine
+  // deutsche Synchro existiert — nicht, dass dieser Anbieter sie ausliefert.
+  // Früher wurden im Legacy-Fall alle Anbieter als Dub-Quelle benannt.
+  const dubAt = groups.filter(hasDe).map((g) => g.provider.name)
+  const subAt = groups.filter(hasDeSub).map((g) => g.provider.name)
   const freeAt = groups.filter(isFree).map((g) => g.provider.name)
   const stores = purchaseOffersOf(anime)
-  const sprache = dubAt.length ? 'Deutsch' : subAt.length ? 'Japanisch mit deutschen Untertiteln' : ''
+  const sprache = dubAt.length
+    ? 'Deutsch'
+    : s.deDubKnownOnly
+      ? 'bekannt'
+      : subAt.length
+        ? 'Japanisch mit deutschen Untertiteln'
+        : ''
 
   // --- Überschrift + Intro (Vorlage)
   const heading = `Wer streamt ${title}? Alle Anbieter & Optionen`
@@ -209,7 +221,16 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
   // --- Übersicht (Vorlage: Anbieter, Audio-Spuren, Release-Termin) + Zusatzzeilen aus den Daten
   const overviewHeading = `Anbieter-Übersicht für ${title}`
   const overview: OverviewRow[] = [{ label: 'Streaming-Anbieter', value: plain }]
-  if (sprache) overview.push({ label: 'Verfügbare Audio-Spuren', value: dubAt.length ? 'Deutsch & Japanisch (OmU)' : 'Japanisch (OmU) mit deutschen Untertiteln' })
+  if (sprache) {
+    overview.push({
+      label: 'Verfügbare Audio-Spuren',
+      value: dubAt.length
+        ? 'Deutsch & Japanisch (OmU)'
+        : sprache === 'bekannt'
+          ? 'deutsche Synchro bekannt — beim Anbieter nicht ausgewiesen'
+          : 'Japanisch (OmU) mit deutschen Untertiteln',
+    })
+  }
   if (release) overview.push({ label: 'Release-Termin', value: release })
   if (!s.legacy) {
     const aboAt = groups.filter((g) => !isFree(g)).map((g) => g.provider.name)
@@ -262,6 +283,8 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
         ? `Für alle, die **${title} auf Deutsch streamen** wollen: Die deutsche Synchronfassung (**Ger Dub**) läuft bei ${b(dubAt)}.${
             subOnly.length ? ` Wer den japanischen Originalton bevorzugt, findet **${title} mit deutschen Untertiteln** (Ger Sub) bei ${b(subOnly)}.` : ''
           } So kannst du frei entscheiden, ob du ${title} synchronisiert oder im Original mit Untertiteln schaust.`
+        : s.deDubKnownOnly
+          ? `Von **${title}** existiert eine deutsche Synchronfassung (**Ger Dub**) — ${bold} ${many ? 'weisen' : 'weist'} die Tonspuren im eigenen Katalog allerdings nicht aus, deshalb können wir hier nicht zusagen, dass du dort auf Deutsch umschalten kannst. Im Player siehst du die verfügbaren Spuren direkt; sobald der Anbieter sie veröffentlicht, steht es hier.`
         : subAt.length
           ? `Eine deutsche Synchronfassung von **${title}** gibt es im Stream bislang nicht. Bei ${b(subAt)} läuft der Anime im japanischen Originalton mit **deutschen Untertiteln (Ger Sub)** – für viele Fans ohnehin die erste Wahl, weil die Original-Sprecher erhalten bleiben. Sobald ein Anbieter einen **Ger Dub** ergänzt, tragen wir das hier ein.`
           : `Welche Sprachfassungen für **${title}** verfügbar sind, prüfst du am besten direkt bei ${bold} – die meisten Dienste bieten wahlweise Ger Dub oder den japanischen Originalton mit deutschen Untertiteln.`,
@@ -346,6 +369,13 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
     faq.push({
       q: `Wer streamt ${title} auf Deutsch?`,
       a: `Die Fassung mit der Tonspur Deutsch steht bei ${joinNames(dubAt)} zum Abruf bereit. Sollte die Synchronisation noch nicht vollständig abgeschlossen sein, werden neue Folgen meist in regelmäßigen Abständen nachgereicht.${subAt.filter((n) => !dubAt.includes(n)).length ? ` Nur mit deutschen Untertiteln läuft ${title} bei ${joinNames(subAt.filter((n) => !dubAt.includes(n)))}.` : ''}`,
+    })
+  } else if (s.deDubKnownOnly) {
+    // Dritter Zustand: Synchro existiert, Anbieter weist sie nicht aus. Die Frage
+    // bleibt beantwortet — nur ohne Zusage, die die Daten nicht decken.
+    faq.push({
+      q: `Wer streamt ${title} auf Deutsch?`,
+      a: `Von ${title} existiert eine deutsche Synchronfassung. ${plain} ${many ? 'weisen' : 'weist'} die Tonspuren im eigenen Katalog allerdings nicht aus, deshalb können wir nicht zusagen, dass die deutsche Fassung dort abrufbar ist — welche Spuren bereitstehen, zeigt der Player des Anbieters.`,
     })
   } else if (subAt.length) {
     faq.push({

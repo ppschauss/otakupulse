@@ -387,6 +387,14 @@ export type StreamingSummary = {
   providerNames: string[]
   hasDeDub: boolean
   hasDeSub: boolean
+  /**
+   * „Deutsche Synchro ist bekannt, der Anbieter weist sie aber nicht aus."
+   * Dritter Zustand neben Ja und Nein: Legacy-Links ohne Sprachdaten und
+   * Kataloge wie Netflix, die bei JustWatch keine `audioLanguages` liefern.
+   * Ein ehrliches „Dub unklar" ist mehr wert als ein falsches Ja — der Nutzer
+   * kommt genau wegen dieser Frage.
+   */
+  deDubKnownOnly: boolean
   hasFree: boolean
   /** Mindestens ein Angebot ist jünger als 30 Tage. */
   isNew: boolean
@@ -401,8 +409,13 @@ export function streamingSummary(anime: any, now: Date = new Date()): StreamingS
   const views = streamingOffersOf(anime).filter((v) => isStreamingOffer(v.offer))
   const legacy = views.length > 0 && views.every((v) => v.offer.legacy)
   const langs: string[] = Array.isArray(anime?.availableLanguages) ? anime.availableLanguages : []
-  const hasDeDub = legacy ? langs.includes('de-dub') : views.some((v) => v.offer.audio.includes('de'))
+  const dubFromOffer = views.some((v) => v.offer.audio.includes('de'))
+  const hasDeDub = legacy ? langs.includes('de-dub') : dubFromOffer
   const hasDeSub = legacy ? langs.includes('de-sub') : views.some((v) => v.offer.subs.includes('de'))
+  // Mindestens ein Angebot ohne jede Sprachangabe → die Tonspur ist unbekannt,
+  // nicht abwesend.
+  const audioUnknown = views.some((v) => v.offer.legacy || v.offer.audio.length === 0)
+  const deDubKnownOnly = !dubFromOffer && audioUnknown && langs.includes('de-dub')
   const isNew = views.some((v) => {
     const t = v.offer.firstSeenAt ? Date.parse(v.offer.firstSeenAt) : NaN
     return Number.isFinite(t) && now.getTime() - t <= NEW_WINDOW_MS
@@ -412,6 +425,7 @@ export function streamingSummary(anime: any, now: Date = new Date()): StreamingS
     providerNames: groupOffersByProvider(views).map((g) => g.provider.name),
     hasDeDub,
     hasDeSub,
+    deDubKnownOnly,
     hasFree: views.some((v) => v.offer.monetization === 'ads' || v.offer.monetization === 'free'),
     isNew,
     checkedAt: anime?.streamingCheckedAt || null,

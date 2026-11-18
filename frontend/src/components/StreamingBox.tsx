@@ -31,7 +31,15 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
         <>
           <p className="mb-4 text-sm text-zinc-400">
             {title} läuft in Deutschland bei {joinNames(groups.map((g) => g.provider.name))}
-            {s.legacy ? '' : s.hasDeDub ? ' — mit deutscher Synchro' : s.hasDeSub ? ' — im Original mit deutschen Untertiteln' : ''}
+            {s.legacy
+              ? ''
+              : s.hasDeDub
+                ? ' — mit deutscher Synchro'
+                : s.deDubKnownOnly
+                  ? ' — eine deutsche Synchro ist bekannt, der Anbieter weist die Tonspur nicht aus'
+                  : s.hasDeSub
+                    ? ' — im Original mit deutschen Untertiteln'
+                    : ''}
             {s.hasFree ? ', teilweise kostenlos' : ''}.{stand ? ` Stand: ${stand}.` : ''}
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -65,6 +73,7 @@ export function StreamingBox({ anime, title }: { anime: any; title: string }) {
                 ) : (
                   <ul className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
                     {langBadges(offers)}
+                    {noLangData(offers) ? <li className="text-zinc-500">keine Angabe zur Sprachfassung</li> : null}
                     {offers.map((o) =>
                       o.monetization ? (
                         <li
@@ -129,6 +138,9 @@ function scope(o: StreamingOffer): string {
   if (o.episodes) parts.push(`${o.episodes} Folgen`)
   return parts.join(' · ')
 }
+
+// Anbieter liefert gar keine Sprachdaten (Netflix) — ehrlicher Hinweis statt Leerstelle.
+const noLangData = (offers: StreamingOffer[]) => !offers.some((o) => o.audio.length || o.subs.length)
 
 // Sprach-Badges über alle Angebote des Anbieters vereinigt; Dub hervorgehoben.
 function langBadges(offers: StreamingOffer[]) {

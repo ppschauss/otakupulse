@@ -106,7 +106,10 @@ describe('streamingGuide (Vorlagen-Wortlaut + Datenzusätze)', () => {
     expect(g.faq[5].a).toContain('Bekanntes Enddatum: Amazon Prime Video bis 31.10.2026.')
     expect(g.faq.map((f) => f.a).join(' ')).not.toContain('**')
   })
-  it('Legacy: Sprache aus globalen Flags, kein Detail-Absatz, Kosten-Zeile fehlt', () => {
+  // Das Titel-Flag „de-dub" belegt, dass eine deutsche Synchro existiert — nicht,
+  // dass dieser Anbieter sie ausliefert. Früher benannte der Text Netflix als
+  // Dub-Quelle; jetzt steht dort der dritte Zustand „bekannt, nicht ausgewiesen".
+  it('Legacy: Dub-Flag wird als „bekannt" ausgegeben, nicht als Anbieter-Zusage', () => {
     const g = streamingGuide({ id: 3, titleEnglish: 'Z', streamingProviders: ['netflix'], availableLanguages: ['de-dub'], format: 'TV', episodes: 12, status: 'RELEASING' })!
     expect(g.intro).toContain('**Netflix** führt den Anime im Sortiment.')
     expect(g.overview.map((r) => r.label)).toEqual(['Streaming-Anbieter', 'Verfügbare Audio-Spuren'])
@@ -114,7 +117,10 @@ describe('streamingGuide (Vorlagen-Wortlaut + Datenzusätze)', () => {
     expect(g.sections[1].paragraphs[0]).toContain('hängt vom Anbieter ab')
     expect(g.sections[2].paragraphs[0]).toContain('läuft aktuell im **Simulcast**')
     expect(g.sections[3].subsections).toEqual([])
-    expect(g.faq[1].a).toContain('Die Fassung mit der Tonspur Deutsch steht bei Netflix zum Abruf bereit.')
+    expect(g.overview[1].value).toBe('deutsche Synchro bekannt — beim Anbieter nicht ausgewiesen')
+    expect(g.faq[1].a).toContain('Von Z existiert eine deutsche Synchronfassung.')
+    expect(g.faq[1].a).toContain('weist die Tonspuren im eigenen Katalog allerdings nicht aus')
+    expect(g.faq[1].a).not.toContain('steht bei Netflix zum Abruf bereit')
     expect(g.faq[2].a).toContain('Aktuell laufen neue Folgen')
   })
   it('Film: „den Film“ statt „die Serie“', () => {

@@ -35,7 +35,12 @@ Match-Regel: Titel-Ähnlichkeit >= 0.90 gegen die JustWatch-Suche (DE) über
 deutschen, englischen, Romaji- und Original-Titel (Diakritika normalisiert),
 Objekttyp muss passen (Film ↔ MOVIE, sonst SHOW). Die Substring-Regel greift nur
 bei ähnlich langen Titeln — sonst matcht „Journey's End" (Kriegsfilm) auf
-„Frieren: Beyond Journey's End". Ohne sicheren Match wird der Bestand NIE angetastet (Ausnahme: `--purge-unmatched`,
+„Frieren: Beyond Journey's End". Zwei Plausibilitätsgrenzen verhindern Franchise-Vererbung (ein Trailer/Mini-Anime
+erbte sonst Anbieter und Sprachen der Hauptserie, siehe `spinoff_mismatch` und
+`episodes_implausible`): Titelzusätze wie „Yokoku", „Mini Anime", „Petit" oder
+„Picture Drama" bezeichnen ein eigenes Werk, und die Folgenzahl des Eintrags muss
+sich beim gematchten Titel wiederfinden (gesamt oder als eine seiner Staffeln).
+Ohne sicheren Match wird der Bestand NIE angetastet (Ausnahme: `--purge-unmatched`,
 einmalig für den Backfill — die alte, lockere Heuristik hatte z. B. „Hyouge Mono"
 auf „Mono" gematcht; solche Flags sind wertlos). Bei Match sind die Offers
 IMMER autoritativ (Angebote sind der neue Wahrheitsbestand); first_seen_at
@@ -219,13 +224,14 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
         clause = f"(a.streaming_checked_at IS NULL OR a.streaming_checked_at < {q(not_checked_since)})"
         where = f"{where} AND {clause}" if where else f" WHERE {clause}"
     rows = json.loads(psql(
-        "SELECT COALESCE(json_agg(json_build_object('id',s.id,'slug',s.slug,'fmt',s.fmt,'year',s.yr,'de',s.de,'en',s.en,'ro',s.ro,'na',s.na)),'[]') "
-        "FROM (SELECT a.id, a.slug, a.format fmt, a.season_year yr, a.title_german de, a.title_english en, a.title_romaji ro, a.title_native na "
+        "SELECT COALESCE(json_agg(json_build_object('id',s.id,'slug',s.slug,'fmt',s.fmt,'year',s.yr,'de',s.de,'en',s.en,'ro',s.ro,'na',s.na,'eps',s.eps)),'[]') "
+        "FROM (SELECT a.id, a.slug, a.format fmt, a.season_year yr, a.title_german de, a.title_english en, a.title_romaji ro, a.title_native na, a.episodes eps "
         f"FROM anime a{where}{tail}) s;"
     ).strip() or "[]")
     anime = {r["id"]: {"id": r["id"], "slug": r["slug"],
                        "want": "MOVIE" if r.get("fmt") == "MOVIE" else "SHOW",
                        "year": r.get("year"),
+                       "eps": r.get("eps"),
                        "titles": [r.get("de") or "", r.get("en") or "", r.get("ro") or "", r.get("na") or ""],
                        "have": set(), "offers": {}}
              for r in rows}
@@ -321,6 +327,63 @@ def best_match(data, our_titles, want="SHOW", year=None):
         if score > best_score:
             best, best_score, best_rem = node, score, rem
     return (best, best_rem) if best and best_score >= 0.90 else None
+
+
+# Titelzusätze, die ein EIGENES Werk bezeichnen (Vorschau, Kurzfassung, Picture
+# Drama, Collab-Clip …) und keine Fortsetzung. Trägt unser Titel so einen Marker
+# und der JustWatch-Titel nicht, darf der Eintrag die Anbieter und Sprachen der
+# Hauptserie NIE erben: genau daraus entstand „Harukana Receive: Yokoku — 1 Staffel
+# · 12 Folgen · Deutscher Dub" (der 11-teilige Trailer-Eintrag erbte die Serie).
+_SPINOFF_MARKERS = re.compile(
+    r"yokoku|vorschau|preview|trailer|minianime|miniaftershow|petit|puchi|chibi|"
+    r"picturedrama|pictoredrama|collab|choitashi|omake|recap|soushuuhen|sousyuuhen|"
+    r"dougagekijou|specialedition|digest|shorts?$",
+    re.I,
+)
+
+
+def spinoff_mismatch(our_titles, node):
+    """True, wenn UNSER Titel einen Spinoff-Marker trägt, der JustWatch-Titel aber nicht.
+
+    Greift unabhängig davon, über welche Regel der Match zustande kam — auch beim
+    „gleicher Basistitel + gleiches Jahr"-Pfad, der `remainder` leer lässt.
+    """
+    ours = " ".join(norm(t) for t in our_titles if t)
+    c = node.get("content") or {}
+    theirs = " ".join(norm(t) for t in (c.get("title"), c.get("originalTitle")) if t)
+    for m in _SPINOFF_MARKERS.finditer(ours):
+        if m.group(0) not in theirs:
+            return True
+    return False
+
+
+def _candidate_episode_counts(node, offers):
+    """Alle Folgenzahlen, die der gematchte Titel hergibt: Summe pro Anbieter und
+    die Einzelstaffeln (aus `elementCount` der Staffel-Angebote)."""
+    out = {int(o["episodes"]) for o in offers if o.get("episodes")}
+    for se in node.get("seasons") or []:
+        for o in se.get("offers") or []:
+            if o.get("elementCount"):
+                out.add(int(o["elementCount"]))
+    return {n for n in out if n > 0}
+
+
+def episodes_implausible(ours, node, offers):
+    """True, wenn unsere Folgenzahl beim gematchten Titel nirgends vorkommt.
+
+    Ein 1-teiliges Special kann nicht die 24-Folgen-Serie sein („100 Years of Work
+    in Japan" erbte 2 Staffeln/24 Folgen). Toleranz 25 % (mindestens ±1), und eine
+    Staffel des Treffers zählt genauso wie die Gesamtzahl — sonst würden Season-1-
+    Einträge ihre korrekten Serien-Angebote verlieren. Unbekannte Zahlen (laufende
+    Titel, Filme) sind kein Verdacht.
+    """
+    if not ours or int(ours) <= 0:
+        return False
+    cands = _candidate_episode_counts(node, offers)
+    if not cands:
+        return False
+    tol = max(1.0, int(ours) * 0.25)
+    return all(abs(int(ours) - c) > tol for c in cands)
 
 
 _SEASON_NUM = re.compile(r"(?:season|staffel|part|cour|s|r)(\d{1,2})$|^(\d{1,2})(?:nd|rd|th)?(?:season|staffel)?$")
@@ -454,15 +517,24 @@ def fetch_offers(session, a):
         if hit is None:
             continue
         node, remainder = hit
+        # Vorschau/Mini-Anime/Picture Drama sind eigene Werke — nie die Serie erben.
+        if spinoff_mismatch(a["titles"], node):
+            continue
         if not remainder:
-            return aggregate_offers(node)
-        season = pick_season(node, remainder, a.get("year"))
-        if season is not None:
-            return aggregate_offers(node, season)
-        if is_base_entry(node, remainder, a.get("year")):
-            return aggregate_offers(node)
-        # Serie erkannt, aber Staffel nicht eindeutig → kein Match (keine Serien-
-        # Anbieter pauschal auf eine Fortsetzung übertragen).
+            offers = aggregate_offers(node)
+        else:
+            season = pick_season(node, remainder, a.get("year"))
+            if season is not None:
+                offers = aggregate_offers(node, season)
+            elif is_base_entry(node, remainder, a.get("year")):
+                offers = aggregate_offers(node)
+            else:
+                # Serie erkannt, aber Staffel nicht eindeutig → kein Match (keine Serien-
+                # Anbieter pauschal auf eine Fortsetzung übertragen).
+                continue
+        if episodes_implausible(a.get("eps"), node, offers):
+            continue
+        return offers
     return False
 
 

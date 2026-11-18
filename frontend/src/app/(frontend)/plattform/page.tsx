@@ -51,6 +51,15 @@ export default async function PlatformListPage() {
         wie viele Titel in unserer Datenbank dort verfügbar sind.
       </p>
 
+      <p className="mt-4 text-sm">
+        <Link
+          href="/anime-mit-deutschem-dub"
+          className="inline-flex rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 font-semibold text-zinc-100 transition hover:border-accent hover:text-white"
+        >
+          Du suchst deutsche Synchro? Alle Anbieter im Ger-Dub-Vergleich →
+        </Link>
+      </p>
+
       <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {visible.map(({ provider, total }) => (
           <Link
