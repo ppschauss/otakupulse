@@ -17,7 +17,12 @@ export const MIN_LIST_SIZE = 10
  * sonst nennt eine Liste Titel, deren Anbieter-Block auf der Detailseite gar nicht
  * erscheint. Setzt die Aliase `a` (anime) und `o` (anime_streaming_offers) voraus.
  */
-export const PLAUSIBLE_OFFER_SQL = `NOT (a.episodes > 0 AND o.episodes > 0 AND (
+// COALESCE ist Pflicht, nicht Kosmetik: ohne es ist der Ausdruck bei unbekannter
+// Folgenzahl nicht `false`, sondern NULL — und `WHERE NULL` blendet die Zeile aus.
+// Damit fielen alle Titel ohne Folgenzahl (laufende Serien, viele Filme) aus jeder
+// Liste; gemessen 143 Titel allein bei Crunchyroll. Die TypeScript-Fassung rechnet
+// mit `Number(x) || 0` und war davon nie betroffen.
+export const PLAUSIBLE_OFFER_SQL = `NOT (COALESCE(a.episodes,0) > 0 AND COALESCE(o.episodes,0) > 0 AND (
        (a.episodes <= 3 AND o.episodes >= a.episodes + 3)
     OR (COALESCE(a.format::text,'') NOT IN ('TV','TV_SHORT','ONA') AND abs(o.episodes - a.episodes) > greatest(1, a.episodes * 0.25))))`
 const NEW_DAYS = 30
