@@ -337,7 +337,11 @@ def best_match(data, our_titles, want="SHOW", year=None):
 # · 12 Folgen · Deutscher Dub" (der 11-teilige Trailer-Eintrag erbte die Serie).
 _SPINOFF_MARKERS = re.compile(
     r"yokoku|vorschau|preview|trailer|minianime|miniaftershow|petit|puchi|chibi|"
-    r"picturedrama|pictoredrama|collab|choitashi|omake|recap|soushuuhen|sousyuuhen|"
+    # "omake" ist bewusst NICHT dabei: nach dem Zusammenziehen steckt es in
+    # "how to make" ("Magic Maker: How to Make Magic in Another World") und
+    # haette einen korrekt gematchten Titel verworfen. Marker muessen laenger
+    # sein als ein zufaelliges Wortfragment.
+    r"picturedrama|pictoredrama|collab|choitashi|recap|soushuuhen|sousyuuhen|"
     r"dougagekijou|specialedition|digest|shorts?$",
     re.I,
 )

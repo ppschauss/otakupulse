@@ -41,8 +41,10 @@ DB_CONTAINER = "otakupulse-db"
 # Titelzusätze, die ein eigenes Werk bezeichnen (gleiche Liste wie
 # `_SPINOFF_MARKERS` in justwatch-streaming.py, als POSIX-Regex auf dem
 # normalisierten Titel).
+# "omake" fehlt absichtlich: zusammengezogen steckt es in "how to make" und
+# meldete "Magic Maker: How to Make Magic in Another World" als Vererbung.
 SPINOFF_RE = ("yokoku|vorschau|preview|trailer|minianime|miniaftershow|petit|puchi|chibi|"
-              "picturedrama|pictoredrama|collab|choitashi|omake|recap|soushuuhen|sousyuuhen|"
+              "picturedrama|pictoredrama|collab|choitashi|recap|soushuuhen|sousyuuhen|"
               "dougagekijou|specialedition|digest")
 
 # Normalisierter Titel (ein Ausdruck für alle Titelspalten).
