@@ -12,8 +12,8 @@ ohne JustWatch-Abfrage, weil es auf der eigenen DB läuft.
 
 Checks (error = blockiert, warn = nur Bericht):
   C1 episode_mismatch   warn   Folgen beim Anbieter weichen > 25 % (min. ±1) ab
-  C2 spinoff_inherits   error  Titelzusatz (Yokoku, Mini Anime, Petit, Picture Drama …)
-                               mit Anbieter-Angebot → Franchise-Vererbung
+  C2 spinoff_inherits   warn   Titelzusatz (Yokoku, Mini Anime, Petit, Picture Drama …)
+                               mit Anbieter-Angebot → Verdacht auf Vererbung
   C3 tiny_entry         error  ≤ 3 Folgen im Eintrag, ≥ 3 Folgen mehr beim Anbieter
   C4 sub_lt_dub         warn   pro Anbieter mehr Dub- als Sub-Titel
   C5 dub_without_sub    warn   deutsche Tonspur ohne deutsche Untertitel
@@ -25,12 +25,13 @@ Aufruf (HOST, braucht nur `docker`):
   python3 src/scripts/offer-audit.py --csv audit.csv  # zusätzlich als CSV
   python3 src/scripts/offer-audit.py --purge          # C2/C3-Zeilen löschen (eindeutig falsch)
 
-`--purge` entfernt NUR die eindeutigen Fälle (C2/C3), dazu den abgeleiteten
+`--purge` entfernt NUR den eindeutigen Fall C3, dazu den abgeleiteten
 Anbieter-Index und die Sprach-Flags der betroffenen Titel. Die Sprach-Flags sind
 selbstheilend: `crunchyroll-dub.py` schreibt sie pro Titel komplett neu und
 `wikipedia-dub.py` ergänzt echte Synchronfassungen beim nächsten Lauf wieder.
-C1 wird bewusst nicht gelöscht — dort steckt auch der legitime Fall „Season-1-
-Eintrag, Anbieter führt die ganze Serie".
+C1 und C2 werden bewusst nicht gelöscht: C1 enthält den legitimen Fall „Season-1-
+Eintrag, Anbieter führt die ganze Serie", und C2 meldet auch korrekte Zuordnungen,
+weil das Audit den JustWatch-Titel nicht kennt.
 """
 import csv
 import subprocess
@@ -73,7 +74,13 @@ CHECKS = [
            AND coalesce(a.format::text,'') NOT IN ('TV','TV_SHORT','ONA')
            AND abs(o.episodes - a.episodes) > greatest(1, a.episodes * 0.25)
          ORDER BY abs(o.episodes - a.episodes) DESC"""),
-    ("C2", "spinoff_inherits", "error", f"""
+    # Nur Verdacht, kein Gate: ob der Zusatz ein eigenes Werk bezeichnet, entscheidet
+    # `spinoff_mismatch` im Sync — der sieht auch den JustWatch-Titel und laesst den
+    # Treffer stehen, wenn der Marker dort ebenfalls steht. Das Audit sieht nur unsere
+    # Seite und meldet deshalb auch korrekte Zuordnungen: die beiden Bocchi-Recap-Filme
+    # laufen wirklich bei Crunchyroll, und „Code Geass: Rozé of the Recapture" enthaelt
+    # „recap" als Wortfragment. Solche Zeilen darf --purge nicht anfassen.
+    ("C2", "spinoff_inherits", "warn", f"""
         SELECT a.slug, o.provider, a.episodes::text, o.episodes::text
           FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
          WHERE {STREAM} AND {NORM} ~* '{SPINOFF_RE}'
@@ -129,19 +136,27 @@ def rows(sql: str) -> list[list[str]]:
 
 
 def purge() -> None:
-    """C2/C3-Zeilen löschen, danach Anbieter-Index und Sprach-Flags der Titel aufräumen."""
-    c2 = f"{STREAM} AND {NORM} ~* '{SPINOFF_RE}'"
+    """C3-Zeilen löschen, danach Anbieter-Index und Sprach-Flags der Titel aufräumen.
+
+    NUR C3: ein Eintrag mit höchstens drei Folgen und ein Angebot mit mindestens drei
+    Folgen mehr ist eindeutig. C2 (Titelmarker) bleibt draußen, weil das Audit nur
+    unsere Titel sieht und auch korrekte Zuordnungen meldet — ein Purge über C2 hat
+    „Magic Maker: How to Make Magic…" die richtigen Angebote genommen („omake" steckt
+    in „to make"), und dieselbe Falle sind „Recapture" und die Bocchi-Recap-Filme.
+    Die echten Vererbungsfälle entfernt der Sync selbst: dort vergleicht
+    `spinoff_mismatch` unseren Titel MIT dem JustWatch-Titel.
+    """
     c3 = (f"{STREAM} AND a.episodes > 0 AND a.episodes <= 3 AND o.episodes IS NOT NULL "
           "AND o.episodes >= a.episodes + 3")
     ids = rows(f"""
         SELECT DISTINCT a.id FROM anime a JOIN anime_streaming_offers o ON o._parent_id = a.id
-         WHERE ({c2}) OR ({c3});""")
+         WHERE {c3};""")
     affected = [r[0] for r in ids]
     if not affected:
         print("→ Nichts zu löschen.")
         return
     idlist = ",".join(affected)
-    print(f"→ Lösche Angebote von {len(affected)} Titeln (C2/C3) …")
+    print(f"→ Lösche Angebote von {len(affected)} Titeln (C3) …")
     psql(f"""BEGIN;
       DELETE FROM anime_streaming_offers WHERE _parent_id IN ({idlist});
       DELETE FROM anime_streaming_providers WHERE parent_id IN ({idlist});
