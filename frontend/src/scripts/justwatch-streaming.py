@@ -22,6 +22,7 @@ Aufruf (HOST, `pip install curl_cffi` + docker):
   python3 src/scripts/justwatch-streaming.py --only-missing     # nur Titel ohne Offers
   python3 src/scripts/justwatch-streaming.py --stale 150        # rollierend: die 150 am längsten nicht geprüften
   python3 src/scripts/justwatch-streaming.py --slugs naruto,clannad [--dry-run]
+  python3 src/scripts/justwatch-streaming.py --stale 150 --no-id-map   # ohne ID-Verifikation
   python3 src/scripts/justwatch-streaming.py --unmatched-top 150 --not-checked-since 2026-09-13T00:00:00Z
                                                                        # die 150 beliebtesten Titel OHNE Offers, die seit
                                                                        # dem Datum nicht geprüft wurden (2. Durchlauf)
@@ -30,6 +31,13 @@ Aufruf (HOST, `pip install curl_cffi` + docker):
   python3 src/scripts/justwatch-streaming.py --purge-unmatched         # Backfill: Titel OHNE sicheren
                                                                        # Match verlieren ihre alten,
                                                                        # unbelegten Anbieter-Flags
+
+ID-Verifikation (seit 11/2026): JustWatch liefert pro Treffer `tmdbId`/`imdbId`.
+Über die Community-Mapping-Liste (Fribb/anime-lists, AniList-/MAL-ID -> TMDB/IMDb)
+kennen wir dieselben IDs für 93 % der Titel mit Angebot. Stimmen beide Seiten eine
+ID, gilt der Treffer als bestätigt; widersprechen sie sich, wird er VERWORFEN,
+egal wie ähnlich die Titel sind. Damit ist der Titel-Match nur noch ein Vorschlag.
+Fehlt eine ID (6 %), bleibt es bei Ähnlichkeit + Plausibilitätsgrenzen.
 
 Match-Regel: Titel-Ähnlichkeit >= 0.90 gegen die JustWatch-Suche (DE) über
 deutschen, englischen, Romaji- und Original-Titel (Diakritika normalisiert),
@@ -125,7 +133,7 @@ query($c:Country!,$l:Language!,$q:String!){
   popularTitles(country:$c,first:5,filter:{searchQuery:$q}){
     edges{node{
       objectType
-      content(country:$c,language:$l){ title originalTitle originalReleaseYear }
+      content(country:$c,language:$l){ title originalTitle originalReleaseYear externalIds { tmdbId imdbId } }
       offers(country:$c,platform:WEB){
         monetizationType standardWebURL elementCount audioLanguages subtitleLanguages availableTo
         package{clearName}
@@ -224,8 +232,8 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
         clause = f"(a.streaming_checked_at IS NULL OR a.streaming_checked_at < {q(not_checked_since)})"
         where = f"{where} AND {clause}" if where else f" WHERE {clause}"
     rows = json.loads(psql(
-        "SELECT COALESCE(json_agg(json_build_object('id',s.id,'slug',s.slug,'fmt',s.fmt,'year',s.yr,'de',s.de,'en',s.en,'ro',s.ro,'na',s.na,'eps',s.eps)),'[]') "
-        "FROM (SELECT a.id, a.slug, a.format fmt, a.season_year yr, a.title_german de, a.title_english en, a.title_romaji ro, a.title_native na, a.episodes eps "
+        "SELECT COALESCE(json_agg(json_build_object('id',s.id,'slug',s.slug,'fmt',s.fmt,'year',s.yr,'de',s.de,'en',s.en,'ro',s.ro,'na',s.na,'eps',s.eps,'al',s.al,'ml',s.ml)),'[]') "
+        "FROM (SELECT a.id, a.slug, a.format fmt, a.season_year yr, a.title_german de, a.title_english en, a.title_romaji ro, a.title_native na, a.episodes eps, a.anilist_id al, a.mal_id ml "
         f"FROM anime a{where}{tail}) s;"
     ).strip() or "[]")
     anime = {r["id"]: {"id": r["id"], "slug": r["slug"],
@@ -233,6 +241,8 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
                        "fmt": r.get("fmt"),
                        "year": r.get("year"),
                        "eps": r.get("eps"),
+                       "anilist_id": r.get("al"),
+                       "mal_id": r.get("ml"),
                        "titles": [r.get("de") or "", r.get("en") or "", r.get("ro") or "", r.get("na") or ""],
                        "have": set(), "offers": {}}
              for r in rows}
@@ -251,6 +261,75 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
     return list(anime.values())
 
 
+ID_MAP_URL = "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json"
+ID_MAP_PATH = "/tmp/otaku-anime-id-map.json"
+ID_MAP_MAX_AGE = 7 * 86400  # wöchentlich erneuern; die Liste wird täglich gepflegt
+
+
+def load_id_map():
+    """{'anilist': {id: (tmdb, imdb)}, 'mal': {...}} oder leere Dicts.
+
+    Die Liste ist eine reine Zuordnungstabelle (CC0) und wird lokal zwischengespeichert.
+    Scheitert der Download, läuft der Sync ohne ID-Verifikation weiter — lieber
+    Titel-Match mit Plausibilitätsgrenzen als kein Lauf.
+    """
+    raw = None
+    if os.path.exists(ID_MAP_PATH) and time.time() - os.path.getmtime(ID_MAP_PATH) < ID_MAP_MAX_AGE:
+        try:
+            with open(ID_MAP_PATH, encoding="utf-8") as fh:
+                raw = json.load(fh)
+        except Exception:
+            raw = None
+    if raw is None:
+        try:
+            r = requests.get(ID_MAP_URL, impersonate=IMPERSONATE, timeout=120)
+            if r.status_code != 200:
+                raise RuntimeError(f"HTTP {r.status_code}")
+            raw = r.json()
+            with open(ID_MAP_PATH, "w", encoding="utf-8") as fh:
+                json.dump(raw, fh)
+        except Exception as e:
+            print(f"  ! ID-Mapping nicht ladbar ({e}) — Lauf ohne ID-Verifikation.")
+            return {"anilist": {}, "mal": {}}
+    out = {"anilist": {}, "mal": {}}
+    for e in raw if isinstance(raw, list) else []:
+        if not isinstance(e, dict):
+            continue
+        ids = (e.get("themoviedb_id"), e.get("imdb_id"))
+        if not ids[0] and not ids[1]:
+            continue
+        for key, field in (("anilist", "anilist_id"), ("mal", "mal_id")):
+            v = e.get(field)
+            if isinstance(v, int):
+                out[key][v] = ids
+    print(f"  ID-Mapping: {len(out['anilist'])} AniList-IDs, {len(out['mal'])} MAL-IDs mit TMDB/IMDb.")
+    return out
+
+
+def expected_ids(a, id_map):
+    """(tmdb, imdb) unseres Titels laut Mapping — None, wenn unbekannt."""
+    hit = id_map["anilist"].get(a.get("anilist_id")) or id_map["mal"].get(a.get("mal_id"))
+    if not hit:
+        return (None, None)
+    tmdb, imdb = hit
+    # TMDB-IDs kommen in der Liste als int oder str vor.
+    return (str(tmdb) if tmdb else None, str(imdb) if imdb else None)
+
+
+def id_verdict(ours, node):
+    """'bestaetigt' | 'widerspruch' | 'unbekannt' — Vergleich unserer IDs mit dem Treffer."""
+    our_tmdb, our_imdb = ours
+    ext = ((node.get("content") or {}).get("externalIds") or {})
+    their_tmdb = str(ext.get("tmdbId")) if ext.get("tmdbId") else None
+    their_imdb = str(ext.get("imdbId")) if ext.get("imdbId") else None
+    pairs = [(our_tmdb, their_tmdb), (our_imdb, their_imdb)]
+    if any(o and t and o == t for o, t in pairs):
+        return "bestaetigt"
+    if any(o and t and o != t for o, t in pairs):
+        return "widerspruch"
+    return "unbekannt"
+
+
 BLOCK_BACKOFF = (30, 60, 120)
 
 
@@ -267,7 +346,7 @@ def api_post(session, payload):
     return r
 
 
-def best_match(data, our_titles, want="SHOW", year=None):
+def best_match(data, our_titles, want="SHOW", year=None, ours_ids=(None, None)):
     """Bester JustWatch-Node oder None.
 
     Rückgabe: (node, remainder). remainder="" = exakter Titel-Match (Serie/Film als
@@ -276,10 +355,18 @@ def best_match(data, our_titles, want="SHOW", year=None):
     """
     our = [v for t in our_titles for v in norm_variants(t)]
     best, best_score, best_rem = None, 0.0, ""
+    vetoed = False
     for edge in data.get("edges", []):
         node = edge.get("node") or {}
         if node.get("objectType") != want:
             continue  # Film vs. Serie darf nie verwechselt werden
+        verdict = id_verdict(ours_ids, node)
+        if verdict == "widerspruch":
+            # Beide Seiten kennen eine ID und sie stimmen nicht: anderes Werk. Der
+            # Titel darf das nicht überstimmen — genau so entstand „100% Pascal-sensei"
+            # mit den Angeboten von Mob Psycho 100.
+            vetoed = True
+            continue
         c = node.get("content") or {}
         cand = norm_variants(c.get("title")) + norm_variants(c.get("originalTitle"))
         cy = c.get("originalReleaseYear")
@@ -325,9 +412,15 @@ def best_match(data, our_titles, want="SHOW", year=None):
                 score = min(1.0, score + 0.03)
             elif diff >= 5:
                 score -= 0.15
+        if verdict == "bestaetigt" and score > 0:
+            # Bestätigte ID schlägt Titelähnlichkeit: deutscher Verleihtitel,
+            # Romanisierung, Untertitel — alles egal, es ist dasselbe Werk.
+            score = max(score, 0.95)
         if score > best_score:
             best, best_score, best_rem = node, score, rem
-    return (best, best_rem) if best and best_score >= 0.90 else None
+    if best and best_score >= 0.90:
+        return (best, best_rem)
+    return "veto" if vetoed else None
 
 
 # Titelzusätze, die ein EIGENES Werk bezeichnen (Vorschau, Kurzfassung, Picture
@@ -534,7 +627,12 @@ def fetch_offers(session, a):
         if r.status_code != 200:
             return None
         data = (r.json().get("data") or {}).get("popularTitles") or {}
-        hit = best_match(data, a["titles"], a["want"], a.get("year"))
+        hit = best_match(data, a["titles"], a["want"], a.get("year"), a.get("ids", (None, None)))
+        if hit == "veto":
+            # ID-Widerspruch: ein vorhandener Bestand stammt aus derselben falschen
+            # Zuordnung und wird entfernt.
+            rejected = True
+            continue
         if hit is None:
             continue
         node, remainder = hit
@@ -643,6 +741,15 @@ def main():
     print(f"  {len(anime)} Anime.")
     if not anime:
         return
+
+    id_map = {"anilist": {}, "mal": {}} if "--no-id-map" in sys.argv else load_id_map()
+    mit_id = 0
+    for a in anime:
+        a["ids"] = expected_ids(a, id_map)
+        if a["ids"][0] or a["ids"][1]:
+            mit_id += 1
+    if id_map["anilist"] or id_map["mal"]:
+        print(f"  {mit_id}/{len(anime)} Titel mit bekannter TMDB-/IMDb-ID (ID-Verifikation aktiv).")
 
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
     sql, changed_ids, checked_ids = [], [], []
