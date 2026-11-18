@@ -5,7 +5,7 @@
  */
 import type { Payload } from 'payload'
 import { BLOCKED_GENRE_SLUGS } from './adult'
-import { anilistRequest, slugify, MEDIA_QUERY, SEARCH_QUERY } from './anilist'
+import { anilistRequest, anilistPending, slugify, MEDIA_QUERY, SEARCH_QUERY } from './anilist'
 
 type Id = string | number
 
@@ -520,12 +520,25 @@ const inFlight = new Map<string, Promise<string | null>>()
 // Missbrauchs-Schutz für den anonymen On-Demand-Import (Bot ruft massenhaft
 // Zufalls-Slugs auf → AniList-Flut, DB-Pollution, IP-Bann):
 //  - Negativ-Cache: kürzlich erfolglose Slugs nicht erneut bei AniList anfragen.
-//  - Globales Budget: max. IMPORT_MAX Importe pro IMPORT_WINDOW.
+//  - Globales Budget: max. IMPORT_MAX AniList-SUCHEN pro IMPORT_WINDOW. Bis 18.11.2026
+//    zählten nur erfolgreiche Importe — erfundene Slugs (der eigentliche Missbrauch)
+//    lösten also unbegrenzt Suchen aus. Auf Staging gemessen: jede unbekannte URL
+//    stand 19 s in der gemeinsamen AniList-Warteschlange (8 parallel × 2,15 s Abstand).
+//  - Kein Anstellen: läuft schon etwas in der AniList-Kette (Sync, andere Suche), gibt
+//    der Seitenaufruf sofort auf. Ein 404 in 50 ms ist besser als einer nach einer Minute.
 const notFound = new Map<string, number>()
 const NOT_FOUND_TTL = 60 * 60 * 1000 // 1 h
 const recentImports: number[] = []
 const IMPORT_WINDOW = 10 * 60 * 1000 // 10 min
 const IMPORT_MAX = 30
+
+// Abgelaufene Negativ-Einträge entfernen. Vorher wurde die TTL nur beim Lesen geprüft,
+// gelöscht wurde nie — jeder erfolglose Slug blieb für die Laufzeit des Prozesses im
+// Speicher. Klein pro Eintrag, aber unbegrenzt; gleiches Muster wie kontakt/actions.ts.
+function pruneNotFound(now: number): void {
+  if (notFound.size < 2000) return
+  for (const [k, t] of notFound) if (now - t >= NOT_FOUND_TTL) notFound.delete(k)
+}
 
 function importBudgetExhausted(): boolean {
   const now = Date.now()
@@ -544,16 +557,20 @@ export function importAnimeBySlug(payload: Payload, slug: string): Promise<strin
   if (cached) return cached
 
   // Negativ-Cache: bekannt erfolglose Slugs ohne erneuten AniList-Call abweisen.
+  const now = Date.now()
+  pruneNotFound(now)
   const miss = notFound.get(slug)
-  if (miss && Date.now() - miss < NOT_FOUND_TTL) return Promise.resolve(null)
+  if (miss && now - miss < NOT_FOUND_TTL) return Promise.resolve(null)
+  if (miss) notFound.delete(slug)
 
   const task = (async (): Promise<string | null> => {
     const search = slug.replace(/-/g, ' ').trim()
     if (search.length < 2) return null
-    // Flut-Schutz: in diesem Zeitfenster keine weiteren On-Demand-Importe.
-    if (importBudgetExhausted()) return null
+    // Flut-Schutz: Budget erschöpft oder AniList-Kette belegt → sofort 404.
+    if (importBudgetExhausted() || anilistPending() > 0) return null
+    recentImports.push(Date.now())
 
-    const data = await anilistRequest<{ Page: { media: any[] } }>(SEARCH_QUERY, { search })
+    const data = await anilistRequest<{ Page: { media: any[] } }>(SEARCH_QUERY, { search }, { retries: 0 })
     const candidates = data.Page?.media || []
 
     // NUR exakter Slug-Treffer wird importiert.
@@ -565,7 +582,6 @@ export function importAnimeBySlug(payload: Payload, slug: string): Promise<strin
           notFound.set(slug, Date.now())
           return null
         }
-        recentImports.push(Date.now())
         try {
           return (await importAnime(payload, c.id)).slug
         } catch (err) {

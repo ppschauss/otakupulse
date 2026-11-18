@@ -14,15 +14,24 @@ const MAX_RETRIES = 5
 
 let chain: Promise<unknown> = Promise.resolve()
 let lastRequestAt = 0
+// Wie viele Requests gerade in der Kette stehen (laufend + wartend). Seitenaufrufe
+// fragen das ab und stellen sich bei Stau nicht hinten an (lib/import.ts).
+let pending = 0
+export const anilistPending = (): number => pending
+
+// Ohne Zeitlimit hing ein hängender AniList-Request die GESAMTE Kette auf — alle
+// folgenden Aufrufe, auch der tägliche Sync, warteten mit.
+const REQUEST_TIMEOUT_MS = 20_000
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-async function rawRequest<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+async function rawRequest<T>(query: string, variables: Record<string, unknown>, maxRetries: number): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const res = await fetch(ANILIST_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
 
     if (res.status === 429) {
@@ -48,16 +57,30 @@ async function rawRequest<T>(query: string, variables: Record<string, unknown>):
     }
     return json.data as T
   }
-  throw new Error(`AniList: Maximale Wiederholungen (${MAX_RETRIES}) überschritten.`)
+  throw new Error(`AniList: Maximale Wiederholungen (${maxRetries}) überschritten.`)
 }
 
-/** Serialisierter, rate-limitierter Request. Alle Aufrufer teilen sich eine Warteschlange. */
-export function anilistRequest<T = any>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+/**
+ * Serialisierter, rate-limitierter Request. Alle Aufrufer teilen sich eine Warteschlange.
+ * `retries`: Wiederholungen bei 429/5xx — Skripte warten geduldig (Standard), ein
+ * Seitenaufruf soll das nicht (0), sonst hängt er bis zu einer Minute im Backoff.
+ */
+export function anilistRequest<T = any>(
+  query: string,
+  variables: Record<string, unknown> = {},
+  opts: { retries?: number } = {},
+): Promise<T> {
+  const maxRetries = opts.retries ?? MAX_RETRIES
+  pending++
   const run = async (): Promise<T> => {
-    const since = Date.now() - lastRequestAt
-    if (since < MIN_INTERVAL_MS) await sleep(MIN_INTERVAL_MS - since)
-    lastRequestAt = Date.now()
-    return rawRequest<T>(query, variables)
+    try {
+      const since = Date.now() - lastRequestAt
+      if (since < MIN_INTERVAL_MS) await sleep(MIN_INTERVAL_MS - since)
+      lastRequestAt = Date.now()
+      return await rawRequest<T>(query, variables, maxRetries)
+    } finally {
+      pending--
+    }
   }
   // An die Kette hängen, damit immer nur ein Request gleichzeitig läuft.
   const result = chain.then(run, run)
