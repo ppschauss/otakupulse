@@ -78,6 +78,18 @@ Kurve gleichmäßig wächst (Leck) oder vor 21:30 springt (Auslöser).
 nur bei Erfolg den Rest. Die umgekehrte Reihenfolge hat am 18.11.2026 den Bucket geleert,
 ohne dass der Upload danach klappte: die Speichergrenze (`403 storage_cap_exceeded`) gilt
 fürs ganze B2-Konto, nicht für den Bucket. Behebt sich nur unter *Caps & Alerts* im B2-Konto.
+Betroffen war ab 13.11.2026 auch das Matrix-Backup auf dem Unraid (selbes Konto).
+
+**Zweites Offsite-Ziel: der Unraid zieht die Dumps** (`pull-backup-unraid.sh`, installiert als
+`/mnt/cache/appdata/backups/otakupulse-vps-pull.sh`, Cron-Fragment
+`/boot/config/plugins/dynamix/otakupulse-vps-pull.cron`, täglich 04:05). Pull statt Push:
+der VPS hat keinen Zugang zum Unraid, ein kompromittierter VPS kann diese Kopien nicht
+löschen. Ziel `/mnt/cache/appdata/backups/otakupulse-vps/`, 30 Stände je Präfix, jeder neue
+Dump mit `gzip -t` geprüft. Fehlschläge, defekte Dumps und ein neuester Dump älter als
+36 h melden sich über Unraids Benachrichtigung (Stufe alert/warning → Web-UI + Discord +
+Telegram). **Tailscale:** die Verbindung läuft über Tailscale SSH. Steht die Regel für
+`isekai` → VPS auf `check`, scheitert der Abzug nach Ablauf der Check-Frist (mit Meldung) —
+dauerhaft nur über `"action": "accept"` in der Tailscale-ACL zu lösen.
 
 ## Auto-Blog für neue Titel + Telegram-Channel
 
