@@ -20,6 +20,7 @@ Aufruf (HOST, `pip install curl_cffi` + docker):
   python3 src/scripts/justwatch-streaming.py                    # alle Anime (nur kleine Kataloge — sonst 403, siehe unten)
   python3 src/scripts/justwatch-streaming.py --recent 3         # Titel der letzten 3 Tage (täglich)
   python3 src/scripts/justwatch-streaming.py --only-missing     # nur Titel ohne Offers
+  python3 src/scripts/justwatch-streaming.py --due 80           # nach Aktualität gestaffelt (Cron, siehe REFRESH_TIERS)
   python3 src/scripts/justwatch-streaming.py --stale 150        # rollierend: die 150 am längsten nicht geprüften
   python3 src/scripts/justwatch-streaming.py --slugs naruto,clannad [--dry-run]
   python3 src/scripts/justwatch-streaming.py --stale 150 --no-id-map   # ohne ID-Verifikation
@@ -216,8 +217,17 @@ def _arg(name, default=None):
     return default
 
 
-def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=None, not_checked_since=None):
+def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=None, not_checked_since=None,
+               due_limit=None):
     where, tail = "", ""
+    if due_limit:
+        # Fällige Titel nach Staffelung, am stärksten überfällig zuerst (gemessen in
+        # Vielfachen des eigenen Intervalls — so verhungert keine Stufe). Nie geprüfte
+        # Titel stehen oben, damit der Erstbestand zuerst durchläuft.
+        where = (f" WHERE a.is_hentai IS NOT TRUE AND (a.streaming_checked_at IS NULL"
+                 f" OR a.streaming_checked_at < now() - ({TIER_SQL}) * interval '1 day')")
+        tail = (f" ORDER BY COALESCE(EXTRACT(EPOCH FROM (now() - a.streaming_checked_at)) / 86400.0, 99999)"
+                f" / ({TIER_SQL}) DESC LIMIT {int(due_limit)}")
     if recent_days:
         where = f" WHERE a.created_at > now() - interval '{int(recent_days)} days'"
     if slugs:
@@ -260,6 +270,33 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
         anime[o["pid"]]["offers"][(o["p"], o["m"])] = o["f"]
     return list(anime.values())
 
+
+# Prüfintervall nach Aktualität: Anbieter-Kataloge bewegen sich bei neuen Titeln,
+# ein Klassiker von 2003 wechselt selten die Plattform. Ohne Staffelung prüft der
+# rollierende Lauf jeden Titel gleich oft — das ist Last ohne Gegenwert und lässt
+# gleichzeitig die laufende Season zu lange stehen.
+#
+#   (Obergrenze in Monaten seit Ausstrahlungsbeginn, Intervall in Tagen)
+#
+# Laufende und angekündigte Titel stehen immer in der schnellsten Stufe: dort
+# erscheinen Simulcast-Angebote wöchentlich neu. Titel ohne Jahresangabe landen in
+# der langsamsten — meist alte Kurzfilme ohne Lizenz.
+REFRESH_TIERS = ((16, 7), (60, 30), (180, 90))
+REFRESH_RUNNING_DAYS = 3
+REFRESH_FALLBACK_DAYS = 180
+
+# SQL-Ausdruck für das Soll-Intervall eines Titels (in Tagen).
+TIER_SQL = f"""
+  CASE
+    WHEN a.status IN ('RELEASING','NOT_YET_RELEASED') THEN {REFRESH_RUNNING_DAYS}
+    WHEN a.season_year IS NULL THEN {REFRESH_FALLBACK_DAYS}
+    {" ".join(
+      f"WHEN (CURRENT_DATE - make_date(a.season_year::int, CASE a.season::text "
+      f"WHEN 'WINTER' THEN 1 WHEN 'SPRING' THEN 4 WHEN 'SUMMER' THEN 7 WHEN 'FALL' THEN 10 ELSE 6 END, 1))"
+      f" / 30.44 <= {monate} THEN {tage}"
+      for monate, tage in REFRESH_TIERS)}
+    ELSE {REFRESH_FALLBACK_DAYS}
+  END"""
 
 ID_MAP_URL = "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json"
 ID_MAP_PATH = "/tmp/otaku-anime-id-map.json"
@@ -748,12 +785,14 @@ def main():
         print("→ Eine andere Instanz von justwatch-streaming.py läuft bereits — Abbruch (Instanz-Sperre).")
         return
     recent, stale, slugs = _arg("--recent"), _arg("--stale"), _arg("--slugs")
+    due = _arg("--due")
     dry = "--dry-run" in sys.argv
     purge = "--purge-unmatched" in sys.argv
     initial = "--initial" in sys.argv
     print("→ Lade Anime + vorhandene Anbieter/Offers …")
     anime = load_anime(recent_days=recent, stale_limit=stale, slugs=slugs.split(",") if slugs else None,
-                       unmatched_top=_arg("--unmatched-top"), not_checked_since=_arg("--not-checked-since"))
+                       unmatched_top=_arg("--unmatched-top"), not_checked_since=_arg("--not-checked-since"),
+                       due_limit=due)
     if "--only-missing" in sys.argv:
         anime = [a for a in anime if not a["offers"]]
     print(f"  {len(anime)} Anime.")

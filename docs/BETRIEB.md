@@ -119,7 +119,12 @@ first/last_seen. Leitet `streamingProviders` ab (autoritativ bei Match) und erg�
 (inoffizielle GraphQL-API), HOST, `curl_cffi` + `docker`. Titel-Match per Ähnlichkeit
 (Schwelle 0.90) — ohne Match bleibt der Bestand unangetastet. Nur FLATRATE/FREE/ADS, nur
 Angebote mit Deep-Link. Aufrufe: ohne Flag = alle Titel (Backfill), `--recent N`,
-`--only-missing`, `--stale N` (Cron), `--slugs a,b` + `--dry-run` zum Testen.
+`--only-missing`, `--stale N`, `--due N` (Cron, nach Aktualität gestaffelt), `--slugs a,b` + `--dry-run` zum Testen.
+`--due` nimmt nur fällige Titel: laufend/angekündigt alle 3 Tage, bis 16 Monate alle 7,
+bis 5 Jahre alle 30, bis 15 Jahre alle 90, älter alle 180 (`REFRESH_TIERS` im Skript).
+Das sind ~230 Titel/Tag statt 900 bei `--stale 150`, bei häufigerer Prüfung der
+laufenden Season. Reihenfolge: am stärksten überfällig zuerst, gemessen in Vielfachen
+des eigenen Intervalls.
 Rate-Limit: 1 Worker + 1,2 s pro Request, Instanz-Sperre (nie zwei Läufe parallel). JustWatch sperrt
 die IP für ~1 h, sobald zu viel Volumen kommt — große Läufe deshalb NUR in Batches (`--stale 150`
 stündlich, siehe `backfill-offers-batches.sh` im Scratch-Ordner) und mit `--initial` beim Erst-Backfill
