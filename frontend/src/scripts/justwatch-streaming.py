@@ -295,7 +295,7 @@ def load_id_map():
     for e in raw if isinstance(raw, list) else []:
         if not isinstance(e, dict):
             continue
-        ids = (e.get("themoviedb_id"), e.get("imdb_id"))
+        ids = (_one_id(e.get("themoviedb_id")), _one_id(e.get("imdb_id")))
         if not ids[0] and not ids[1]:
             continue
         for key, field in (("anilist", "anilist_id"), ("mal", "mal_id")):
@@ -306,14 +306,32 @@ def load_id_map():
     return out
 
 
+def _one_id(v):
+    """Eine ID als String aus den Formen der Mapping-Liste.
+
+    Die Liste ist NICHT flach: `themoviedb_id` ist ein Dict (`{"tv": 26209}`,
+    teils auch `{"movie": …}`), `imdb_id` eine Liste (`["tt0286390"]`). Ohne
+    diese Normalisierung wird aus der ID der String "{'tv': 26209}", der nie zu
+    JustWatchs "26209" passt — und dann verwirft die ID-Prüfung JEDEN Treffer
+    als Widerspruch und löscht die Angebote. Genau das ist am 18.11.2026
+    passiert, bevor es auffiel.
+
+    Mehrere IDs (Dict mit mehreren Schlüsseln, Liste mit mehreren Einträgen)
+    sind kein verlässlicher Beleg: dann lieber keine ID als eine geratene.
+    """
+    if isinstance(v, dict):
+        vals = [x for x in v.values() if x not in (None, "")]
+        return str(vals[0]) if len(vals) == 1 else None
+    if isinstance(v, (list, tuple)):
+        vals = [x for x in v if x not in (None, "")]
+        return str(vals[0]) if len(vals) == 1 else None
+    return str(v) if v not in (None, "") else None
+
+
 def expected_ids(a, id_map):
     """(tmdb, imdb) unseres Titels laut Mapping — None, wenn unbekannt."""
     hit = id_map["anilist"].get(a.get("anilist_id")) or id_map["mal"].get(a.get("mal_id"))
-    if not hit:
-        return (None, None)
-    tmdb, imdb = hit
-    # TMDB-IDs kommen in der Liste als int oder str vor.
-    return (str(tmdb) if tmdb else None, str(imdb) if imdb else None)
+    return hit if hit else (None, None)
 
 
 def id_verdict(ours, node):
