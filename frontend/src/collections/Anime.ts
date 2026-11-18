@@ -9,7 +9,7 @@ export const Anime: CollectionConfig = {
   labels: { singular: 'Anime', plural: 'Anime' },
   admin: {
     useAsTitle: 'titleRomaji',
-    defaultColumns: ['titleRomaji', 'format', 'status', 'seasonYear', 'averageScore'],
+    defaultColumns: ['titleRomaji', 'format', 'status', 'seasonYear', 'averageScore', 'streamingVerifiedAt'],
     group: 'Katalog',
   },
   access: { read: () => true },
@@ -102,6 +102,12 @@ export const Anime: CollectionConfig = {
       admin: { position: 'sidebar', readOnly: true, description: 'Letzte JustWatch-Anbieter-Prüfung (rollierender Refresh).' },
     },
     {
+      name: 'streamingVerifiedAt',
+      type: 'date',
+      index: true,
+      admin: { description: 'Zuletzt über die geprüften Anbieter-Kataloge nachgesehen (Abo/Werbung/Gratis, Anbieter mit JustWatch-Paket — ohne HIDIVE, Paramount+, Anime on Demand, Apple TV+). Nachweis für „bei keinem der von uns geprüften Anbieter im Stream", nicht für „nirgends".' },
+    },
+    {
       // Anbieter-genaue Streaming-Angebote (Quelle: JustWatch DE, Skript
       // src/scripts/justwatch-streaming.py). Im Gegensatz zu `streamingProviders`
       // (nur Flags) steht hier PRO Anbieter: Deep-Link, Abo/Werbung/Free, Audio-
@@ -119,6 +125,13 @@ export const Anime: CollectionConfig = {
           fields: [
             { name: 'provider', type: 'text', required: true, index: true, admin: { description: 'Slug aus lib/streaming.ts' } },
             { name: 'monetization', type: 'select', options: ['flatrate', 'ads', 'free', 'buy', 'rent'], index: true },
+          ],
+        },
+        {
+          type: 'row',
+          fields: [
+            { name: 'confidence', type: 'select', options: ['confirmed', 'unconfirmed', 'rejected'], index: true, admin: { description: 'belegt / Serien-Angebot geerbt / von Hand verworfen' } },
+            { name: 'source', type: 'select', options: ['justwatch', 'crunchyroll', 'adn', 'manual'], index: true },
           ],
         },
         { name: 'url', type: 'text', required: true, admin: { description: 'Deep-Link zum Titel beim Anbieter.' } },

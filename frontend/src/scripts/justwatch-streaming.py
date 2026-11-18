@@ -21,6 +21,9 @@ Aufruf (HOST, `pip install curl_cffi` + docker):
   python3 src/scripts/justwatch-streaming.py --recent 3         # Titel der letzten 3 Tage (täglich)
   python3 src/scripts/justwatch-streaming.py --only-missing     # nur Titel ohne Offers
   python3 src/scripts/justwatch-streaming.py --stale 150        # rollierend: die 150 am längsten nicht geprüften
+  python3 src/scripts/justwatch-streaming.py --stale-weighted 150  # wie --stale, aber laufende Titel und neue Jahrgänge zuerst
+  python3 src/scripts/justwatch-streaming.py --gap-alarm           # Ausgabe nur, wenn Titel der laufenden Season weder
+                                                                       # Angebot noch Prüfstempel haben (sonst still)
   python3 src/scripts/justwatch-streaming.py --slugs naruto,clannad [--dry-run]
   python3 src/scripts/justwatch-streaming.py --unmatched-top 150 --not-checked-since 2026-09-13T00:00:00Z
                                                                        # die 150 beliebtesten Titel OHNE Offers, die seit
@@ -42,7 +45,7 @@ IMMER autoritativ (Angebote sind der neue Wahrheitsbestand); first_seen_at
 bleibt über Läufe hinweg erhalten.
 
 Rate-Limit: 1 Worker + 1.2 s Pause pro Request (~0.7 req/s), Keep-Alive-Session,
-max. 2 Suchanfragen pro Titel. Bei 403/429 langer Backoff (30/60/120 s). JustWatch
+max. 2 Suchanfragen pro Titel (ohne de/en: Romaji, dann der native Titel). Bei 403/429 langer Backoff (30/60/120 s). JustWatch
 sperrt die IP für ~1 h, sobald zu viel Volumen kommt — am 2026-09-10 reichten dafür
 nacheinander 4 Worker (TLS pro Titel), 3 Worker bei ~5 Titel/s über 15 min und
 2 Worker bei ~3 req/s nach ~4 min (mit parallelem Cron). Große Läufe deshalb nur in
@@ -102,6 +105,9 @@ CLEARNAME_TO_SLUG = {
     "magenta tv": "magenta-tv",
     "magentatv": "magenta-tv",
     "hidive": "hidive",
+    "hbo max": "hbo-max",
+    "hbo max amazon channel": "hbo-max",
+    "pluto tv": "pluto-tv",
     # Kauf/Leih-Stores (BUY/RENT) — nur informativ, kein Streaming-Index
     "amazon video": "amazon-video",
     "apple tv": "apple-tv",
@@ -109,6 +115,8 @@ CLEARNAME_TO_SLUG = {
     "rakuten tv": "rakuten-tv",
     "microsoft store": "microsoft-store",
     "sky store": "sky-store",
+    # Akibapass: gemessen nur RENT/BUY, kein FLATRATE -> Store, kein Abo-Dienst
+    "akibapass": "akibapass",
 }
 
 # Sprachcodes aus Offers -> availableLanguages-Enum (additiv).
@@ -170,6 +178,24 @@ _LONG_VOWELS = str.maketrans({"ô": "ou", "ō": "ou", "û": "uu", "ū": "uu", "�
                               "Ê": "ee", "Ē": "ee", "Î": "ii", "Ī": "ii"})
 
 
+def norm_cjk(s):
+    """Vergleichsform, die japanische (und jede andere nicht-lateinische) Schrift
+    behält. `norm` wirft alles außer a-z0-9 weg — ein Titel wie „幻想水滸伝" wird dort
+    zum leeren String, der Vergleich gegen JustWatchs `originalTitle` kann nie greifen.
+
+    NFKC faltet Vollbreite-Zeichen („Ｚ" → „Z") und zusammengesetzte Kana. Behalten
+    wird, was `unicodedata.category` als Buchstabe (L*), Ziffer (N*) oder Zeichen-
+    Marker (M*, z. B. Dakuten) führt; Leerraum und Satzzeichen (P*, S*, Z*) fallen
+    weg. Das Längungszeichen „ー" ist ein Buchstabe (Lm) und bleibt, die japanische
+    Interpunktion „・" (Po) und „、" fällt: „ドラゴンボール超 ビルス" →
+    „ドラゴンボール超ビルス". `norm` bleibt unverändert, die lateinischen Vergleiche
+    im Skript hängen daran."""
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKC", s).lower()
+    return "".join(ch for ch in s if unicodedata.category(ch)[0] in "LNM")
+
+
 _PAREN = re.compile(r"\s*\((?:tv|ova|ona|movie|film|\d{4})\)\s*$", re.I)
 _ROMAN = {"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6"}
 
@@ -177,7 +203,11 @@ _ROMAN = {"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6"}
 def norm_variants(s):
     """Normalformen eines Titels: ohne Diakritika, mit Doppelvokal-Romanisierung,
     ohne Klammerzusatz („JoJo's Bizarre Adventure (TV)"), römische Staffelziffer
-    als Zahl („Sword Art Online II" → „swordartonline2")."""
+    als Zahl („Sword Art Online II" → „swordartonline2"). Dazu die CJK-Form
+    (`norm_cjk`), wenn sie sich von `norm` unterscheidet — bei japanischen Titeln
+    ist sie die einzige nicht-leere Form; bei lateinischen Titeln mit Diakritika
+    kommt sie als zusätzliche Form dazu („sôsônofurîren"), was beim Vergleichen
+    harmlos ist."""
     if not s:
         return []
     base = _PAREN.sub("", s)
@@ -185,6 +215,9 @@ def norm_variants(s):
     m = re.search(r"\s(ii|iii|iv|v|vi)$", base.strip(), re.I)
     if m:
         out.add(norm(base[: m.start()] + " " + _ROMAN[m.group(1).lower()]))
+    cjk = norm_cjk(base)
+    if cjk and cjk != norm(base):
+        out.add(cjk)
     return [v for v in out if v]
 
 
@@ -203,8 +236,59 @@ def _arg(name, default=None):
     return default
 
 
-def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=None, not_checked_since=None):
+def stale_order_sql(current_year):
+    """ORDER-BY-Klausel der gewichteten Rotation (`--stale-weighted`), rein und testbar.
+
+    Reihenfolge der Kriterien (sie IST die Anforderung):
+      1. laufende Titel (`status = 'RELEASING'`) zuerst — dort suchen Besucher;
+      2. dann Jahrgang absteigend ("neu vor alt"). Angekündigte Titel kommender Jahre
+         zählen wie der laufende Jahrgang (`LEAST`), sonst würden sie die Rotation
+         mit Titeln fluten, für die es noch gar kein Angebot geben kann;
+      3. innerhalb eines Jahrgangs der am längsten nicht geprüfte zuerst
+         (`streaming_checked_at ASC NULLS FIRST`) — so rotiert jeder Jahrgang durch.
+
+    Alte Jahrgänge werden nicht ausgehungert, sondern nur später dran; die Abdeckung
+    sichert ohnehin der wöchentliche Katalog-Sweep (`justwatch-catalog.py --sweep`)."""
+    year = int(current_year)
+    return (" ORDER BY (a.status = 'RELEASING') DESC NULLS LAST,"
+            f" LEAST(COALESCE(a.season_year, 0), {year}) DESC,"
+            " a.streaming_checked_at ASC NULLS FIRST")
+
+
+def current_season(today=None):
+    """(season, jahr) nach AniList-Zählung: WINTER Jan–Mär, SPRING Apr–Jun, SUMMER Jul–Sep, FALL Okt–Dez."""
+    import datetime
+    d = today or datetime.date.today()
+    return ("WINTER", "SPRING", "SUMMER", "FALL")[(d.month - 1) // 3], d.year
+
+
+def gap_sql(season, year):
+    """Zählt Titel der laufenden Season ohne jedes Angebot UND ohne Prüfstempel.
+
+    Nur die Kombination ist eine Lücke: "nachgesehen, es gibt nichts" (Stempel gesetzt)
+    ist eine Aussage; "weder Angebot noch je nachgesehen" ist ein blinder Fleck."""
+    return ("SELECT count(*) FROM anime a "
+            f"WHERE a.season_year = {int(year)} AND a.season = {q(season)} "
+            "AND a.is_hentai IS NOT TRUE AND a.streaming_verified_at IS NULL "
+            "AND NOT EXISTS (SELECT 1 FROM anime_streaming_offers o WHERE o._parent_id = a.id);")
+
+
+def gap_alarm_text(count, season, year):
+    """Meldungstext für Telegram — oder None bei 0. Ein Alarm, der jeden Tag ohne Anlass
+    kommt, wird ignoriert; deshalb ist Schweigen der Normalfall."""
+    if not count or int(count) <= 0:
+        return None
+    return (f"⚠️ OtakuPulse: {int(count)} Titel der laufenden Season {season} {year} haben weder "
+            "ein Streaming-Angebot noch einen Prüfstempel (streaming_verified_at). "
+            "Katalog-Sweep prüfen: /tmp/otaku-catalog-sweep.log")
+
+
+def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=None, not_checked_since=None,
+               stale_weighted=None):
     where, tail = "", ""
+    if stale_weighted:
+        import datetime
+        tail = f"{stale_order_sql(datetime.date.today().year)} LIMIT {int(stale_weighted)}"
     if recent_days:
         where = f" WHERE a.created_at > now() - interval '{int(recent_days)} days'"
     if slugs:
@@ -219,15 +303,22 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
         clause = f"(a.streaming_checked_at IS NULL OR a.streaming_checked_at < {q(not_checked_since)})"
         where = f"{where} AND {clause}" if where else f" WHERE {clause}"
     rows = json.loads(psql(
-        "SELECT COALESCE(json_agg(json_build_object('id',s.id,'slug',s.slug,'fmt',s.fmt,'year',s.yr,'de',s.de,'en',s.en,'ro',s.ro,'na',s.na)),'[]') "
-        "FROM (SELECT a.id, a.slug, a.format fmt, a.season_year yr, a.title_german de, a.title_english en, a.title_romaji ro, a.title_native na "
+        "SELECT COALESCE(json_agg(json_build_object('id',s.id,'slug',s.slug,'fmt',s.fmt,'year',s.yr,'st',s.st,'de',s.de,'en',s.en,'ro',s.ro,'na',s.na)),'[]') "
+        "FROM (SELECT a.id, a.slug, a.format fmt, a.season_year yr, a.status st, a.title_german de, a.title_english en, a.title_romaji ro, a.title_native na "
         f"FROM anime a{where}{tail}) s;"
     ).strip() or "[]")
     anime = {r["id"]: {"id": r["id"], "slug": r["slug"],
                        "want": "MOVIE" if r.get("fmt") == "MOVIE" else "SHOW",
                        "year": r.get("year"),
+                       # `status` braucht die Vererbung (Entscheidung 24): ohne ihn
+                       # greift sie nur über den Jahrgang, nie über `RELEASING`.
+                       "status": r.get("st"),
                        "titles": [r.get("de") or "", r.get("en") or "", r.get("ro") or "", r.get("na") or ""],
-                       "have": set(), "offers": {}}
+                       "have": set(), "offers": {},
+                       # Handarbeit (`source='manual'`) und Veto (`confidence='rejected'`)
+                       # überleben das DELETE in `build_sql`; `confidence` je Paar
+                       # (NULL = belegt) dient dem Änderungsvergleich.
+                       "manual": set(), "rejected": set(), "direkt": set(), "confidence": {}}
              for r in rows}
     if not anime:
         return []
@@ -238,9 +329,20 @@ def load_anime(recent_days=None, stale_limit=None, slugs=None, unmatched_top=Non
         anime[p["pid"]]["have"].add(p["v"])
     # bestehende Offers: first_seen_at je (provider, monetization) erhalten
     for o in json.loads(psql(
-        "SELECT COALESCE(json_agg(json_build_object('pid',_parent_id,'p',provider,'m',monetization,'f',first_seen_at)),'[]') "
+        "SELECT COALESCE(json_agg(json_build_object('pid',_parent_id,'p',provider,'m',monetization,'f',first_seen_at,'s',source,'c',confidence)),'[]') "
         f"FROM anime_streaming_offers WHERE _parent_id IN ({ids});").strip() or "[]"):
-        anime[o["pid"]]["offers"][(o["p"], o["m"])] = o["f"]
+        a, key = anime[o["pid"]], (o["p"], o["m"])
+        a["offers"][key] = o["f"]
+        # NULL in `confidence` = belegt (Altbestand). Das Veto erkennt man allein an
+        # `confidence`, die Handarbeit an `source` — dieselbe Auslegung wie im Sweep.
+        a["confidence"][key] = o.get("c") or "confirmed"
+        if o.get("c") == "rejected":
+            a["rejected"].add(key)
+        elif o.get("s") == "manual":
+            a["manual"].add(key)
+        elif o.get("s") == "crunchyroll":
+            # Direktbeleg von crunchyroll-dub.py --availability: die Titelsuche fasst ihn nicht an.
+            a["direkt"].add(key)
     return list(anime.values())
 
 
@@ -306,7 +408,21 @@ def best_match(data, our_titles, want="SHOW", year=None):
                 short, long_ = sorted((t, cn), key=len)
                 # Substring nur bei ähnlicher Länge: „journeysend" steckt zwar in
                 # „frierenbeyondjourneysend", ist aber ein anderer Film.
-                if len(short) >= 8 and short in long_ and len(short) / len(long_) >= 0.6:
+                # Schwelle 0.6, im Band 0.55 <= Verhältnis < 0.6 nur mit bekanntem Jahr
+                # auf BEIDEN Seiten. Belegt an zwei echten Fällen:
+                #   „suikoden" ⊂ „gensousuikoden"            = 0.571 → soll matchen
+                #   „journeysend" ⊂ „frierenbeyondjourneysend" = 0.458 → soll nicht
+                # Warum die Jahresbedingung: Die Absicherung gegen „gleicher Titel, anderes
+                # Werk" (Rebellen vom Liang Shan Po, 1973, originalTitle „Suikoden") hängt
+                # am Jahres-Abzug, nicht an der Schwelle — ohne Jahr würde das gelockerte
+                # Band falsche Anbieter schreiben. Auf dem VPS gemessen (2026-11-09): nur 59
+                # von 11.061 Titeln (0,53 %) haben kein season_year (ohne die 170 MUSIC),
+                # meist ONA/OVA-Kuriosa; ihr Nutzen ist klein, das Falschtreffer-Risiko
+                # voll. Die lockere Alt-Heuristik hatte „Hyouge Mono" auf „Mono" gematcht.
+                # Jede weitere Lockerung braucht eine neue Gegenprobe (tests/test_matcher.py).
+                sub_ratio = len(short) / len(long_)
+                year_known = bool(year and cy)
+                if len(short) >= 8 and short in long_ and (sub_ratio >= 0.6 or (sub_ratio >= 0.55 and year_known)):
                     ratio = max(ratio, 0.95)
                 if ratio > score:
                     score, rem = ratio, ""
@@ -364,14 +480,110 @@ def _slug_and_monet(o):
     return slug, m
 
 
-def aggregate_offers(node, season=None):
+def confidence_for(season_offers, series_offers, provider, status, year, current_year):
+    """Vertrauensstufe eines Anbieters für GENAU EINEN unserer Titel: `'confirmed'`,
+    `'unconfirmed'` oder None (= keine Zeile schreiben).
+
+    Die gemeinsame Regel von Titelsuche (`aggregate_offers`) und Katalog-Abgleich
+    (`justwatch-catalog.py` re-exportiert sie als `confidence_for`). Sie steht hier und
+    nicht im Katalog-Skript, weil jenes aus diesem importiert — umgekehrt entstünde ein
+    Importzyklus. Eine Regel, eine Implementierung: zwei Kopien hätten über kurz oder
+    lang zwei verschiedene Vererbungsgrenzen.
+
+    `season_offers` sind die Anbieter-Slugs, die AM GEMATCHTEN OBJEKT selbst hängen —
+    bei der Titelsuche das JustWatch-Staffel-Objekt, beim Katalog-Abgleich der
+    Serien-Knoten, den `match_node` gewählt hat. `series_offers` sind die Slugs des
+    ganzen Werks (Serie samt aller Staffeln).
+
+      - am gematchten Objekt belegt          -> `confirmed`
+      - nur am übergeordneten Werk vorhanden -> `unconfirmed`, aber NUR wenn das
+                                                gematchte Objekt GAR KEIN Angebot trägt
+                                                (`season_offers` leer) UND der Titel
+                                                läuft (`RELEASING`) oder zum laufenden
+                                                Jahrgang gehört
+      - sonst                                -> None
+
+    Das ist Entscheidung 24 in der engsten Lesart. Begründung: bei einem laufenden
+    Simulcast liegt die neue Staffel praktisch immer beim Anbieter der Vorgängerstaffel
+    (Regressionsfall `kikansha-no-mahou-wa-tokubetsu-desu-2nd-season`), das Risiko ist
+    nahe null. Die weite Lesart (alle Staffeln, Specials und Filme einer Serie) hätte
+    alte Staffeln mit dem Logo eines Anbieters versehen, bei dem sie nicht liegen — bei
+    1.349 Crunchyroll-Serien bis zu zwei Größenordnungen mehr Einträge, jeder einzelne
+    eine unbelegte Behauptung."""
+    if provider in season_offers:
+        return "confirmed"
+    if provider not in series_offers:
+        return None  # der Anbieter kommt nirgends vor: es gibt nichts zu erben
+    if season_offers:
+        # Das gematchte Objekt trägt mindestens ein Angebot: JustWatch hat es gepflegt,
+        # und das FEHLEN dieses Anbieters ist dort eine Aussage, keine Lücke. Ihn trotzdem
+        # zu erben hieße, Verfügbarkeit gegen vorhandene Evidenz zu behaupten. Das Signal
+        # „noch nicht gepflegt" ist das vollständig leere Objekt (Returner S2: `[]`).
+        return None
+    if status == "RELEASING":
+        return "unconfirmed"
+    try:
+        aktuell = year is not None and current_year is not None and int(year) == int(current_year)
+    except (TypeError, ValueError):
+        aktuell = False  # unlesbares Jahr ist kein Beleg für den laufenden Jahrgang
+    return "unconfirmed" if aktuell else None
+
+
+def inherited_offers(series_offers, season_offers, status, year, current_year):
+    """Geerbte Zeilen für EINEN gematchten Titel — die Vererbungsregel an einer Stelle.
+
+    Der Fall dahinter (gemessen 2026-11-09, „A Returner's Magic Should Be Special"):
+    JustWatch pflegt Angebote an der Serie und an abgeschlossenen Staffeln, nicht am neu
+    angelegten Staffel-Objekt. Der Matcher findet die Serie und wählt Staffel 2
+    fehlerfrei — an ihr hängt nur nichts, und weil wir bewusst keine Serien-Angebote
+    pauschal auf eine Fortsetzung übertragen, blieb die Staffel leer, obwohl sie bei
+    Crunchyroll läuft. Das trifft praktisch jeden laufenden Simulcast mit Vorgängerstaffel.
+
+    `series_offers`/`season_offers` sind fertig aggregierte Zeilen (`aggregate_offers`) der
+    Serie bzw. der gewählten Staffel. Die Entscheidung, WANN geerbt wird, liegt nicht hier,
+    sondern in `confidence_for` — derselben Funktion, die der Katalog-Abgleich benutzt
+    (Entscheidung 24, engste Lesart: nur laufender Titel oder laufender Jahrgang). Zwei
+    Kopien der Regel hätten über kurz oder lang zwei verschiedene Grenzen.
+
+    Vererbt wird nur, was die Serie als Streaming (Abo/Werbung/Gratis) führt; Kauf und
+    Leih sind keine Aussage darüber, wo die neue Staffel LÄUFT. Die geerbte Zeile trägt
+    `flatrate` (Entscheidung 17: ads/free wäre eine Behauptung über den Preis, die wir
+    nicht belegen), den SERIEN-Deep-Link, LEERE Sprachen (Entscheidung 7: ein geerbtes
+    Angebot kann keine Audio-/Untertitel-Aussage tragen) und keine Staffel-/Episodenzahl."""
+    rang = {"flatrate": 0, "ads": 1, "free": 2}
+    quelle = {}
+    for o in series_offers:
+        if o["monetization"] in STREAMING and (o["provider"] not in quelle
+                                               or rang[o["monetization"]] < rang[quelle[o["provider"]]["monetization"]]):
+            quelle[o["provider"]] = o
+    eigene = {o["provider"] for o in season_offers if o["monetization"] in STREAMING}
+    out = []
+    for prov in sorted(quelle):
+        if prov in eigene:
+            continue  # am Staffel-Objekt selbst belegt: nichts zu erben
+        if confidence_for(eigene, set(quelle), prov, status, year, current_year) != "unconfirmed":
+            continue
+        out.append({"provider": prov, "monetization": "flatrate", "url": quelle[prov]["url"],
+                    "audio": "", "subs": "", "seasons": None, "episodes": None,
+                    "available_to": None, "confidence": "unconfirmed"})
+    return out
+
+
+def aggregate_offers(node, season=None, status=None, year=None, current_year=None):
     """JustWatch-Node -> Liste von Offer-Dicts (SD/HD dedupliziert, Sprachen vereinigt).
 
     Show-Ebene: elementCount = Staffeln beim Anbieter. Season-Ebene: elementCount =
     Episoden der Staffel → aufsummiert. Filme haben keine seasons.
     Mit `season` (Fortsetzungs-Eintrag) zählen NUR die Angebote dieser Staffel:
     seasons=1, episodes=elementCount der Staffel.
+
+    Jedes Angebot trägt `confidence`: am gematchten Objekt belegte sind `confirmed`.
+    Nur mit `season` und den Angaben zu unserem Titel (`status`, `year`, `current_year`)
+    kommen geerbte Serien-Anbieter als `unconfirmed` hinzu (`inherited_offers`). Die
+    Parameter haben Standardwert None: ein Aufruf ohne sie erbt nie (`confidence_for`
+    liefert dann None) — bestehende Aufrufe verhalten sich wie vorher.
     """
+    serie = node
     is_show = node.get("objectType") == "SHOW"
     if season is not None:
         node = {"objectType": "SHOW", "offers": season.get("offers") or [], "seasons": []}
@@ -426,25 +638,50 @@ def aggregate_offers(node, season=None):
             e["seasons"], e["episodes"] = None, None
         elif not e["episodes"]:
             e["episodes"] = None
+        e["confidence"] = "confirmed"
         out.append(e)
+    if single:
+        out.extend(inherited_offers(aggregate_offers(serie), out, status, year, current_year))
     return out
 
 
-def fetch_offers(session, a):
+def search_queries(a):
+    """Suchbegriffe für einen Titel, in Reihenfolge, dedupliziert (max. 2).
+
+    Deutscher (sonst englischer) Titel, dann Romaji. Fehlen deutscher UND englischer
+    Titel, entfällt der erste Begriff und der native Titel folgt dem Romaji (also
+    [romaji, native], weiterhin zwei Anfragen): JustWatch führt solche
+    Titel oft anders als das Romaji („Suikoden" statt „Gensou Suikoden"), findet sie
+    aber über die Originalschrift. Mit de oder en bleibt es bei [de/en, romaji].
+    Das Rate-Limit bleibt unberührt — `api_post` hält die Pause je Request."""
+    titles = [(t or "").strip() for t in a["titles"]]
+    de, en, ro, na = titles[0], titles[1], titles[2], titles[3]
+    cands = [de or en, ro]
+    if not de and not en:
+        cands.append(na)
+    queries = []
+    for t in cands:
+        if t and t not in queries:
+            queries.append(t)
+    return queries
+
+
+def fetch_offers(session, a, current_year=None):
     """None = API-Fehler, False = kein sicherer Match, sonst Offer-Liste.
 
     Sucht nacheinander mit deutschem, englischem und Romaji-Titel (dedupliziert),
     bis ein sicherer Match kommt — die JustWatch-Suche findet „Frieren – Nach dem
     Ende der Reise" nicht zuverlässig über den englischen Titel.
     """
-    # Max. 2 Suchanfragen: deutscher (falls vorhanden) oder englischer Titel, dann Romaji.
-    queries = []
-    for t in [a["titles"][0] or a["titles"][1], a["titles"][2]]:
-        t = (t or "").strip()
-        if t and t not in queries:
-            queries.append(t)
+    queries = search_queries(a)
     if not queries:
         return False
+    if current_year is None:
+        current_year = time.gmtime().tm_year
+    # Angaben zu UNSEREM Titel für die Vererbung (`inherited_offers`). Alle drei
+    # Aufrufe unten bekommen sie, auch die ohne Staffel: dort wird nichts vererbt, aber
+    # ein später ergänzter Pfad soll die Vererbung nicht still verlieren.
+    ctx = {"status": a.get("status"), "year": a.get("year"), "current_year": current_year}
     for query in queries:
         r = api_post(session, {"query": SEARCH_Q, "variables": {"c": "DE", "l": "de", "q": query}})
         if r.status_code != 200:
@@ -455,24 +692,85 @@ def fetch_offers(session, a):
             continue
         node, remainder = hit
         if not remainder:
-            return aggregate_offers(node)
+            return aggregate_offers(node, **ctx)
         season = pick_season(node, remainder, a.get("year"))
         if season is not None:
-            return aggregate_offers(node, season)
+            return aggregate_offers(node, season, **ctx)
         if is_base_entry(node, remainder, a.get("year")):
-            return aggregate_offers(node)
+            return aggregate_offers(node, **ctx)
         # Serie erkannt, aber Staffel nicht eindeutig → kein Match (keine Serien-
         # Anbieter pauschal auf eine Fortsetzung übertragen).
     return False
 
 
 def build_sql(a, offers, now_iso, initial=False):
+    """SQL für EINEN Titel: Angebote, Anbieter-Index, Sprachen. Schreibt selbst nichts.
+    Rückgabe: (Anweisungen, ob sich am Titel etwas geändert hat).
+
+    Die Titelsuche sieht in ihrer Antwort ALLE Monetarisierungen und ist deshalb auch für
+    Kauf und Leih autoritativ: das `DELETE` ist über die Monetarisierungen
+    uneingeschränkt — anders als im Katalog-Sweep (`build_catalog_sql`), der nur Abo/
+    Werbung/Gratis sieht und sich deshalb einschränken muss. Ausgespart sind dieselben
+    zwei redaktionellen Entscheidungen wie dort:
+
+      - `source = 'manual'` (Entscheidung 8): Handarbeit.
+      - `confidence = 'rejected'` (Entscheidung 21): das Veto. Es hat seine EIGENE
+        Bedingung und hängt nicht an `source`, denn der Lader erkennt ein Veto allein an
+        `confidence`. Eine `rejected`-Zeile mit anderer `source` würde sonst gelöscht und
+        das Angebot im Folgelauf wieder angelegt — das Veto löschte sich selbst.
+
+      - `source = 'crunchyroll'` (Aufgabe 14): der Direktbeleg beim Anbieter. Ohne diese
+        Ausnahme machte die vierstündige Titelsuche — und `--stale-weighted` nimmt die
+        laufenden Titel zuerst, also genau den Crunchyroll-Umfang — aus dem Beleg binnen
+        Stunden wieder eine geerbte `unconfirmed`-Zeile.
+
+    ASYMMETRIE MIT DEM KATALOG-SWEEP (Absicht): die Titelsuche ist der enge, titelweise Weg
+    und fasst Crunchyroll-Zeilen nicht mehr an; `build_catalog_sql` ist der breite,
+    autoritative Weg und überschreibt sie weiter. Danach stellt der tägliche
+    Crunchyroll-Lauf den Beleg wieder her (Cron-Reihenfolge: Sweep zuerst, siehe
+    `catalog-sweep.sh`).
+
+    WAS DIESE AUSSPARUNG SICHER MACHT, IST NICHT DER SWEEP: er trifft eine
+    Fortsetzungsstaffel nie (`match_node` matcht nur die Erststaffel, bewusst), kann dort
+    also auch keine nicht mehr gepflegte `confirmed`-Zeile abräumen. Der Löschweg ist der
+    Frische-Verfall am Ende des Crunchyroll-Laufs (`expiry_sql` in `crunchyroll-dub.py`):
+    jeder Lauf schreibt seine Zeilen neu, was sieben Tage lang nicht mehr bestätigt wurde,
+    wird gelöscht. Erst damit bleibt ein echtes Lizenzende entfernbar — über diese
+    Aussparung hinweg.
+
+    Beide Vergleiche mit `IS DISTINCT FROM`: der Altbestand (3.197 Zeilen) trägt
+    `source`/`confidence` NULL, und `<> 'rejected'` wirft NULL-Zeilen aus dem Ergebnis —
+    das DELETE löschte dann nichts mehr. Ein Paar mit `rejected`-Zeile wird nicht
+    eingefügt.
+
+    Der Filter-Index `anime_streaming_providers` zählt unbestätigte Angebote mit
+    (Entscheidung 4), die Sprachen nur belegte (Entscheidung 7: ein geerbtes Angebot kann
+    keine Audio-/Untertitel-Aussage tragen). Der Anbieter einer Handarbeits-Zeile bleibt
+    im Index, sonst verschwände die Handarbeit aus Suche und Plattform-Listen, obwohl die
+    Zeile noch steht. `offers=[]` (der `--purge-unmatched`-Pfad) löscht entsprechend alles
+    außer Handarbeit und Veto."""
     aid = a["id"]
-    stmts = [f"DELETE FROM anime_streaming_offers WHERE _parent_id = {aid};"]
-    slugs = set()
+    manual = set(a.get("manual") or ())
+    rejected = set(a.get("rejected") or ())
+    direkt = set(a.get("direkt") or ())
+    stmts = [f"DELETE FROM anime_streaming_offers WHERE _parent_id = {aid} "
+             f"AND source IS DISTINCT FROM 'manual' AND source IS DISTINCT FROM 'crunchyroll' "
+             f"AND confidence IS DISTINCT FROM 'rejected';"]
+    slugs = {p for p, m in manual | direkt if m in STREAMING}
     langs = set()
-    for i, e in enumerate(offers, 1):
+    written = []
+    for e in offers:
+        if (e["provider"], e["monetization"]) in rejected:
+            continue  # Veto des Redakteurs
+        if (e["provider"], e["monetization"]) in manual or (e["provider"], e["monetization"]) in direkt:
+            # Die Version des Redakteurs gewinnt (Entscheidung 8): das DELETE lässt die
+            # Handarbeits-Zeile stehen, eine zweite Zeile desselben Paares daneben wäre
+            # ein Widerspruch im Bestand (Anbieter-Karte doppelt).
+            continue
+        written.append(e)
+    for e in written:
         streaming = e["monetization"] in STREAMING
+        conf = e.get("confidence") or "confirmed"
         # first_seen_at bleibt über Läufe erhalten — AUCH wenn es NULL ist: Zeilen des
         # Erst-Backfills tragen bewusst NULL („seit Beginn bekannt"), sonst wäre der
         # komplette Katalog 30 Tage lang „Neu". Nur wirklich neue (provider, monet)-
@@ -482,22 +780,29 @@ def build_sql(a, offers, now_iso, initial=False):
         # first_seen_at — sonst wäre der ganze Katalog 30 Tage lang „Neu auf …".
         # Danach (Cron ohne Flag) gilt: neues (Anbieter, Monetarisierung)-Paar = jetzt.
         first = a["offers"][key] if key in a["offers"] else (None if (initial and not a["offers"]) else now_iso)
-        if streaming:  # Filter-Index und Sprachen nur aus echten Streaming-Angeboten
+        if streaming:  # Filter-Index nur aus Streaming-Angeboten, auch unbestätigten
             slugs.add(e["provider"])
-            for code in e["audio"].split(","):
-                if code in AUDIO_TO_LANG:
-                    langs.add(AUDIO_TO_LANG[code])
-            for code in e["subs"].split(","):
-                if code in SUB_TO_LANG:
-                    langs.add(SUB_TO_LANG[code])
+            if conf == "confirmed":  # Sprachen nur aus belegten
+                for code in e["audio"].split(","):
+                    if code in AUDIO_TO_LANG:
+                        langs.add(AUDIO_TO_LANG[code])
+                for code in e["subs"].split(","):
+                    if code in SUB_TO_LANG:
+                        langs.add(SUB_TO_LANG[code])
         stmts.append(
             "INSERT INTO anime_streaming_offers "
-            "(_order,_parent_id,id,provider,monetization,url,audio,subs,seasons,episodes,available_to,first_seen_at,last_seen_at) VALUES ("
-            f"{i}, {aid}, substr(md5(random()::text || clock_timestamp()::text), 1, 24), "
+            "(_order,_parent_id,id,provider,monetization,url,audio,subs,seasons,episodes,available_to,"
+            "first_seen_at,last_seen_at,confidence,source) VALUES ("
+            # Das DELETE lässt Handarbeit und Veto stehen; `_order` darf deshalb nicht
+            # wieder bei 1 anfangen, sonst gäbe es die Reihenfolge doppelt.
+            f"COALESCE((SELECT max(_order) FROM anime_streaming_offers WHERE _parent_id = {aid}), 0) + 1, "
+            f"{aid}, substr(md5(random()::text || clock_timestamp()::text), 1, 24), "
             f"{q(e['provider'])}, {q(e['monetization'])}::enum_anime_streaming_offers_monetization, {q(e['url'])}, "
             f"{q(e['audio'] or None)}, {q(e['subs'] or None)}, "
             f"{e['seasons'] if e['seasons'] is not None else 'NULL'}, {e['episodes'] if e['episodes'] is not None else 'NULL'}, "
-            f"{q(e['available_to'])}, {q(first)}, {q(now_iso)});"
+            # `confidence`/`source` ohne Typumwandlung: das Stringliteral übernimmt den
+            # Enum der Spalte (wie im Katalog-Sweep; lokal ist keine Datenbank prüfbar).
+            f"{q(e['available_to'])}, {q(first)}, {q(now_iso)}, {q(conf)}, 'justwatch');"
         )
     stmts.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {aid};")
     if slugs:
@@ -510,7 +815,15 @@ def build_sql(a, offers, now_iso, initial=False):
             f"{q(lang)}::enum_anime_available_languages "
             f"WHERE NOT EXISTS (SELECT 1 FROM anime_available_languages WHERE parent_id = {aid} AND value = {q(lang)});"
         )
-    changed = slugs != a["have"] or set((e["provider"], e["monetization"]) for e in offers) != set(a["offers"])
+    # Handarbeit und Veto stehen nach dem DELETE unverändert da — sie sind kein
+    # Unterschied zum Ergebnis des letzten Laufs. Ein Wechsel der Vertrauensstufe
+    # (unconfirmed -> confirmed) ist dagegen einer.
+    have = {k for k in a["offers"] if k not in manual and k not in rejected and k not in direkt}
+    want = {(e["provider"], e["monetization"]) for e in written}
+    stufen = a.get("confidence") or {}
+    changed = (slugs != a["have"] or want != have
+               or any(stufen.get((e["provider"], e["monetization"]), e.get("confidence") or "confirmed")
+                      != (e.get("confidence") or "confirmed") for e in written))
     return stmts, changed
 
 
@@ -526,13 +839,26 @@ def session():
 
 def other_instance_running():
     """Instanz-Sperre: Cron (--stale) und Backfill dürfen nie parallel laufen — zwei
-    Läufe verdoppeln das Volumen und JustWatch sperrt die IP."""
+    Läufe verdoppeln das Volumen und JustWatch sperrt die IP.
+
+    Gilt für BEIDE JustWatch-Skripte (Titelsuche und Katalog-Abgleich): sie teilen sich
+    dieselbe IP und dasselbe Limit, also zählt ein Lauf des einen als Gegenstelle des
+    anderen. Das Muster hängt bewusst nicht am Verzeichnis `src/scripts/` — der
+    Katalog-Abgleich wird auch aus /tmp heraus gestartet."""
     me, parent = str(os.getpid()), str(os.getppid())
-    out = subprocess.run(["pgrep", "-f", "src/scripts/justwatch-streaming.py"], capture_output=True, text=True).stdout.split()
+    out = subprocess.run(["pgrep", "-f", r"justwatch-(streaming|catalog)\.py"], capture_output=True, text=True).stdout.split()
     return any(pid not in (me, parent) for pid in out)
 
 
 def main():
+    if "--gap-alarm" in sys.argv:
+        # Nur lesen, deshalb vor der Instanz-Sperre. Ausgabe nur bei Lücken (sonst leer):
+        # der Wrapper schickt genau dann eine Telegram-Meldung, wenn etwas ausgegeben wurde.
+        season, year = current_season()
+        text = gap_alarm_text((psql(gap_sql(season, year)).strip() or "0"), season, year)
+        if text:
+            print(text)
+        return
     if other_instance_running():
         print("→ Eine andere Instanz von justwatch-streaming.py läuft bereits — Abbruch (Instanz-Sperre).")
         return
@@ -542,7 +868,8 @@ def main():
     initial = "--initial" in sys.argv
     print("→ Lade Anime + vorhandene Anbieter/Offers …")
     anime = load_anime(recent_days=recent, stale_limit=stale, slugs=slugs.split(",") if slugs else None,
-                       unmatched_top=_arg("--unmatched-top"), not_checked_since=_arg("--not-checked-since"))
+                       unmatched_top=_arg("--unmatched-top"), not_checked_since=_arg("--not-checked-since"),
+                       stale_weighted=_arg("--stale-weighted"))
     if "--only-missing" in sys.argv:
         anime = [a for a in anime if not a["offers"]]
     print(f"  {len(anime)} Anime.")
@@ -589,15 +916,18 @@ def main():
                 if offers is False:
                     stats["nomatch"] += 1
                     if purge and not dry and (a["have"] or a["offers"]):
-                        sql.append(f"DELETE FROM anime_streaming_offers WHERE _parent_id = {a['id']};")
-                        sql.append(f"DELETE FROM anime_streaming_providers WHERE parent_id = {a['id']};")
-                        changed_ids.append(a["id"])
-                        stats["changed"] += 1
+                        # Über `build_sql` mit leerer Liste statt eigenem DELETE: Handarbeit
+                        # und Veto bleiben stehen, ihr Anbieter bleibt im Filter-Index.
+                        stmts, changed = build_sql(a, [], now_iso, initial)
+                        sql.extend(stmts)
+                        if changed:  # nur Handarbeit/Veto übrig = nichts zu ändern
+                            changed_ids.append(a["id"])
+                            stats["changed"] += 1
                 else:
                     stmts, changed = build_sql(a, offers, now_iso, initial)
                     if dry:
                         print(f"  {a['slug']}: " + (", ".join(
-                            f"{o['provider']}/{o['monetization']} a={o['audio']} s={o['subs']} S{o['seasons']} E{o['episodes']} {o['url'][:60]}"
+                            f"{o['provider']}/{o['monetization']} [{o.get('confidence', 'confirmed')}] a={o['audio']} s={o['subs']} S{o['seasons']} E{o['episodes']} {o['url'][:60]}"
                             for o in offers) or "(keine Streaming-Angebote)"))
                     else:
                         sql.extend(stmts)

@@ -18,6 +18,7 @@ import {
   type StreamingOffer,
   type StreamingProvider,
 } from './streaming'
+import { NO_PROVIDER_PHRASE, isConfirmed, isUnconfirmed } from './streamingConfidence'
 import type { FaqItem } from '@/components/Faq'
 
 type Group = { provider: StreamingProvider; offers: StreamingOffer[] }
@@ -83,7 +84,15 @@ export function streamingMetaDescription(anime: any): string {
   const facts = [formatLabel(anime?.format), yearOf(anime), anime?.episodes ? `${anime.episodes} Folgen` : ''].filter(Boolean).join(', ')
   const kind = `${g ? `${g}-Anime` : 'Anime'}${facts ? ` (${facts})` : ''}`
   if (!s.hasStream) {
-    return `${title}: ${kind}. Handlung, Charaktere, Episoden und Streaming-Status – aktuell bei keinem Anbieter in Deutschland im Abo- oder Gratis-Stream.`
+    // Die Aussage ist nur wahr, wenn ein vollständiger Katalog-Durchlauf den Titel nirgends fand;
+    // wie weit sie reicht, steht an NO_PROVIDER_PHRASE. Dafür sind „Episoden und Streaming-Status"
+    // aus der Aufzählung gefallen: die Folgenzahl steht ohnehin in `kind`, und so bleibt die Länge
+    // im Rahmen des Umgebenden (174 statt 170 Zeichen im Testfall).
+    if (anime?.streamingVerifiedAt) {
+      return `${title}: ${kind}. Handlung und Charaktere – aktuell ${NO_PROVIDER_PHRASE}.`
+    }
+    // Ohne Nachweis keine Aussage zur Verfügbarkeit (nie nachgesehen ≠ nicht verfügbar).
+    return `${title}: ${kind}. Handlung, Charaktere und Episoden im Überblick.`
   }
   const lang = s.legacy
     ? ''
@@ -168,7 +177,10 @@ export type StreamingGuideData = {
  * null ohne Streaming-Anbieter.
  */
 export function streamingGuide(anime: any): StreamingGuideData | null {
-  const views = streamingOffersOf(anime)
+  // Fließtext und FAQ (→ FAQPage-JSON-LD) sprechen nur über belegte Angebote; unbestätigte
+  // zeigt die Karte in der StreamingBox mit Badge. Bleibt nichts Belegtes, gibt es keinen Guide.
+  const allViews = streamingOffersOf(anime)
+  const views = allViews.filter((v) => isConfirmed(v.offer))
   const groups = groupOffersByProvider(views)
   if (!groups.length) return null
   const title = displayTitle(anime)
@@ -365,12 +377,17 @@ export function streamingGuide(anime: any): StreamingGuideData | null {
   })
   const bigs = ['Netflix', 'Crunchyroll', 'Amazon Prime Video']
   const yes = bigs.filter((b) => names.includes(b))
-  const no = bigs.filter((b) => !names.includes(b))
+  // „Nicht gelistet" nur mit Nachweis (vollständiger Katalog-Durchlauf) und nie für Anbieter mit unbestätigtem Angebot:
+  // dort liegt ein positiver Hinweis vor, keine erwiesene Abwesenheit.
+  const unconfirmedNames = new Set(allViews.filter((v) => isUnconfirmed(v.offer)).map((v) => v.provider.name))
+  // Der Satz stützt sich auf den Katalog-Durchlauf, also trägt er dessen Datum (nicht `streamingCheckedAt`).
+  const verifiedStand = formatDateDe(anime?.streamingVerifiedAt)
+  const no = anime?.streamingVerifiedAt ? bigs.filter((b) => !names.includes(b) && !unconfirmedNames.has(b)) : []
   faq.push({
     q: `Streamen auch Dienste wie Netflix, Crunchyroll oder Amazon Prime Video ${title}?`,
     a: `Ob neben ${plain} noch weitere große Plattformen ${title} im Abo anbieten, hängt vom jeweiligen Rechtekatalog im deutschsprachigen Raum ab. Es kommt häufig vor, dass Serien bei mehreren Anbietern gleichzeitig oder zeitversetzt laufen.${
       yes.length ? ` Aktuell: ${joinNames(yes)} ${yes.length > 1 ? 'haben' : 'hat'} ${title} im Programm.` : ''
-    }${no.length ? ` Bei ${joinNames(no)} ist ${title} derzeit nicht gelistet${stand ? ` (Stand: ${stand})` : ''}.` : ''}`,
+    }${no.length ? ` Bei ${joinNames(no)} ist ${title} derzeit nicht gelistet${verifiedStand ? ` (geprüft am ${verifiedStand})` : ''}.` : ''}`,
   })
   faq.push({
     q: `Kann man ${title} auch ohne Abo streamen, kaufen oder leihen?`,

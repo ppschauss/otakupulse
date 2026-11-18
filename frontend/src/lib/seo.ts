@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { DISCORD_INVITE, SITE_NAME, SITE_URL, TELEGRAM_CHANNEL, TUMBLR_URL, X_URL, url } from './site'
 import { animeCover, displayTitle, plainText } from './anime'
 import { streamingOffersOf, type OfferView } from './streaming'
+import { isConfirmed } from './streamingConfidence'
 
 /**
  * Robots-Direktiven für indexierbare Seiten.
@@ -114,10 +115,11 @@ const FORMAT_TO_TYPE: Record<string, string> = { MOVIE: 'Movie' }
 /**
  * WatchAction pro Streaming-Angebot (Schema.org). Google nutzt das für die
  * „Ansehen"-Box; für uns ist es der maschinenlesbare Beleg, dass die Seite
- * echte, regionale Verfügbarkeit trägt — nicht nur Text.
+ * echte, regionale Verfügbarkeit trägt — nicht nur Text. Nur belegte Angebote.
  */
 export function watchActionsLd(views: OfferView[]) {
-  return views.map(({ offer }) => ({
+  // Unbestätigte (geerbte) Angebote bleiben draußen: Google würde daraus eine „Ansehen"-Box bauen.
+  return views.filter(({ offer }) => isConfirmed(offer)).map(({ offer }) => ({
     '@type': 'WatchAction',
     target: {
       '@type': 'EntryPoint',
@@ -150,6 +152,7 @@ export function animeLd(anime: any) {
     .filter(Boolean)
     .map((d: string) => Date.parse(d))
     .filter((t: number) => Number.isFinite(t))
+  const watchActions = watchActionsLd(offers)
   const cover = animeCover(anime)
   return {
     '@context': 'https://schema.org',
@@ -170,7 +173,7 @@ export function animeLd(anime: any) {
       typeof anime.averageScore === 'number' && anime.averageScore > 0
         ? { '@type': 'AggregateRating', ratingValue: anime.averageScore, bestRating: 100, ratingCount: anime.popularity || 1 }
         : undefined,
-    potentialAction: offers.length ? watchActionsLd(offers) : undefined,
+    potentialAction: watchActions.length ? watchActions : undefined,
   }
 }
 
