@@ -4,6 +4,9 @@ import { DISCORD_INVITE, SITE_NAME, SITE_URL, TELEGRAM_CHANNEL, TUMBLR_URL, X_UR
 import { animeCover, displayTitle, plainText } from './anime'
 import { streamingOffersOf, type OfferView } from './streaming'
 
+/** Standard-Share-Bild mit stabilem Pfad (Kopie von app/(frontend)/opengraph-image.tsx). */
+export const OG_DEFAULT = '/og-default.png'
+
 /**
  * Robots-Direktiven für indexierbare Seiten.
  *
@@ -51,11 +54,17 @@ export function pageMeta({
 }): Metadata {
   const canonical = canonicalOverride || url(path)
   const feedLink = feed === null ? null : (feed || { url: url('/feed.xml'), title: `${SITE_NAME} — News` })
-  // Seitenspezifisches Bild explizit setzen; OHNE eins NICHT setzen, damit Next die
-  // Datei-Konvention src/app/(frontend)/opengraph-image.tsx automatisch als og:image
-  // UND twitter:image injiziert (mit korrektem, gehashtem Pfad). So hat jede Seite eine
-  // Share-Vorschau, ohne dass wir eine URL hartkodieren (die sich pro Build ändert).
-  const images = image ? [{ url: image }] : undefined
+  // Ohne seitenspezifisches Bild auf das Standardbild zurückfallen — AUSDRÜCKLICH.
+  // Die frühere Annahme, Next injiziere dann die Datei-Konvention
+  // src/app/(frontend)/opengraph-image.tsx, stimmt nicht: Next führt `openGraph`
+  // nicht zusammen, sondern ersetzt das Objekt der Elternebene komplett, sobald die
+  // Seite ein eigenes liefert — und das tut pageMeta immer. Nur die 404-Seite behielt
+  // das Bild. Der Staging-Crawl vom 18.11.2026 fand 2.089 Sitemap-Seiten ohne og:image
+  // (Tags, Genres, Seasons, Übersichten, Studios ohne Logo). Den gehashten Pfad der
+  // Datei-Konvention kann man nicht fest eintragen; public/og-default.png ist eine
+  // Kopie desselben Bilds mit stabilem Pfad. Ändert sich opengraph-image.tsx, die Kopie
+  // neu erzeugen (Route abrufen, als PNG speichern).
+  const images = image ? [{ url: image }] : [{ url: url(OG_DEFAULT), width: 1200, height: 630 }]
   return {
     title,
     description,
@@ -71,13 +80,13 @@ export function pageMeta({
       siteName: SITE_NAME,
       type: 'website',
       locale: 'de_DE',
-      ...(images ? { images } : {}),
+      images,
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      ...(image ? { images: [image] } : {}),
+      images: [image || url(OG_DEFAULT)],
     },
   }
 }

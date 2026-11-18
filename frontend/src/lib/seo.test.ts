@@ -21,10 +21,22 @@ describe('pageMeta', () => {
   // Datei-Konvention opengraph-image.tsx greifen lässt (gehashter Pfad, ändert
   // sich pro Build). Es gibt also trotzdem immer ein Vorschaubild — deshalb
   // bleibt die Card `summary_large_image`.
-  it('setzt ohne explizites Bild keine images (Datei-Konvention greift)', () => {
+  // Früher hieß der Test „Datei-Konvention greift" und erwartete undefined. Sie greift
+  // NICHT: Next ersetzt `openGraph` der Elternebene komplett, sobald die Seite eins
+  // liefert — der Staging-Crawl vom 18.11.2026 fand 2.089 Sitemap-Seiten ohne og:image.
+  it('fällt ohne explizites Bild auf das Standard-Share-Bild zurück', () => {
     const m = pageMeta({ title: 'T', path: '/x' })
     expect((m.twitter as any)?.card).toBe('summary_large_image')
-    expect((m.openGraph as any)?.images).toBeUndefined()
+    const og = (m.openGraph as any)?.images
+    expect(og).toHaveLength(1)
+    expect(og[0].url).toMatch(/\/og-default\.png$/)
+    expect(og[0]).toMatchObject({ width: 1200, height: 630 })
+    expect((m.twitter as any)?.images[0]).toMatch(/\/og-default\.png$/)
+  })
+  it('übernimmt ein explizites Bild unverändert', () => {
+    const m = pageMeta({ title: 'T', path: '/x', image: 'https://x/y.jpg' })
+    expect((m.openGraph as any)?.images).toEqual([{ url: 'https://x/y.jpg' }])
+    expect((m.twitter as any)?.images).toEqual(['https://x/y.jpg'])
   })
 
   // max-image-preview:large ist die Eintrittskarte für Google Discover — ohne die

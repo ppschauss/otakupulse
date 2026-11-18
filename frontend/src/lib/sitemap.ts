@@ -62,7 +62,17 @@ export const TYPES: SitemapType[] = [
   },
   { key: 'studios', collection: 'studios', path: (s) => `/studio/${s}` },
   { key: 'genres', collection: 'genres', path: (s) => `/genre/${s}`, where: publicGenreFilter },
-  { key: 'tags', collection: 'tags', path: (s) => `/tag/${s}` },
+  // Wortgleich zur Tag-Seite, die bei isAdult ODER redaktionellem noindex auf noindex
+  // schaltet. Vorher stand jeder Tag in der Sitemap — darunter alle 68 Adult-Tags
+  // (/tag/voyeur, /tag/omegaverse …): Seiten korrekt gesperrt, aber die Sitemap führte
+  // Google trotzdem hin. Für AdSense genau die falsche Richtung. IndexNow nutzt
+  // dieselben TYPES und meldet sie damit ebenfalls nicht mehr.
+  {
+    key: 'tags',
+    collection: 'tags',
+    path: (s) => `/tag/${s}`,
+    where: { and: [{ isAdult: { not_equals: true } }, { noindex: { not_equals: true } }] },
+  },
   { key: 'seasons', collection: 'anime-seasons', path: (s) => `/season/${s}` },
   // Geplante Artikel (publishDate in der Zukunft) erst zum Termin in die Sitemap.
   // Artikel: nur live geschaltete UND indexierbare (noindex-Beiträge, z. B. die alten

@@ -28,10 +28,11 @@ const TOP = 24
 export async function generateMetadata(): Promise<Metadata> {
   const payload = await getPayload({ config })
   const { unique } = await dubOverview(payload)
-  const month = new Date().toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'Europe/Berlin' })
+  // Title ≤ ~60 Zeichen (Google kürzt danach), Description ≤ ~155: der Staging-Crawl
+  // vom 18.11.2026 fand die erste Fassung mit 85 bzw. über 170 Zeichen.
   return pageMetaFor('ger-dub', {
-    title: `Anime mit deutschem Dub — ${unique} Titel bei allen Anbietern (${month}) | OtakuPulse`,
-    description: `Welcher Streaming-Anbieter hat die meisten Anime mit deutscher Synchro? ${unique} Ger-Dub-Titel im Vergleich: Crunchyroll, Netflix, Amazon Prime Video, Aniverse, ADN, RTL+ und Disney+ — mit Zahlen, Stand-Datum und Direktlinks zu den Listen.`,
+    title: `Anime mit deutschem Dub: ${unique.toLocaleString('de-DE')} Titel im Vergleich | OtakuPulse`,
+    description: `Welcher Anbieter hat die meisten Anime mit deutscher Synchro? ${unique.toLocaleString('de-DE')} Ger-Dub-Titel bei Crunchyroll, Netflix, Aniverse & Co. im Vergleich — mit Stand-Datum.`,
     path: '/anime-mit-deutschem-dub',
   })
 }
