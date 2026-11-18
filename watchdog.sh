@@ -12,6 +12,12 @@ SECRETS=/mnt/cache/appdata/otakupulse/frontend/secrets.env
 
 log() { echo "[$(date '+%F %T')] $*" >> "$LOG"; }
 
+# Während eines Deploys nicht eingreifen: deploy-vps.sh legt diese Sperre an, und
+# der Austausch des Builds sieht für uns genauso aus wie ein Absturz. Eine Sperre,
+# die älter als 20 Minuten ist, gilt als liegengeblieben und wird ignoriert.
+LOCK=/tmp/otakupulse-deploy.lock
+if [ -f "$LOCK" ] && [ $(( $(date +%s) - $(stat -c %Y "$LOCK") )) -lt 1200 ]; then exit 0; fi
+
 # Nur eingreifen, wenn der Container überhaupt laufen soll.
 running=$(docker inspect -f '{{.State.Running}}' "$APP" 2>/dev/null || echo false)
 [ "$running" = "true" ] || exit 0

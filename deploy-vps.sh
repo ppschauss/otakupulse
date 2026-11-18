@@ -22,6 +22,15 @@ DOCKER="sudo docker"
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
+# Deploy-Sperre für den Watchdog. Während des Austauschs antwortet die App bis zu
+# zwei Minuten nicht; der Watchdog hielt das für einen Absturz und startete sie
+# mitten im Deploy neu (18.11.2026, 20:35 — das Deploy fiel auf den alten Build
+# zurück). Die Sperre verschwindet auch bei Abbruch (trap), und eine liegen-
+# gebliebene ignoriert der Watchdog nach 20 Minuten.
+LOCK=/tmp/otakupulse-deploy.lock
+touch "$LOCK"
+trap 'rm -f "$LOCK"' EXIT
+
 say "1/6 Quellstand holen"
 cd "$REPO"
 # Unversioniertes (secrets.env, node_modules, .next*, in Arbeit befindliche

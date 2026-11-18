@@ -8,7 +8,7 @@
 import { getPayload } from 'payload'
 import config from '../payload.config'
 import { anilistRequest, PAGE_QUERY } from '../lib/anilist'
-import { importAnime, linkRelations, type ImportResult } from '../lib/import'
+import { importAnime, linkRelations, BlockedGenreError, type ImportResult } from '../lib/import'
 
 function currentSeason(d: Date): { season: string; year: number } {
   const m = d.getMonth() + 1
@@ -53,6 +53,10 @@ async function main() {
   const results: ImportResult[] = []
   let ok = 0
   let fail = 0
+  // Adult-Policy-Titel sind gewollt übersprungen, kein Fehler (so steht es auch an
+  // BlockedGenreError). Vorher meldete jeder Lauf „Fehler: 83" — ein echter Fehler
+  // wäre darin nie aufgefallen.
+  let skipped = 0
   for (let i = 0; i < ids.length; i++) {
     try {
       const r = await importAnime(payload, ids[i], { episodes: true, link: false })
@@ -60,6 +64,11 @@ async function main() {
       ok++
       console.log(`[${i + 1}/${ids.length}] ✓ ${r.title} (E:${r.counts.episodes})`)
     } catch (err: any) {
+      if (err instanceof BlockedGenreError || err?.name === 'BlockedGenreError') {
+        skipped++
+        console.log(`[${i + 1}/${ids.length}] – #${ids[i]}: ${err.message}`)
+        continue
+      }
       fail++
       console.warn(`[${i + 1}/${ids.length}] ✗ #${ids[i]}: ${err?.message || err}`)
     }
@@ -73,7 +82,7 @@ async function main() {
     }
   }
 
-  console.log(`✓ Sync fertig. Aktualisiert: ${ok} · Fehler: ${fail}`)
+  console.log(`✓ Sync fertig. Aktualisiert: ${ok} · Übersprungen (Adult-Policy): ${skipped} · Fehler: ${fail}`)
   process.exit(0)
 }
 
