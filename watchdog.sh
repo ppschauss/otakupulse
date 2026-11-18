@@ -7,8 +7,8 @@ set -uo pipefail
 
 APP=otakupulse-app
 URL=http://localhost:3001/
-LOG=/mnt/cache/appdata/backups/watchdog.log
-SECRETS=/mnt/cache/appdata/otakupulse/frontend/secrets.env
+LOG=/srv/backups/otakupulse/watchdog.log
+SECRETS=/srv/sites/otakupulse/app-src/frontend/secrets.env
 
 log() { echo "[$(date '+%F %T')] $*" >> "$LOG"; }
 
