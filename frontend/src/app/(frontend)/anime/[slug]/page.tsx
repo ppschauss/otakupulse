@@ -14,6 +14,7 @@ import { MediaRow } from '@/components/MediaRow'
 import { JsonLd } from '@/components/JsonLd'
 import { SeoFooter } from '@/components/SeoFooter'
 import { ShareButtons } from '@/components/ShareButtons'
+import { CommunityHint } from '@/components/CommunityHint'
 import { AdInArticle, AdMultiplex } from '@/components/AdSlot'
 import { adsAllowedForAnime } from '@/lib/adult'
 import { animeLd, breadcrumbLd, pageMeta } from '@/lib/seo'
@@ -325,6 +326,7 @@ export default async function AnimeDetail({ params }: { params: Promise<{ slug: 
 
             <div className="mt-4">
               <ShareButtons url={url(`/anime/${anime.slug}`)} title={title} message={`Schau dir den Anime „${title}“ auf OtakuPulse an 👀`} />
+              <CommunityHint variant="anime" title={title} />
             </div>
           </div>
         </div>

@@ -8,6 +8,7 @@ import { RichText, splitAfterParagraphs } from '@/components/RichText'
 import { AnimeCard } from '@/components/AnimeCard'
 import { JsonLd } from '@/components/JsonLd'
 import { ShareButtons } from '@/components/ShareButtons'
+import { CommunityHint } from '@/components/CommunityHint'
 import { AdInArticle, AdMultiplex } from '@/components/AdSlot'
 import { articleCategoryLabel, liveArticleFilters } from '@/lib/anime'
 import { pageMeta } from '@/lib/seo'
@@ -195,6 +196,7 @@ export default async function ArticleDetail({ params }: { params: Promise<{ slug
 
       <div className="mt-8 border-t border-white/10 pt-6">
         <ShareButtons url={shareUrl} title={article.title} message={`Schau dir diesen Beitrag auf OtakuPulse an: „${article.title}“ 👀`} />
+        <CommunityHint variant="news" />
       </div>
 
       {relatedAnime.length ? (

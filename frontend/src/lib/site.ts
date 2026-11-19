@@ -7,6 +7,8 @@ export const DISCORD_INVITE = 'https://discord.gg/UwX9akYq5F'
 export const TELEGRAM_CHANNEL = 'https://t.me/otakupulse_de'
 // X / Twitter-Profil.
 export const X_URL = 'https://x.com/OtakuPulseDE'
+// Reddit-Community (Subreddit).
+export const REDDIT_URL = 'https://www.reddit.com/r/OtakuPulseDe/'
 // Tumblr-Blog.
 export const TUMBLR_URL = 'https://otakupulse-de.tumblr.com/'
 // Google AdSense: Publisher-ID für das Verifizierungs-Meta-Tag im <head>.
